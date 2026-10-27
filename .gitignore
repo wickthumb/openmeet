@@ -1,0 +1,40 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+
+# Proprietary weights, training assets, and local race data
+models/
+weights/
+datasets/
+data/
+recordings/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.gguf
+*.h5
+*.hdf5
+
+# Runtime, dependencies, and generated outputs
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
