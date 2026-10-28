@@ -2,12 +2,12 @@
 // Uses a disposable local fixture: no writes to the supplied demo, uploads or private models.
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync, linkSync, copyFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync, linkSync, symlinkSync, copyFileSync, unlinkSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const [,, appDir, demoDir, outDir, extra = ''] = process.argv;
 if(!appDir||!demoDir||!outDir)throw Error('Usage: node app/test/visual-workspace.mjs <absolute-app-dir> <simulator-demo-dir> <output-dir>');
 const meetDir=outDir+'/fixture-'+Date.now();mkdirSync(meetDir,{recursive:true});
-function shareFiles(from,to){mkdirSync(to,{recursive:true});for(const e of readdirSync(from,{withFileTypes:true})){if(/^scan-tower\.(png|json)$/.test(e.name))continue;if(e.isDirectory())shareFiles(from+'/'+e.name,to+'/'+e.name);else if(e.isFile()){try{linkSync(from+'/'+e.name,to+'/'+e.name);}catch{copyFileSync(from+'/'+e.name,to+'/'+e.name);}}}}
+function shareFiles(from,to){mkdirSync(to,{recursive:true});for(const e of readdirSync(from,{withFileTypes:true})){if(/^scan-tower\.(png|json)$/.test(e.name))continue;if(e.isDirectory())shareFiles(from+'/'+e.name,to+'/'+e.name);else if(e.isFile()){try{linkSync(from+'/'+e.name,to+'/'+e.name);}catch{try{symlinkSync(from+'/'+e.name,to+'/'+e.name);}catch{copyFileSync(from+'/'+e.name,to+'/'+e.name);}}}}}
 for(const name of readdirSync(demoDir).filter(n=>/^heat-\d+$/.test(n)))shareFiles(demoDir+'/'+name,meetDir+'/'+name);
 mkdirSync(meetDir+'/meet');for(const name of readdirSync(demoDir+'/meet').filter(n=>/^lynx\./.test(n)))copyFileSync(demoDir+'/meet/'+name,meetDir+'/meet/'+name);
 const {encodePng}=await import(pathToFileURL(appDir+'/../engine/sim/png-encode.js').href);
@@ -60,6 +60,26 @@ const pending=()=>ev(`[...document.querySelectorAll('#laneGutter .pending')].map
 const results=()=>ev(`[...document.querySelectorAll('#list .row')].map(r=>r.innerText)`);
 try {
  await sleep(1600);await send('Page.navigate',{url:page.url+'?speed=4'});await sleep(1300);
+ await settings();await option('enabled',true);await option('edit',false);await closeSettings();await sleep(100);
+ const normalizedEdges=()=>ev(`(()=>{const height=document.querySelector('#scan').clientHeight-22;return [...document.querySelectorAll('.lane-divider')].map(e=>({key:e.dataset.boundary,fraction:(parseFloat(e.style.top)+6)/height}));})()`);
+ const emptyBefore=await normalizedEdges();
+ await click('Camera alignment');await sleep(500);await click('Stop preview');await sleep(100);
+ await ev(`document.querySelector('#workspaceSplit').focus()`);await key('Home');await sleep(100);await click('Return to race');await sleep(100);
+ const emptyAfter=await normalizedEdges();console.log('EMPTY_CAMERA_GEOMETRY',JSON.stringify({before:emptyBefore,after:emptyAfter}));
+ assert(emptyBefore.length===emptyAfter.length&&emptyBefore.every((e,i)=>Math.abs(e.fraction-emptyAfter[i].fraction)<.002),'Empty camera geometry changed after preview/resize; race start required to repair it');
+ await ev(`document.querySelector('#workspaceSplit').focus()`);await key('Enter');
+ // Remember native rows before a race and preserve the same layout across a resolution mode change.
+ assert(await ev(`JSON.parse(localStorage.getItem('openmeet.camera-geometry:'+${JSON.stringify(meetDir+'/meet')}+':primary')).rows`)===640,'Camera resolution was not remembered');
+ const pixelGuide=await ev(`(()=>{const c=document.querySelector('#scan'),g=c.getContext('2d'),y=parseFloat(document.querySelector('.lane-divider').style.top)+6;for(let row=Math.floor(y)-2;row<=Math.ceil(y)+2;row++)if(g.getImageData(8,row,1,1).data[2]>40)return true;return false;})()`);assert(pixelGuide,'Lane guides disappeared when no columns were present');
+ const nativeProfile=await normalizedEdges();
+ unlinkSync(meetDir+'/heat-1/primary.png');copyFileSync(meetDir+'/heat-1/scan-tower.png',meetDir+'/heat-1/primary.png');
+ const changedMeta={...original,rows:2000,column_period_s:.002,lane_rows:original.lane_rows.map(b=>({...b,top_row:b.top_row*2000/original.rows,bottom_row:b.bottom_row*2000/original.rows,...(b.standing_head_row_1p80m!=null?{standing_head_row_1p80m:b.standing_head_row_1p80m*2000/original.rows}:{})}))};
+ unlinkSync(meetDir+'/heat-1/primary.json');writeFileSync(meetDir+'/heat-1/primary.json',JSON.stringify(changedMeta));
+ await send('Page.reload');await sleep(1700);const modeChanged=await normalizedEdges();assert(nativeProfile.length===modeChanged.length&&nativeProfile.every((e,i)=>Math.abs(e.fraction-modeChanged[i].fraction)<.002),'Resolution change shifted saved lane layout');
+ assert(await ev(`JSON.parse(localStorage.getItem('openmeet.camera-geometry:'+${JSON.stringify(meetDir+'/meet')}+':primary')).rows`)===2000,'New camera resolution was not retained');
+ for(const name of ['primary.png','primary.json']){unlinkSync(meetDir+'/heat-1/'+name);copyFileSync(demoDir+'/heat-1/'+name,meetDir+'/heat-1/'+name);}
+ await send('Page.reload');await sleep(1700);const reloaded=await normalizedEdges();assert(nativeProfile.length===reloaded.length&&nativeProfile.every((e,i)=>Math.abs(e.fraction-reloaded[i].fraction)<.002),'Reload changed idle lane positions');
+ await shot('remembered-camera-geometry-without-capture');
  assert(await click('Start ')==='ok','start');await sleep(4000);await click('Stop capture');await waitFor(`document.querySelector('.state').textContent==='REVIEW'`,'review');await sleep(700);
  const before=await results();
  const capRoot=meetDir+'/meet/openmeet/captures',capDir=capRoot+'/'+readdirSync(capRoot).sort((a,b)=>Number(b.split('-').at(-1))-Number(a.split('-').at(-1)))[0];

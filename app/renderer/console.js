@@ -292,7 +292,27 @@ function lifText(h) {
 const laneTop = j => 168 + 302 * Math.pow(j / 8, 0.92);            // lane boundary rows (perspective: far lanes thinner)
 const laneFeet = k => (laneTop(k - 1) + laneTop(k)) / 2;
 const laneHt = k => 95 + (k - 1) * 7.5;                             // runner height in rows
-const rowsOf = h => h.rows || IMG_H;
+const rowsOf = h => h.rows || h.asset?.primarySize?.height || h.asset?.primaryMeta?.rows || (h.asset && store.get(scanGeometryKey(h.asset.mainCameraId), {}).rows) || IMG_H;
+function scanGeometryKey(camera='primary') { return `camera-geometry:${S.meet?.dir || 'sample'}:${camera}`; }
+function rememberScanGeometry(h, observed={}, persist=true) {
+  const camera=h.asset?.mainCameraId || 'simulated',key=scanGeometryKey(camera),previous=store.get(key,{});
+  const rows=Number.isInteger(observed.rows)&&observed.rows>0?observed.rows:rowsOf(h);
+  let bands=h.laneRows;
+  if(bands&&h.rows&&h.rows!==rows)bands=bands.map(b=>({...b,top:b.top*rows/h.rows,bottom:b.bottom*rows/h.rows}));
+  if(!bands&&previous.laneRows?.length)bands=previous.laneRows.map(b=>({...b,top:b.top*rows/previous.rows,bottom:b.bottom*rows/previous.rows}));
+  // Give legacy absolute-row overlays a known resolution before a camera mode changes.
+  const overlay=store.get(cameraOverlayKey('scan',camera),camera==='primary'?store.get(overlayKey('scan'),{}):{});
+  if(persist&&Object.keys(overlay).length&&!overlay.resolutionRows)store.set(cameraOverlayKey('scan',camera),{...overlay,resolutionRows:previous.rows||h.rows||rows});
+  h.rows=rows;if(bands)h.laneRows=bands;
+  if(persist)store.set(key,{rows,laneRows:bands||[],...(observed.channels?{channels:observed.channels}:previous.channels?{channels:previous.channels}:{})});
+}
+function rowsForCamera(camera) {
+  const displayed=viewHeat(),recorded=cur();
+  if(camera===displayed.asset?.mainCameraId)return rowsOf(displayed);
+  if(camera===recorded.asset?.mainCameraId)return rowsOf(recorded);
+  const source=recorded.asset?.lineScans?.find(s=>s.id===camera);
+  return source?.size?.height||source?.meta?.rows||store.get(scanGeometryKey(camera),{}).rows||IMG_H;
+}
 // Lane geometry at the finish plane, in image rows: from the camera calibration when the source has it.
 const laneBands = h => h.laneRows || ALL8.map(k => ({ lane: k, top: laneTop(k - 1), bottom: laneTop(k) }));
 function shade(hex, f) {
@@ -556,7 +576,7 @@ function go(i) {
   S.idx = i; S.selLane = null; S.selCol = null; S.entryNumber = ''; S.hoverCol = null;
   S.bview.linked = true; Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView();
   const h = cur();
-  ensureStrip(h);
+  rememberScanGeometry(h);ensureStrip(h);
   if (S.autoArm && h.state === 'loaded') h.state = 'armed';
   fitView();
   renderUI();
@@ -612,7 +632,7 @@ function prepareRestart(h) {
   next.athletes.forEach(a=>{if(a.pre)next.status[a.lane]=a.pre;});
   if(next.asset)attachAsset(next,next.asset);
   else {next.img=h.sampleStrip||h.img;next.nCols=next.img?.width||h.nCols;next.tClose=next.tOpen+next.nCols*periodOf(next);}
-  attempts.push(next);attemptsByHeat.set(key,attempts);HEATS[S.idx]=next;
+  attempts.push(next);attemptsByHeat.set(key,attempts);HEATS[S.idx]=next;rememberScanGeometry(next);
   S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';S.view.user=false;S.view.followZoom=null;
   ensureStrip(next);fitView();renderUI();
   toast(`Attempt ${next.attemptNumber} is armed. The previous capture and its start triggers are retained.`);
@@ -1419,7 +1439,13 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
 function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
-function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary') { const saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,pendingColor:'#ffb020',pendingOpacity:0.12}), ...saved,positions:{...(saved.positions||{})},boundaries:{...(saved.boundaries||{})},sizes:{...(saved.sizes||{})} }; }
+function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary') {
+  const saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
+  const rows=kind==='scan'?rowsForCamera(camera):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
+  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,pendingColor:'#ffb020',pendingOpacity:0.12}),...saved,
+    positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
+    boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
+}
 function frontLanePoint(o,lane) {
   if(o.positions[lane])return o.positions[lane];
   const a=o.positions[1]||{x:0.1,y:0.8},b=o.positions[o.laneCount]||{x:0.9,y:0.8};
@@ -1443,7 +1469,7 @@ function modelLaneGuides(h) {
   const rows=[...new Set(scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>Math.round(b.row)))];
   return {enabled:true,rows,color:o.lineColor,thickness:Math.max(1,Math.round(o.thickness))};
 }
-function saveOverlay(kind,value) { store.set(cameraOverlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);syncLaneGutter(value);} updateFrontOverlay(); invalidate(); }
+function saveOverlay(kind,value) { if(kind==='scan')value={...value,resolutionRows:rowsOf(viewHeat())};store.set(cameraOverlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);syncLaneGutter(value);} updateFrontOverlay(); invalidate(); }
 let overlayMenu=null;
 function showOverlaySettings(kind, anchor) {
   // Clean up listeners as well as the previous popover when switching cameras.
@@ -1853,9 +1879,10 @@ function attachAsset(h, a) {
   const m = a.primaryMeta;
   // the engine's camera streams from the gun: pre-roll columns from race time 0, then the rendered finish window
   const nPre = Math.max(0, Math.round(m.first_column_race_time_s / m.column_period_s));
-  h.asset = a; h.rows = m.rows || a.primarySize.height; h.nCols = nPre + a.primarySize.width;
+  h.asset = a; h.rows = a.primarySize.height || m.rows; h.nCols = nPre + a.primarySize.width;
   h.tOpen = m.first_column_race_time_s - nPre * m.column_period_s; h.tClose = h.tOpen + h.nCols * m.column_period_s;
   h.laneRows = Array.isArray(m.lane_rows) && m.lane_rows.length ? m.lane_rows.map(x => ({ lane: x.lane, top: x.top_row, bottom: x.bottom_row })) : null;
+  rememberScanGeometry(h,{},h===cur());
   h.athletes.forEach(at => { at.truth = null; });            // truth stays in the engine
   h.wind = null; h.img = null; h.frontRec = null;
   h.backupImg=null;
@@ -2044,13 +2071,32 @@ function guideRenderData(h,o,W,Hi,g) {
   h.guideRenderCache={key,lines};return lines;
 }
 
+function drawLaneGuides(g,h,W,Hi) {
+  const v=S.view;
+  // Decorative lane guides can be adjusted without changing the model's lane geometry.
+  const style=overlayStyle('scan'),hasPixels=(h.recvCols||0)>0||(!h.asset&&['review','saved'].includes(h.state));
+  const o=hasPixels?style:{...style,behindRunners:false};
+  if(o.enabled) {
+    const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
+    if(pending.size){g.save();g.fillStyle=o.pendingColor;g.globalAlpha=o.pendingOpacity;for(let i=0;i<edges.length-1;i++){if(!pending.has(edges[i].below))continue;const top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);if(bottom>top)g.fillRect(0,top,W,bottom-top);}g.restore();}
+    if(o.behindRunners)sampleForeground(h);
+    g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
+    guideRenderData(h,o,W,Hi,g).forEach(line=>{
+      if(o.thickness>0)g.stroke(line.path);
+    });g.restore();
+  }
+}
+
 function drawScan() {
   const [g, W, Hc] = fitCanvas(scanCv), Hi = Hc - RULER, h = viewHeat(), v = S.view;
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hc);
-  renderLaneGutter(h);
   const live = h.state === 'running', last = live ? h.liveCol : h.nCols - 1;
   const captured = h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0);
+  // No source pixels yet: use the camera's full native height, never a stale preview scale.
+  if(!captured){v.r0=0;v.zy=Hi/rowsOf(h);}
+  renderLaneGutter(h);
   if (!captured) {
+    drawLaneGuides(g,h,W,Hi);
     g.fillStyle = TK.dim; g.font = '600 13px ' + TK.sans; g.textAlign = 'center';
     const msg = { loaded: 'Heat loaded. Arm to receive the start.', armed: 'Armed. The capture streams here after the start.', running: 'Running. Capture opens as the field reaches the line.' }[h.state];
     g.fillText(msg, W / 2, Hi / 2 - 8);
@@ -2074,17 +2120,7 @@ function drawScan() {
   }
   if (live) { g.fillStyle = TK.blue; g.fillRect(xOf(last) - 1, 0, 2, Hi); }
 
-  // Decorative lane guides can be adjusted without changing the model's lane geometry.
-  const o=overlayStyle('scan');
-  if(o.enabled) {
-    const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
-    if(pending.size){g.save();g.fillStyle=o.pendingColor;g.globalAlpha=o.pendingOpacity;for(let i=0;i<edges.length-1;i++){if(!pending.has(edges[i].below))continue;const top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);if(bottom>top)g.fillRect(0,top,W,bottom-top);}g.restore();}
-    if(o.behindRunners)sampleForeground(h);
-    g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
-    guideRenderData(h,o,W,Hi,g).forEach(line=>{
-      if(o.thickness>0)g.stroke(line.path);
-    });g.restore();
-  }
+  drawLaneGuides(g,h,W,Hi);
 
   // proposals not yet resolved (dashed), then marks (solid)
   g.font='700 10px '+TK.mono;
@@ -2654,7 +2690,7 @@ if (S.autoArm) h0.state = 'armed';
 fitView(); renderUI();
 requestAnimationFrame(frame);
 if (OM) {
-  OM.on('preview.hello',d=>{const p=S.cameraSetup;if(p&&(p.starting||p.id===d.id)){p.id=d.id;p.heat.rows=d.rows;}});
+  OM.on('preview.hello',d=>{const p=S.cameraSetup;if(p&&(p.starting||p.id===d.id)){p.id=d.id;rememberScanGeometry(p.heat,d);invalidate();}});
   OM.on('preview.columns',d=>{const p=S.cameraSetup;if(!p||p.id!==d.id)return;ingestColumns(p.heat,d.first,d.count,d.data,d.data.length/(d.count*p.heat.rows));p.heat.liveCol=p.heat.recvCols-1;invalidate();});
   OM.on('preview.end',d=>{const p=S.cameraSetup;if(p?.id===d.id){p.live=false;p.heat.state='review';p.heat.nCols=Math.max(1,p.heat.recvCols||1);renderUI();}});
   OM.on('preview.error',d=>{const p=S.cameraSetup;if(p&&(p.id===d.id||p.starting)){p.failed=true;p.live=false;p.heat.state='review';toast('Preview: '+d.message,true);renderUI();}});
@@ -2666,7 +2702,7 @@ if (OM) {
   OM.on('engine.exit', () => toast('The engine process restarted. Capture and files are handled by the engine; re-open the meet folder if needed.', true));
   // The engine's camera: columns land in the capture store first, then arrive here to draw.
   const capHeat = id => HEATS.find(x => x.captureId === id) || (S.pendingCapture && !S.pendingCapture.captureId ? S.pendingCapture : null);
-  OM.on('capture.hello', d => { const h = capHeat(d.id); if (h) { h.captureId = d.id; S.pendingCapture = null; } });
+  OM.on('capture.hello', d => { const h = capHeat(d.id); if (h) { h.captureId = d.id;rememberScanGeometry(h,d);S.pendingCapture = null;invalidate(); } });
   OM.on('capture.pulse', d => { const h = capHeat(d.id); if (h && h.state === 'running') h.startPerf = performance.now(); });
   OM.on('capture.columns', d => {
     const h = capHeat(d.id);
