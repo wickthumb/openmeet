@@ -1,6 +1,6 @@
 # First prototype roadmap
 
-All items below are planned work. This initial repository establishes the project baseline on October 26, 2026.
+The initial milestones below were recorded on October 26, 2026. See the [working demo walkthrough](demo-script.md) and [desktop instructions](../app/README.md) for current implemented behavior; unchecked acceptance items and the later sections remain planned work.
 
 ## 1. Finish evidence and manual review
 
@@ -53,3 +53,16 @@ A stationary line-scan scene repeats nearly the same column over time. Estimate 
 - Any proprietary segmentation or cropping model remains in a separate service; this public app contains only its API client and display integration.
 
 Acceptance: with the option disabled, capture and review remain unchanged; with it enabled, finish columns and saved times remain identical. Background design is presentation, never replacement timing evidence.
+
+## Guided hardware setup and verification
+
+Planned for a later integration phase; see [the hardware setup blueprint](blueprint.md#11-guided-hardware-setup-with-ai-assistance).
+
+- [ ] Define a common engine adapter and device-profile contract for scoreboards, cameras, start sensors and wind gauges.
+- [ ] Select exact Daktronics scoreboard/controller and FinishLynx camera models for the first prebuilt integrations; research their official documentation and available driver/protocol interfaces.
+- [ ] Add novice-friendly setup from Scoreboard and Network, with manual model selection or photo-assisted identification.
+- [ ] Add an AI assistant that researches matching manuals and uses supported discovery/configuration/diagnostic tools.
+- [ ] Verify a physical scoreboard with a distinctive test pattern, a running clock and explicit operator confirmation.
+- [ ] Verify camera discovery, received images, stored capture and start/timestamp alignment as separate capabilities.
+- [ ] Save working profiles and source-backed setup instructions for reuse.
+- [ ] Keep unknown equipment unverified until its adapter passes actual hardware tests; provide a specification/draft path for adding support.

@@ -339,3 +339,53 @@ Sources:
 - [Using RunMeet with fully automatic timing](https://support.athletic.net/article/5h21gv5rct-using-run-meet-with-fully-automatic-timing)
 - [RunMeet timing training](https://support.athletic.net/article/h3fqgd9uuz-4-run-meet)
 - [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)
+
+## 11. Guided hardware setup with AI assistance
+
+**Planned; no hardware compatibility claim yet.** OpenMeet should help an operator who knows only “I plugged the camera in” as well as an experienced timer who supplies a precise model and protocol. This applies to physical scoreboards, photo-finish cameras, start sensors, wind gauges and other peripherals.
+
+### Operator experience
+
+1. Start from **Scoreboard → Connect a physical board** or **Network → Add equipment**. A conversational assistant can start the same flow from questions such as “Do you see my camera?” or “How do I connect this?”
+2. Discover supported devices on the chosen local connection and report what was actually observed. If the device cannot be identified, accept a photo of its label, connectors or controller display, or let the operator choose the manufacturer/model manually.
+3. Choose a prebuilt integration profile where available. Otherwise research the exact equipment using manufacturer documentation. Explain one concrete action at a time, with ordinary language and an optional technical-details view.
+4. Propose the required setup values, including any manufacturer-specific operating code, cable/port settings or network parameters. Codes must come from a matching model/controller manual or a verified profile; never substitute a plausible-looking code. Keep source references and the manual version with the recommendation.
+5. Apply settings supported by the adapter, and guide the operator through anything requiring physical controls or cables.
+6. Run an observable test. For a scoreboard, send a distinctive pattern such as `444` and ask “Do you see 444 on the scoreboard?” Then test a running clock and ask whether it advances correctly. Offer **Yes**, **No**, and **Something different**; the last choice can accept a description or photo.
+7. Record the result and save a reusable equipment profile. A failed test leads to targeted troubleshooting and another test, rather than declaring success because data was sent.
+
+### Prebuilt integrations and the AI assistant
+
+The preferred path is a tested adapter plus a model-specific setup profile. Initial candidates include Daktronics scoreboards and FinishLynx cameras, but their exact supported hardware, available protocols and driver requirements must be established before implementation.
+
+The assistant orchestrates the same tools used by manual setup:
+
+- Discover devices and inspect connection state.
+- Read supported device identity, firmware and capabilities.
+- Retrieve source-backed setup instructions for the matching equipment.
+- Read/apply adapter configuration and send a bounded diagnostic test.
+- Inspect returned status and compare the requested test with the operator's observation.
+- Save the working profile and its verification record.
+
+The scoreboard design agent and the hardware setup assistant have different jobs: the former edits an HTML template; the latter configures physical equipment through supported adapters. Reuse the conversational interface where helpful without confusing those two tasks. An unfamiliar device can produce an integration specification and an isolated adapter draft, but compatibility remains unverified until the actual hardware tests pass. Do not install or activate untested generated drivers during a live race.
+
+### What “connected” means
+
+Expose the capability that has been verified, rather than one blanket green indicator:
+
+| Equipment | Evidence to obtain |
+|---|---|
+| Physical scoreboard | Device/transport detected; requested test pattern visible; running clock visible and advancing; results fields tested where supported. |
+| Photo-finish camera | Device identified; frames received; capture written; start pulse received; timestamp/start alignment checked separately. |
+| Start sensor | Trigger observed and recorded in the meet-wide journal; the expected race is assigned that trigger. |
+| Wind gauge | Readings received; units and event association checked. |
+
+A visible test pattern verifies that display path, not the precision of race timing. Finding a camera on Ethernet does not establish that images or synchronized timestamps are available. Surface the remaining step clearly, e.g. “Camera found; waiting for images.”
+
+### Engine and data contract
+
+Add a hardware adapter registry to the native engine. Each adapter declares identification criteria, supported operating systems, transport, supported actions, profile schema and diagnostic tests. Keep discovery and configuration out of the renderer. Connection profiles store device identity, selected interface, model/controller details, public manual references, configuration, test observations and the last verified capability set. Test traffic is labelled and isolated from official race results.
+
+AI/vision inference remains behind separate service APIs. This public app ships integration code, profiles and API clients; proprietary timing/cropping models, weights, training data and model implementations remain outside the repository and installers.
+
+Acceptance for the first real integration: a novice can identify and connect one specified physical device, see a diagnostic output, confirm it, run the normal meet output, and reconnect from its saved profile. Hardware-in-the-loop evidence is required before listing that model as supported.
