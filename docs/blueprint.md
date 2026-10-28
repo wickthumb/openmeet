@@ -226,7 +226,7 @@ Drag the horizontal divider above it to change workspace and scan heights. Both 
 
 Click the main scan's camera name or the comparison card's camera name to choose a source. During review, the selected view changes while the original recording and finish times remain intact. Different camera heights and sampling periods are mapped through race time. Calibrated lane/body regions guide linked vertical zoom; without calibration the fallback is a normalized image region. Sidebar review relinks and centers the selected runner. Independent comparison navigation remains available.
 
-Lane numbers occupy a separate gutter immediately left of the image. Each row identifies one lane; each shared divider can be dragged there or over the image. Adjacent lanes need not have equal heights. Lane settings group placement, optional race checks, appearance and advanced model-input processing. Optional highlighting flags roster lanes awaiting an accepted finish or a race status; DNS/DNF/DQ/FS resolves a lane without creating a time.
+Lane numbers occupy a separate gutter immediately left of the image. Each row identifies one lane; each shared divider is always draggable there. An optional switch enables divider dragging over the image. Adjacent lanes need not have equal heights. Lane settings group placement, optional race checks, appearance and advanced model-input processing. Optional highlighting flags roster lanes awaiting an accepted finish or a race status; DNS/DNF/DQ/FS resolves a lane without creating a time.
 
 - The top bar shows the selected column's timestamp, with no caption, and the line-scan tools.
 

@@ -1476,7 +1476,7 @@ function showOverlaySettings(kind, anchor) {
       <summary>Placement</summary>
       <div class="overlay-group-body">
         <label>
-          <span>${isFront ? 'Drag to position' : 'Edit lane dividers'}</span>
+          <span>${isFront ? 'Drag to position' : 'Drag dividers on image'}</span>
           <input data-key="edit" type="checkbox" role="switch" aria-describedby="${id}-placement-help">
         </label>
         ${isFront ? `
@@ -1492,7 +1492,7 @@ function showOverlaySettings(kind, anchor) {
           </fieldset>
           <p class="overlay-hint" id="${id}-placement-help">Place the first and last numbers; the others follow their positions and sizes. Choose each lane individually to drag any number. Alt + wheel adjusts its size.</p>
         ` : `
-          <p class="overlay-hint" id="${id}-placement-help">Numbers live in a separate left lane column. Drag shared lane dividers there or over the image; neighbouring dividers stay put.</p>
+          <p class="overlay-hint" id="${id}-placement-help">Drag dividers in the left lane column anytime. Enable this switch to also drag them over the image; neighbouring dividers stay put.</p>
         `}
         <div class="overlay-actions"><button type="button" class="btn sm" data-reset>Reset positions</button></div>
       </div>
@@ -1942,8 +1942,8 @@ function renderLaneGutter(h) {
     const y=(b.row-v.r0)*v.zy;if(y<0||y>Hi)return;
     const divider=h_('button','lane-divider');divider.dataset.boundary=b.key;divider.style.top=(y-6)+'px';divider.style.setProperty('--divider-color',o.lineColor);divider.style.setProperty('--divider-width',Math.max(1,o.thickness)+'px');divider.style.setProperty('--divider-opacity',o.opacity);
     const name=b.above==null?`Top edge of lane ${b.below}`:b.below==null?`Bottom edge of lane ${b.above}`:`Boundary between lanes ${b.above} and ${b.below}`;
-    divider.title=name;divider.setAttribute('aria-label',name);divider.disabled=!o.edit;
-    divider.onmousedown=e=>{if(e.button!==0||!o.edit)return;e.preventDefault();divider.focus();const r=laneGutter.getBoundingClientRect(),offset=(e.clientY-r.top)/S.view.zy+S.view.r0-b.row;S.drag={mode:'lane-boundary',key:b.key,offset,moved:false,x0:0,y0:e.clientY-r.top,x1:0,y1:e.clientY-r.top};};
+    divider.title=name+' · Drag to adjust';divider.setAttribute('aria-label',name);
+    divider.onmousedown=e=>{if(e.button!==0)return;e.preventDefault();divider.focus();const r=laneGutter.getBoundingClientRect(),offset=(e.clientY-r.top)/S.view.zy+S.view.r0-b.row;S.drag={mode:'lane-boundary',key:b.key,offset,moved:false,x0:0,y0:e.clientY-r.top,x1:0,y1:e.clientY-r.top};};
     divider.onkeydown=e=>{if(!['ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();const value=overlayStyle('scan'),index=edges.findIndex(edge=>edge.key===b.key);value.boundaries=Object.fromEntries(edges.map(edge=>[edge.key,edge.row]));value.boundaries[b.key]=movedBoundaryRow(edges,index,b.row+(e.key==='ArrowUp'?-1:1)*(e.shiftKey?10:1),rowsOf(h));value.positions={};saveOverlay('scan',value);requestAnimationFrame(()=>{renderLaneGutter(viewHeat());laneGutter.querySelector(`[data-boundary="${CSS.escape(b.key)}"]`)?.focus();});};laneGutter.append(divider);
   });
 }

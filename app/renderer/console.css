@@ -252,7 +252,6 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .lane-divider { position:absolute;left:0;width:100%;height:12px;padding:0;border:0;background:transparent;cursor:ns-resize;z-index:2; }
 .lane-divider::after { content:'';position:absolute;left:0;right:0;top:50%;height:var(--divider-width,1px);background:var(--divider-color,var(--blue));opacity:var(--divider-opacity,.65); }
 .lane-divider:hover::after,.lane-divider:focus-visible::after { height:2px;opacity:1; }
-.lane-divider:disabled { cursor:default; }
 .lane-row:focus-visible,.lane-divider:focus-visible { outline:2px solid var(--blue);outline-offset:-2px; }
 .workspace-split { position:relative;cursor:row-resize;background:var(--deep);border-top:1px solid var(--rule2);border-bottom:1px solid var(--rule2);touch-action:none; }
 .workspace-split::after { content:'';position:absolute;left:calc(50% - 22px);top:2px;width:44px;height:2px;background:var(--dim);border-radius:2px; }

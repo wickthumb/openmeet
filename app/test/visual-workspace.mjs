@@ -65,7 +65,7 @@ try {
  const capRoot=meetDir+'/meet/openmeet/captures',capDir=capRoot+'/'+readdirSync(capRoot).sort((a,b)=>Number(b.split('-').at(-1))-Number(a.split('-').at(-1)))[0];
  const digest=name=>createHash('sha256').update(readFileSync(capDir+'/'+name)).digest('hex'),pixelsBefore=digest('columns.bin'),clocksBefore=digest('times.f64');
  assert(!await ev(`[...document.querySelectorAll('#tools button')].some(b=>b.textContent==='Crop'||b.textContent==='Unzoom')`),'Fit view has wrong zoom tools');
- await settings();await option('enabled',true);await option('edit',true);await option('needsFinish',true);await closeSettings();await sleep(120);
+ await settings();await option('enabled',true);await option('edit',false);await option('needsFinish',true);await closeSettings();await sleep(120);
  const image=await bounds('#scan'),gutter=await bounds('#laneGutter');assert(gutter.w>=38&&gutter.x+gutter.w<=image.x+1,'Gutter overlaps image');
  assert(await ev(`document.querySelectorAll('#laneGutter .lane-row').length`)===8,'Wrong lane row count');
  // Removing a marked finish highlights its lane; a status resolves it.
@@ -77,9 +77,10 @@ try {
  }
  await ev(`(()=>{const row=[...document.querySelectorAll('#list .row')].find(r=>r.querySelector('.lane').textContent.trim()==='1');const s=row.querySelector('select');s.value='';s.dispatchEvent(new Event('change'));})()`);await sleep(60);assert((await pending()).includes(1),'Cleared status did not restore highlight');
  await shot('lane-gutter-awaiting-finish');
- // A divider in the gutter changes only that shared edge; appearance edits retain it.
+ // Gutter dividers work with image editing off and move only one shared edge.
  const edges=()=>ev(`[...document.querySelectorAll('.lane-divider')].map(e=>({key:e.dataset.boundary,y:parseFloat(e.style.top)}))`);
  const edgeBefore=await edges(),edge=edgeBefore[3],r=await bounds(`[data-boundary="${edge.key}"]`);
+ assert(await ev(`document.querySelectorAll('#laneGutter .lane-divider:disabled').length`)===0,'Gutter still requires edit mode');
  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:r.x+r.w/2,y:r.y+r.h/2,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:r.x+r.w/2,y:r.y+r.h/2+8,button:'left',buttons:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:r.x+r.w/2,y:r.y+r.h/2+8,button:'left',clickCount:1});await sleep(100);
  const edgeAfter=await edges();assert(edgeAfter.filter((e,i)=>Math.abs(e.y-edgeBefore[i].y)>.1).length===1,'Gutter drag changed multiple boundaries');
  await settings();await option('fontSize',22);await ev(`document.querySelector('.overlay-settings [data-defaults]').click()`);await closeSettings();assert(JSON.stringify(await edges())===JSON.stringify(edgeAfter),'Appearance reset moved boundaries');
