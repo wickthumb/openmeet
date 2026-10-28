@@ -1,0 +1,13 @@
+; OpenMeet test fixture: windows-1252 bytes, CRLF line endings
+3,1,2,"Women’s 100m Hurdles, Final",1.2,m/s,hurdles,10,12,100,15:30:00.00,auto,
+,101,4,Renée,Zoë,"St. Mary’s, ""Gaels""",LIC1
+	,102,5,O’Brien,Kate,Lake – Shore
+ ,103,6,Smith,Ann,Central
+	105,8,Tab,Only,West
+\DNF,104,7,Lee,Mia,North
+18B,2,1,Boys 4x100 Relay
+
+   
+1,1,1,Men’s 100m,,,,,,100
+,201,,Lane,Less,Blank Lane
+,0,3,Noid,Ath,No ID
