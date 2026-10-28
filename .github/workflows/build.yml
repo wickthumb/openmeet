@@ -23,6 +23,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - name: Check public model boundary
+        run: node scripts/check-public-boundary.mjs
       - name: Install app dependencies
         working-directory: app
         run: npm ci

@@ -38,3 +38,17 @@ coverage/
 *.log
 .DS_Store
 Thumbs.db
+
+# Proprietary services are maintained outside the public application
+private-models/
+proprietary/
+checkpoints/
+training/
+*.tflite
+*.mlmodel
+*.mlpackage
+*.pkl
+*.pickle
+*.joblib
+*.npy
+*.npz

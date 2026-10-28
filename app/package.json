@@ -50,7 +50,9 @@
           "server.js",
           "package.json"
         ]
-      }
+      },
+      "!**/{models,weights,checkpoints,datasets,training,private-models,proprietary,recordings}/**",
+      "!**/*.{pt,pth,ckpt,safetensors,onnx,tflite,mlmodel,mlpackage,gguf,h5,hdf5,pkl,pickle,joblib,npy,npz}"
     ],
     "win": {
       "target": [
