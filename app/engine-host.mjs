@@ -105,7 +105,7 @@ async function finishService() {
 
 // The captured strip as a native-orientation PNG, read back from the capture store (the record, not the console's copy).
 // Columns [from, to] of the captured strip (to defaults to the latest), so a capture still being recorded can be read too.
-async function stripPng(dir, from = 0, to = null) {
+async function stripPng(dir, from = 0, to = null, laneGuides = null) {
   const store = core.openCaptureStore(dir, { readOnly: true });
   try {
     const meta = store.meta(), total = store.columnCount(), rows = meta.rows, ch = meta.channels;
@@ -117,7 +117,7 @@ async function stripPng(dir, from = 0, to = null) {
       for (let k = 0; k < ch; k++) rm[d + k] = cm[s + k];
     }
     return {
-      png: core.encodePng({ width: n, height: rows, channels: ch, data: rm }, { filter: () => 1 }),
+      png: core.encodePng(core.renderLaneGuides({ width: n, height: rows, channels: ch, data: rm },laneGuides), { filter: () => 1 }),
       rows, columns: n, channels: ch, from: a, firstRaceTime: store.raceTimeOf(a), period: meta.columnPeriod,
     };
   } finally { await store.close(); }
@@ -164,11 +164,12 @@ const methods = {
     return meet;
   },
   // Build and write one heat's results with the engine core: {dir, heat: LifHeat, results: LifResult[]}.
-  async 'lif.save'({ dir, heat, results }) {
+  async 'lif.save'({ dir, heat, results, captureId }) {
     if (!core) throw new Error('engine core missing from this build');
     if (!dir) throw new Error('no meet folder open');
     const name = core.lifName(heat.event, heat.round, heat.heat);
     const text = core.buildLif(heat, results);
+    if(captureId && captures.has(captureId)) await core.writeLifAtomic(captures.get(captureId).dir,name,text);
     const p = await core.writeLifAtomic(dir, name, text);
     return { path: p, name, text };
   },
@@ -209,10 +210,10 @@ const methods = {
     return { stub: !at.baseUrl && !at.cli, live: (!at.baseUrl && !at.cli) || !!at.live };
   },
   // {captureId, heat, startList, laneRows?, fromCol?, toCol?}: columns in the reply are relative to `fromCol` (returned).
-  async 'autotiming.predict'({ captureId, heat, startList, laneRows, fromCol = 0, toCol = null }) {
+  async 'autotiming.predict'({ captureId, heat, startList, laneRows, fromCol = 0, toCol = null, laneGuides = null }) {
     const cap = captures.get(captureId);
     if (!cap) throw new Error('unknown capture');
-    const strip = await stripPng(cap.dir, fromCol, toCol);
+    const strip = await stripPng(cap.dir, fromCol, toCol,laneGuides);
     const svc = await finishService();
     if (svc.stub) {
       // The stand-in is not a model: it echoes the simulator truth registered for this exact strip (sha256 of the PNG).
@@ -223,8 +224,10 @@ const methods = {
       });
       if (!r.ok) throw new Error(`stand-in truth registration failed (${r.status})`);
     }
+    const requestId=randomUUID(),inputDerived=!!laneGuides?.enabled;
+    await fsp.appendFile(path.join(cap.dir,'model-inputs.jsonl'),JSON.stringify({requestId,at:new Date().toISOString(),fromCol:strip.from,columns:strip.columns,inputDerived,laneGuides:inputDerived?laneGuides:null,sha256:createHash('sha256').update(strip.png).digest('hex')})+'\n');
     const res = await svc.client.predict({
-      request_id: randomUUID(),
+      request_id: requestId,
       heat: { event: String(heat.event), round: heat.round, heat: heat.heat, race_type: 'laned_sprint' },
       strip: { encoding: 'png', data_base64: strip.png.toString('base64'), rows: strip.rows, columns: strip.columns, channels: strip.channels, orientation: 'native' },
       timebase: { first_column_race_time_s: strip.firstRaceTime, column_period_s: strip.period },
@@ -232,7 +235,7 @@ const methods = {
       // lane_rows may only name lanes on the start list (contract v1)
       ...(laneRows && laneRows.length ? { lane_rows: laneRows.filter(b => startList.some(s => s.lane === b.lane)) } : {}),
     });
-    return { ...res, stub: svc.stub, fromCol: strip.from };
+    return { ...res, stub: svc.stub, fromCol: strip.from, inputDerived };
   },
   async 'lif.write'({ dir, name, text }) {
     if (!dir || !/^[\w-]+\.lif$/i.test(name)) throw new Error('bad results file name');

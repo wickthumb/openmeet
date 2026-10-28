@@ -17,3 +17,5 @@ export {
   HEAT_STATES, STATUS_CODES, MARK_SOURCES, EVENT_TYPES,
 } from './heat/state.js';
 export * from './scoreboard/index.js';
+
+export { renderLaneGuides } from './capture/lane-guides.js';
