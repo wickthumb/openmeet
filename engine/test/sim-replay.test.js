@@ -141,3 +141,14 @@ test('preRollFrom: the camera streams from the gun, empty-scene columns first, t
   assert.deepEqual(all.subarray(0, colBytes), all.subarray(99 * colBytes, 100 * colBytes), 'pre-roll columns are identical');
   assert.deepEqual(all.subarray(100 * colBytes), Buffer.from(columnsOf(img, 0, 40)), 'then the image, unchanged');
 });
+
+test('holdOpen streams beyond the source recording until the operator aborts', async () => {
+ const image=testImage(2,3,3,7),controller=new AbortController();
+ const gen=simReplay({png:encodePng(image),sidecar:{column_period_s:0.001,first_column_race_time_s:0},holdOpen:true,signal:controller.signal,chunkColumns:2});
+ assert.equal((await gen.next()).value.type,'hello');
+ assert.equal((await gen.next()).value.type,'start_pulse');
+ const source=(await gen.next()).value,tail=(await gen.next()).value;
+ assert.equal(tail.type,'columns');assert.equal(tail.firstHwTime,source.firstHwTime+0.002);
+ assert.equal(tail.count,2);
+ controller.abort();assert.equal((await gen.next()).value.type,'end');assert.equal((await gen.next()).done,true);
+});

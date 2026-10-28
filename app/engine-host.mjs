@@ -67,13 +67,16 @@ async function runCapture(id, store, gen) {
       if (msg.type === 'hello') emit('capture.hello', { id, rows: msg.rows, channels: msg.channels, columnPeriod: msg.columnPeriod, model: msg.model });
       else if (msg.type === 'start_pulse') emit('capture.pulse', { id, hwTime: msg.hwTime });
       else if (msg.type === 'columns') emit('capture.columns', { id, first: store.columnCount() - msg.count, count: msg.count, period: msg.period, data: msg.data });
-      else if (msg.type === 'end') emit('capture.end', { id, columns: store.columnCount() });
+      // Completion is reported only after the capture store has been closed below.
     }
   } catch (err) {
-    emit('capture.error', { id, message: err.message || String(err) });
+    if (err.name !== 'AbortError') emit('capture.error', { id, message: err.message || String(err) });
   } finally {
+    const columns = store.columnCount();
+    if (active?.id === id && active.timer) clearTimeout(active.timer);
     try { await store.close(); } catch { /* already closed */ }
     if (active && active.id === id) active = null;
+    emit('capture.end', { id, columns });
   }
 }
 
@@ -171,7 +174,7 @@ const methods = {
   },
   // Start the simulated camera on a rendered line-scan: {key, png, sidecar, speed, meetDir}.
   // Captures live in <meet folder>/openmeet/captures/, beside the meet manager's files and never mixed into them.
-  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front }) {
+  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null }) {
     if (!core) throw new Error('engine core missing from this build');
     if (active) throw new Error('a capture is already running');
     const id = `${String(key || 'heat').replace(/[^\w-]/g, '_')}-${Date.now()}`;
@@ -191,12 +194,14 @@ const methods = {
     const trigger = meetDir ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
     if (trigger) (await startJournal(meetDir)).assign({ heatKey: key, triggerId: trigger.id, referenceTriggerId: trigger.id });
     captures.set(id, { dir, sidecar, trigger });
-    active = { id, stop: false };
+    const controller = new AbortController();
+    active = { id, stop: false, controller };
+    if(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) active.timer=setTimeout(()=>{ if(active?.id===id) controller.abort(); },timeoutSeconds/speed*1000);
     // The camera runs from the gun (race time 0), like a real line-scan, not just around the finish.
-    runCapture(id, store, core.simReplay({ png, sidecar, realtime: true, speed, model: 'sim-render', preRollFrom: 0 }));
+    runCapture(id, store, core.simReplay({ png, sidecar, realtime: true, speed, model: 'sim-render', preRollFrom: 0, holdOpen: true, signal: controller.signal }));
     return { id, dir, front: frontRec, trigger };
   },
-  async 'capture.stop'() { if (active) active.stop = true; return { ok: true }; },
+  async 'capture.stop'() { if (active) { active.stop = true; active.controller.abort(); } return { ok: true }; },
   // Ask the finish model about a finished capture: {captureId, heat: {event, round, heat}, startList: [{lane, id}], laneRows?}.
   // Live mode for services fast enough to call during the race (the stand-in, or a service configured with live: true).
   async 'autotiming.info'() {

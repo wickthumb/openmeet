@@ -107,9 +107,11 @@ export function columnsOf(img, x0, n) {
  * @param {string} [o.model='sim-replay']
  * @param {number} [o.preRollFrom]   Race time to start streaming from (e.g. 0 = the gun). Columns before the image
  *                                     repeat the empty scene (per-row median of the image's first columns).
+ * @param {boolean} [o.holdOpen=false] Continue streaming the empty scene until the operator stops.
+ * @param {AbortSignal} [o.signal] Stop capture promptly, including during paced waits.
  * @returns {AsyncGenerator<CameraMsg>}
  */
-export async function* simReplay({ png, sidecar, realtime = false, speed = 1, chunkColumns = SIM_CHUNK_COLUMNS, model = 'sim-replay', preRollFrom }) {
+export async function* simReplay({ png, sidecar, realtime = false, speed = 1, chunkColumns = SIM_CHUNK_COLUMNS, model = 'sim-replay', preRollFrom, holdOpen = false, signal }) {
   const sc = readSidecar(sidecar);
   /** @type {DecodedImage} */
   let img;
@@ -133,7 +135,7 @@ export async function* simReplay({ png, sidecar, realtime = false, speed = 1, ch
     if (realtime) {
       const dueMs = ((firstRace + (x0 - nPre + n) * period) / speed) * 1000;
       const wait = t0 + dueMs - performance.now();
-      if (wait > 0) await sleep(wait);
+      if (wait > 0) await sleep(wait, undefined, { signal });
     }
     let data;
     if (x0 >= nPre) data = columnsOf(img, x0 - nPre, n);
@@ -150,6 +152,18 @@ export async function* simReplay({ png, sidecar, realtime = false, speed = 1, ch
       count: n,
       data,
     };
+  }
+  // The recording ending does not stop a live camera: keep capturing the empty track.
+  if (holdOpen) {
+    const last = columnsOf(img, img.width - 1, 1), tail = new Uint8Array(chunkColumns * last.length);
+    for(let i=0;i<chunkColumns;i++) tail.set(last,i*last.length);
+    for(let x0=total;!signal?.aborted;x0+=chunkColumns) {
+      if(realtime) {
+        const wait=t0+((firstRace+(x0-nPre+chunkColumns)*period)/speed)*1000-performance.now();
+        if(wait>0) await sleep(wait,undefined,{signal});
+      }
+      yield { type:'columns', firstHwTime:SIM_START_HW_TIME+firstRace+(x0-nPre)*period, period, count:chunkColumns, data:tail };
+    }
   }
   yield { type: 'end' };
 }
