@@ -158,6 +158,28 @@ test('touching a file without changing it does not emit; close() stops emits', a
   }
 });
 
+test('same size, same mtime rewrite (coarse timestamps) is caught by the periodic content check', async () => {
+  const dir = tmp();
+  const c = collector();
+  const close = watchMeetFolder(dir, c.onChange, { fsWatch: false, pollMs: 30, settleMs: 30, rereadMs: 150 });
+  try {
+    const p = join(dir, 'lynx.evt');
+    const a = '1,1,1,Men 100\r\n,11,3,A,One\r\n,12,4,B,Two\r\n';
+    const b = '1,1,1,Men 100\r\n,11,4,A,One\r\n,12,3,B,Two\r\n'; // lane swap, same length
+    writeFileSync(p, a);
+    const fixed = new Date('2026-10-28T12:00:00Z');
+    utimesSync(p, fixed, fixed);
+    await c.next(1);
+    writeFileSync(p, b);
+    utimesSync(p, fixed, fixed);
+    const s = await c.next(2);
+    assert.deepEqual(s.events[0].entries.map((e) => [e.id, e.lane]), [['11', 4], ['12', 3]]);
+  } finally {
+    await close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('missing folder: no crash, picks up once created', async () => {
   const parent = tmp();
   const dir = join(parent, 'meet');

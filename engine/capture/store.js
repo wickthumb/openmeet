@@ -91,7 +91,18 @@ export function openCaptureStore(dir, opts = {}) {
   };
 
   /** @type {CaptureMeta | null} */
-  let meta = existsSync(p.meta) ? JSON.parse(readFileSync(p.meta, 'utf8')) : null;
+  let meta = null;
+  if (existsSync(p.meta)) {
+    try {
+      meta = JSON.parse(readFileSync(p.meta, 'utf8'));
+    } catch (err) {
+      throw new Error(`capture store ${dir}: meta.json unreadable (${/** @type {Error} */ (err).message})`);
+    }
+    const m = /** @type {any} */ (meta);
+    if (!(Number.isInteger(m?.rows) && m.rows > 0 && Number.isInteger(m.channels) && m.channels > 0)) {
+      throw new Error(`capture store ${dir}: meta.json lacks valid rows/channels`);
+    }
+  }
   const binSize = sizeOf(p.columns);
   const timesSize = sizeOf(p.times);
   if (!meta && (binSize > 0 || timesSize > 0)) {
@@ -116,11 +127,10 @@ export function openCaptureStore(dir, opts = {}) {
   /** @type {any[]} */
   const events = [];
   if (existsSync(p.events)) {
-    const text = readFileSync(p.events, 'utf8');
-    const lastNl = text.lastIndexOf('\n');
-    const whole = text.slice(0, lastNl + 1);
-    recovery.eventsBytesCut = Buffer.byteLength(text) - Buffer.byteLength(whole);
-    for (const line of whole.split('\n')) {
+    const buf = readFileSync(p.events);
+    const keep = buf.lastIndexOf(0x0a) + 1; // bytes, so a torn multi-byte character counts right
+    recovery.eventsBytesCut = buf.length - keep;
+    for (const line of buf.subarray(0, keep).toString('utf8').split('\n')) {
       if (!line) continue;
       try {
         events.push(JSON.parse(line));
@@ -129,6 +139,7 @@ export function openCaptureStore(dir, opts = {}) {
       }
     }
   }
+  /** @type {number | null} */
   let startHw = null;
   for (const e of events) if (e.type === 'start_pulse') startHw = e.hwTime;
 

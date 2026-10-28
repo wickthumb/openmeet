@@ -138,6 +138,29 @@ test('crash recovery: torn trailing column, missing timestamp, torn event line',
   }
 });
 
+test('torn event line ending inside a multi-byte character is cut by bytes', () => {
+  const dir = tmp();
+  try {
+    const s = openCaptureStore(dir);
+    s.append({ ...hello, model: 'café-cam' });
+    s.close();
+    const torn = Buffer.from('{"type":"note","text":"é', 'utf8').subarray(0, -1); // half of the 2-byte e-acute
+    appendFileSync(join(dir, 'events.jsonl'), torn);
+    const r = openCaptureStore(dir);
+    assert.equal(r.recovery.eventsBytesCut, torn.length);
+    assert.equal(r.events()[0].model, 'café-cam');
+    r.close();
+    const lines = readFileSync(join(dir, 'events.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    assert.deepEqual(lines.map((e) => e.type), ['hello', 'recovered']);
+    writeFileSync(join(dir, 'meta.json'), '{"rows": 0}');
+    assert.throws(() => openCaptureStore(dir), /valid rows\/channels/);
+    writeFileSync(join(dir, 'meta.json'), '{');
+    assert.throws(() => openCaptureStore(dir), /meta\.json unreadable/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('readOnly: never truncates or writes', () => {
   const dir = tmp();
   try {

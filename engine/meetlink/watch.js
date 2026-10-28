@@ -36,12 +36,17 @@ const sigOf = (s) => `${s.size}:${s.mtimeMs}:${s.ino}`;
  * the read; an empty file or a parse error keeps the last good data and is
  * retried on the next scan. Nothing is emitted for those.
  *
+ * Coarse timestamps: a same-size rewrite within the file system's mtime
+ * resolution leaves the stat unchanged (a lane swap can do that), so every
+ * `rereadMs` the bytes are re-read and compared as well.
+ *
  * @param {string} dir
  * @param {(snapshot: MeetFolderSnapshot) => void} onChange
  * @param {object} [opts]
  * @param {number} [opts.debounceMs=250]  Quiet time after an fs.watch event.
  * @param {number} [opts.pollMs=1000]     Polling interval (the fallback).
  * @param {number} [opts.settleMs]        Stability window; defaults to debounceMs.
+ * @param {number} [opts.rereadMs=5000]  Content re-check interval for unchanged stats (0 = off).
  * @param {boolean} [opts.fsWatch=true]   false = polling only.
  * @param {(err: Error, file: string) => void} [opts.onError]  Parse errors, once per file version.
  * @returns {() => Promise<void>} close(): stops watching; resolves when an in-flight scan ends.
@@ -50,13 +55,14 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
   const debounceMs = opts.debounceMs ?? 250;
   const pollMs = opts.pollMs ?? 1000;
   const settleMs = opts.settleMs ?? debounceMs;
+  const rereadMs = opts.rereadMs ?? 5000;
   const useFsWatch = opts.fsWatch ?? true;
   const onError = opts.onError ?? (() => {});
 
-  /** @type {Record<string, {sig: string|null, pendingSig: string|null, pendingSince: number, errSig: string|null, bytes: Buffer|null, data: unknown[]}>} */
+  /** @type {Record<string, {sig: string|null, pendingSig: string|null, pendingSince: number, checkedAt: number, errSig: string|null, bytes: Buffer|null, data: unknown[]}>} */
   const files = {};
   for (const name of MEET_FILES) {
-    files[name] = { sig: null, pendingSig: null, pendingSince: 0, errSig: null, bytes: null, data: [] };
+    files[name] = { sig: null, pendingSig: null, pendingSince: 0, checkedAt: 0, errSig: null, bytes: null, data: [] };
   }
 
   let closed = false;
@@ -133,7 +139,15 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
       try {
         const s1 = await stat(path);
         const sig = sigOf(s1);
-        if (sig === f.sig) continue;
+        if (sig === f.sig) {
+          if (!rereadMs || Date.now() - f.checkedAt < rereadMs) continue;
+          f.checkedAt = Date.now();
+          const again = await readFile(path);
+          if (f.bytes && again.equals(f.bytes)) continue;
+          f.sig = null; // same stat, different bytes: treat as a new version
+          sighting(f, sig);
+          continue;
+        }
         if (sig !== f.pendingSig) {
           sighting(f, sig); // new version: wait for it to hold still
           continue;
@@ -161,6 +175,7 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
           continue; // retry next scan
         }
         f.sig = sig;
+        f.checkedAt = Date.now();
         if (f.bytes && f.bytes.equals(bytes)) continue; // touched, not changed
         f.bytes = bytes;
         f.data = data;
