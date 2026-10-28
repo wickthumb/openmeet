@@ -61,3 +61,7 @@ await close();
 ```
 
 Persist the heat event log yourself (e.g. `openmeet/<heat>/heat.jsonl`); `reduce(log)` rebuilds the state after a restart.
+
+## Start triggers
+
+`timing/starts.js` keeps a meet-wide, fsynced journal in `openmeet/starts.jsonl`. Every received trigger retains its source, clock domain, timestamp, wall-clock display time and optional capture ID. Assignments reference a heat, a selected trigger and the capture's original start trigger; each reassignment appends history. Different clock domains cannot be mixed. The console subtracts the selected start offset from elapsed times while leaving captured columns and front-camera synchronization fixed. Re-save corrected heats to update LIF exports. The current camera and manual trigger button are simulated; a future sensor adapter calls `starts.record` for every pulse, including unassigned pulses.

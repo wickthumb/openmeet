@@ -123,6 +123,17 @@ async function stripPng(dir, from = 0, to = null) {
 const settingsPath = path.join(userData, 'openmeet-settings.json');
 async function loadSettings() { try { return JSON.parse(await fsp.readFile(settingsPath, 'utf8')); } catch { return {}; } }
 
+const startJournals = new Map();
+async function startJournal(dir) {
+  if (!dir) throw new Error('Open a meet folder first');
+  const key = path.resolve(dir);
+  if (!startJournals.has(key)) {
+    const { openStartJournal } = await import(pathToFileURL(locate('engine/timing/starts.js')).href);
+    startJournals.set(key, openStartJournal(key));
+  }
+  return startJournals.get(key);
+}
+
 const methods = {
   async ping() { return { ok: true, pid: process.pid, core: !!core, node: process.versions.node }; },
   async 'settings.get'() { return loadSettings(); },
@@ -131,6 +142,13 @@ const methods = {
     await fsp.mkdir(userData, { recursive: true });
     await fsp.writeFile(settingsPath, JSON.stringify(s, null, 2));
     return s;
+  },
+  async 'starts.list'({ dir }) { return (await startJournal(dir)).list(); },
+  async 'starts.record'({ dir, clockId, timeS, source, captureId, wallTimeMs }) {
+    return (await startJournal(dir)).record({ clockId, timeS, source, captureId, wallTimeMs });
+  },
+  async 'starts.assign'({ dir, heatKey, triggerId, referenceTriggerId }) {
+    return (await startJournal(dir)).assign({ heatKey, triggerId, referenceTriggerId });
   },
   async 'meet.open'({ dir }) {
     if (!dir) throw new Error('no folder given');
@@ -169,11 +187,14 @@ const methods = {
       frontRec = { path: vp, meta: front.meta || null };
     }
     const store = core.openCaptureStore(dir);
-    captures.set(id, { dir, sidecar });
+    const pulseMs = Date.now();
+    const trigger = meetDir ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
+    if (trigger) (await startJournal(meetDir)).assign({ heatKey: key, triggerId: trigger.id, referenceTriggerId: trigger.id });
+    captures.set(id, { dir, sidecar, trigger });
     active = { id, stop: false };
     // The camera runs from the gun (race time 0), like a real line-scan, not just around the finish.
     runCapture(id, store, core.simReplay({ png, sidecar, realtime: true, speed, model: 'sim-render', preRollFrom: 0 }));
-    return { id, dir, front: frontRec };
+    return { id, dir, front: frontRec, trigger };
   },
   async 'capture.stop'() { if (active) active.stop = true; return { ok: true }; },
   // Ask the finish model about a finished capture: {captureId, heat: {event, round, heat}, startList: [{lane, id}], laneRows?}.

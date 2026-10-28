@@ -194,6 +194,7 @@ function places(h) {
   return { fin, pl };
 }
 const colTime = (h, col) => h.tOpen + (col + 0.5) * P;
+const raceTime = (h, col) => colTime(h, col) - (h.startCorrection || 0);
 function lifText(h) {
   const tod = h.startTOD ? todStr(h.startTOD) : '';
   const wind = h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1);
@@ -201,14 +202,14 @@ function lifText(h) {
   const { fin, pl } = places(h);
   let prevT = null;
   fin.forEach(a => {
-    const t = ceilTo(colTime(h, h.marks[a.lane].col), 3);
+    const t = ceilTo(raceTime(h, h.marks[a.lane].col), 3);
     const delta = prevT == null ? t : t - prevT;
     prevT = t;
     lines.push([pl[a.lane], a.id, a.lane, q(a.last), q(a.first), q(a.team.name), fmtT(t), '', fmtT(delta), '', '', tod, '', '', ''].join(','));
   });
   h.athletes.filter(a => h.status[a.lane]).forEach(a => {
     const st = h.status[a.lane];
-    const t = st === 'DQ' && h.marks[a.lane] ? fmtT(colTime(h, h.marks[a.lane].col)) : '';
+    const t = st === 'DQ' && h.marks[a.lane] ? fmtT(raceTime(h, h.marks[a.lane].col)) : '';
     lines.push([st, a.id, a.lane, q(a.last), q(a.first), q(a.team.name), t, '', '', '', '', tod, '', '', ''].join(','));
   });
   return lines.join('\n');
@@ -326,11 +327,11 @@ const snap = h => JSON.stringify({ marks: h.marks, status: h.status });
 // Final suggestions for the whole capture. Live marks the operator has not touched follow the final answer.
 function applyProposals(h, props, meta = {}) {
   const untouched = h.base === snap(h);
-  h.proposals = props; h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;
+  h.proposals = props.filter(p=>!h.dismissed?.[p.lane]); h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;
   h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
   h.proposals.forEach(p => {
     const mk = h.marks[p.lane];
-    if (h.status[p.lane]) return;
+    if (h.status[p.lane] || h.dismissed?.[p.lane]) return;
     if (p.decision === 'auto' && (!mk || mk.src === 'auto')) h.marks[p.lane] = { col: p.col, src: 'auto' };
     else if (p.decision === 'review' && mk && mk.src === 'auto') delete h.marks[p.lane];   // a live auto-accept the final pass flags goes back to review
   });
@@ -352,7 +353,7 @@ const toProps = res => res.predictions.map(p => ({ lane: p.lane, col: (res.fromC
 const LIVE_LAG = 0.15, LIVE_EVERY = 0.35;
 function mergeLive(h, props, seenToT) {
   const by = new Map((h.proposals || []).map(p => [p.lane, p]));
-  props.forEach(p => by.set(p.lane, { ...p, model: p.model || p.decision }));
+  props.filter(p=>!h.dismissed?.[p.lane]).forEach(p => by.set(p.lane, { ...p, model: p.model || p.decision }));
   const all = [...by.values()].sort((a, b) => a.col - b.col);
   all.forEach(p => { p.decision = p.model; if (p.model === 'auto') p.reason = p.reason === 'close_finish' ? '' : p.reason; });
   for (let i = 1; i < all.length; i++) {
@@ -362,7 +363,7 @@ function mergeLive(h, props, seenToT) {
   h.proposals = all;
   const settledT = seenToT - LIVE_LAG;
   all.forEach(p => {
-    if (h.status[p.lane] || h.marks[p.lane]) return;
+    if (h.status[p.lane] || h.marks[p.lane] || h.dismissed?.[p.lane]) return;
     if (p.decision === 'auto' && colTime(h, p.col) + 0.02 <= settledT) h.marks[p.lane] = { col: p.col, src: 'auto' };
   });
 }
@@ -372,14 +373,15 @@ function liveSuggest(h) {
     if (!h.captureId || h.liveBusy || (S.atInfo && !S.atInfo.live)) return;
     if (h.liveTo != null && colTime(h, h.liveCol) - colTime(h, h.liveTo) < LIVE_EVERY) return;
     const fromCol = Math.max(0, (h.liveTo == null ? 0 : h.liveTo) - Math.round(0.6 / P)), toCol = h.liveCol;
+    const runVersion = h.runVersion;
     h.liveBusy = true; h.req = 'live';
     OM.call('autotiming.predict', predictParams(h, { fromCol, toCol })).then(res => {
-      if (h.state !== 'running' && h.state !== 'review') return;
+      if (h.runVersion !== runVersion || h.state !== 'running') return;
       const seenT = colTime(h, toCol);
       mergeLive(h, toProps(res).filter(p => p.t <= seenT - LIVE_LAG), seenT);
       h.liveTo = toCol; h.model = res.model; h.stub = !!res.stub;
       if (cur() === h) { renderProps(); renderSide(); invalidate(); }
-    }).catch(() => {}).finally(() => { h.liveBusy = false; });
+    }).catch(() => {}).finally(() => { if(h.runVersion === runVersion) h.liveBusy = false; });
   } else {
     if (!h.allProps) h.allProps = makeProposals(h);   // the simulated model, revealed as athletes cross
     const seenT = h.tNow;
@@ -418,7 +420,9 @@ function disarm() { const h = cur(); if (h.state === 'armed') { h.state = 'loade
 function fire() {
   const h = cur();
   if (h.state !== 'armed') return;
+  h.runVersion = (h.runVersion || 0) + 1;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
+  h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {};
   h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';
   S.view.user = false; S.selCol = null;
   if (h.asset && OM) {
@@ -427,14 +431,21 @@ function fire() {
       key: `${h.ev}-${h.rd}-${h.ht}`, png: h.asset.primary, sidecar: h.asset.primaryMeta, speed: SPEED, meetDir: S.meet && S.meet.dir,
       front: h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta } : null,
     })
-      .then(r => { h.captureId = r.id; h.captureDir = r.dir; if (r.front) h.frontRec = r.front; })
+      .then(r => { h.captureId = r.id; h.captureDir = r.dir; if (r.trigger) { h.startReference = r.trigger; h.startCorrection = 0; h.startTOD = new Date(r.trigger.wallTimeMs); } if (r.front) h.frontRec = r.front; })
       .catch(err => { S.pendingCapture = null; h.state = 'armed'; toast('The camera did not start: ' + err.message, true); renderUI(); });
+  }
+  if (!h.asset && OM && S.meet) {
+    OM.call('starts.record', { dir:S.meet.dir, clockId:'simulated-meet-clock', timeS:h.startTOD.getTime()/1000, wallTimeMs:h.startTOD.getTime(), source:'Simulated start' }).then(async trigger => {
+      h.startReference = trigger;
+      await OM.call('starts.assign', { dir:S.meet.dir, heatKey:`${h.ev}-${h.rd}-${h.ht}`, triggerId:trigger.id, referenceTriggerId:trigger.id });
+    }).catch(err => toast('Start could not be recorded: '+err.message,true));
   }
   renderUI();
 }
 function recall() {
   const h = cur();
   if (h.state !== 'running') return;
+  h.runVersion = (h.runVersion || 0) + 1;
   h.state = 'armed'; h.liveCol = -1; h.startTOD = null; h.tNow = 0; h.marks = {}; h.proposals = null; h.allProps = null; h.liveTo = null; h.req = 'idle';
   if (h.asset && OM) { OM.call('capture.stop').catch(() => {}); h.captureId = null; S.pendingCapture = null; blankStrip(h); }
   toast('Recall: false start. Heat re-armed. Set FS on the athlete from their row.');
@@ -451,7 +462,8 @@ function setMark(lane, col) {
   const h = cur();
   if (col == null || !(['review', 'saved'].includes(h.state) || (h.state === 'running' && col <= h.liveCol))) return;   // marking works while capturing too
   const p = h.proposals && h.proposals.find(x => x.lane === lane);
-  const src = p ? (p.col === col ? (p.decision === 'auto' ? 'auto' : 'checked') : 'edited') : 'manual';
+  const src = p ? (p.col === col ? 'checked' : 'edited') : 'manual';
+  if (h.dismissed) delete h.dismissed[lane];
   h.marks[lane] = { col, src };
   if (h.status[lane] && h.status[lane] !== 'DQ') delete h.status[lane];
   editHeat(h); renderUI();
@@ -488,7 +500,7 @@ function lifRequest(h) {
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
     results: h.athletes.map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
-      return { id: a.id, lane: a.lane, last: a.last, first: a.first, affiliation: a.team.name, startTimeOfDay: tod, ...(st ? { status: st } : {}), ...(mk && (!st || st === 'DQ') ? { time: colTime(h, mk.col) } : {}) };
+      return { id: a.id, lane: a.lane, last: a.last, first: a.first, affiliation: a.team.name, startTimeOfDay: tod, ...(st ? { status: st } : {}), ...(mk && (!st || st === 'DQ') ? { time: raceTime(h, mk.col) } : {}) };
     }),
   };
 }
@@ -548,7 +560,7 @@ function warnings(h) {
 }
 
 // ---------------------------------------------------------------- header + sidebar
-const TABS = [['run', 'Run'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['settings', 'Settings']];
+const TABS = [['run', 'Run'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
@@ -610,12 +622,12 @@ function renderSide() {
     const mk = h.marks[a.lane], st = h.status[a.lane], p = h.proposals && h.proposals.find(x => x.lane === a.lane);
     let res;
     if (st) {
-      res = `<span class="tag ${st === 'DQ' ? 'bad' : 'review'}">${st}</span>${st === 'DQ' && mk ? `<span class="sub num">${official(colTime(h, mk.col))}</span>` : ''}`;
+      res = `<span class="tag ${st === 'DQ' ? 'bad' : 'review'}">${st}</span>${st === 'DQ' && mk ? `<span class="sub num">${official(raceTime(h, mk.col))}</span>` : ''}`;
     } else if (mk) {
       const src = { auto: ['AUTO', 'auto'], checked: ['CHECKED', 'info'], edited: ['EDITED', 'info'], manual: ['MANUAL', 'info'] }[mk.src];
-      res = `<span class="t">${official(colTime(h, mk.col))}</span><span class="sub"><span class="num">P${pl[a.lane]} · ${fmtT(colTime(h, mk.col))}</span><span class="tag ${src[1]}">${src[0]}</span></span>`;
+      res = `<span class="t">${official(raceTime(h, mk.col))}</span><span class="sub"><span class="num">P${pl[a.lane]} · ${fmtT(raceTime(h, mk.col))}</span><span class="tag ${src[1]}">${src[0]}</span></span>`;
     } else if (p) {
-      res = `<span class="t prop">${official(colTime(h, p.col))}</span><span class="sub"><span class="tag review">REVIEW</span></span>`;
+      res = `<span class="t prop">${official(raceTime(h, p.col))}</span><span class="sub"><span class="tag review">REVIEW</span></span>`;
     } else {
       res = `<span class="t prop">${running ? 'racing' : '—'}</span><span class="sub">${h.state === 'review' || h.state === 'saved' ? 'no time' : 'pending'}</span>`;
     }
@@ -673,13 +685,13 @@ function tickClock() {
   const h = cur(), c = $('#clock'), sub = $('#clocksub');
   if (!c) return;
   const done = ['review', 'saved'].includes(h.state), win = done ? places(h).fin[0] : null;
-  if (h.state === 'running') c.textContent = (Math.floor(h.tNow * 10) / 10).toFixed(1);
-  else if (win) c.textContent = official(colTime(h, h.marks[win.lane].col));
+  if (h.state === 'running') c.textContent = (Math.floor((h.tNow - (h.startCorrection || 0)) * 10) / 10).toFixed(1);
+  else if (win) c.textContent = official(raceTime(h, h.marks[win.lane].col));
   else c.textContent = done ? '--.--' : '0.0';
   c.style.color = h.state === 'running' || win ? 'var(--paper)' : 'var(--dim)';
   const lead = h.state === 'running' ? places(h).fin[0] : null;
   if (sub) sub.textContent = win ? `Winner: lane ${win.lane}, ${win.first} ${win.last}`
-    : lead ? `First: lane ${lead.lane} · ${official(colTime(h, h.marks[lead.lane].col))}`
+    : lead ? `First: lane ${lead.lane} · ${official(raceTime(h, h.marks[lead.lane].col))}`
     : h.state === 'running' ? 'Running time' : h.state === 'armed' ? 'Waiting for the start' : done ? 'No finishes marked yet' : 'Not armed';
 }
 // The whole meet in run order: each event's heats, their state and, once saved, the winner and results file.
@@ -693,7 +705,7 @@ function renderSchedule() {
     if (key !== lastKey) { html += `<div class="sch-ev"><span class="num">E${esc(h.ev)}</span> ${esc(h.name)} <span class="dimtext">· R${h.rd}</span></div>`; lastKey = key; }
     const win = h.state === 'saved' || h.state === 'review' ? places(h).fin[0] : null;
     const done = h.athletes.filter(a => resolved(h, a)).length;
-    const detail = h.state === 'saved' ? `<span class="num">${win ? official(colTime(h, h.marks[win.lane].col)) : '—'}</span> · <span class="num">${h.lifName}</span>`
+    const detail = h.state === 'saved' ? `<span class="num">${win ? official(raceTime(h, h.marks[win.lane].col)) : '—'}</span> · <span class="num">${h.lifName}</span>`
       : h.state === 'review' ? `${done} / ${h.athletes.length} resolved` : `${h.athletes.length} athletes`;
     html += `<div class="sch-row${i === S.idx ? ' cur' : ''}" data-i="${i}"><span class="num">H${h.ht}</span><span class="sch-d">${detail}</span><span class="state ${h.state}">${label[h.state]}</span></div>`;
   });
@@ -739,7 +751,7 @@ function renderProps() {
     else if (mk && mk.src === 'checked') outcome = '<span class="tag info">CHECKED</span>';
     else if (mk) outcome = '<span class="tag info">OVERRIDDEN</span>';
     const tr = h_('tr');
-    tr.innerHTML = `<td class="num"><b>L${p.lane}</b></td><td>${a.last}</td><td class="num">${fmtT(colTime(h, p.col))}</td><td class="num"><b>${official(colTime(h, p.col))}</b></td>
+    tr.innerHTML = `<td class="num"><b>L${p.lane}</b></td><td>${a.last}</td><td class="num">${fmtT(raceTime(h, p.col))}</td><td class="num"><b>${official(raceTime(h, p.col))}</b></td>
       <td><span class="tag ${p.decision}">${p.decision.toUpperCase()}</span></td><td class="why">${p.reason || 'conf ' + p.conf.toFixed(3)}</td><td>${outcome}</td><td></td>`;
     if (p.decision === 'review' && !mk && !st) {
       const b = h_('button', 'btn sm', 'Accept');
@@ -877,6 +889,50 @@ function initTiles() {
 }
 
 // ---------------------------------------------------------------- header drawers
+// Start pulses are retained for the entire meet; assigning one changes only elapsed time.
+function renderStarts(body) {
+  const h = cur(), key = `${h.ev}-${h.rd}-${h.ht}`;
+  body.innerHTML = `<div class="card" style="grid-column:1/-1"><h3>Start triggers · ${esc(h.name)} · Heat ${h.ht}</h3>
+    <p>Choose the official start for this heat. Finish marks stay in the same columns. Save the heat again to update exported results.</p>
+    <button class="btn" id="recordStart" ${S.meet ? '' : 'disabled'}>Record trigger (SIM)</button>
+    <button class="btn" id="refreshStarts">Refresh</button>
+    <div id="startRows"><p>${S.meet ? 'Loading triggers…' : 'Open a meet folder to keep a start log.'}</p></div></div>`;
+  if (!OM || !S.meet) return;
+  const dir = S.meet.dir;
+  body.querySelector('#refreshStarts').onclick = () => renderStarts(body);
+  body.querySelector('#recordStart').onclick = async () => {
+    try {
+      const now = Date.now(), ref = h.startReference;
+      await OM.call('starts.record', { dir, clockId: 'simulated-meet-clock',
+        timeS: ref ? ref.timeS + (now - ref.wallTimeMs) / 1000 * SPEED : now / 1000,
+        wallTimeMs: now, source: 'Simulated sensor trigger' });
+      renderStarts(body);
+    } catch (err) { toast(err.message, true); }
+  };
+  OM.call('starts.list', { dir }).then(log => {
+    if (!body.querySelector('#startRows') || cur() !== h || S.meet?.dir !== dir) return;
+    const assignment = log.assignments[key];
+    const reference = h.startReference || log.triggers.find(t => t.id === assignment?.referenceTriggerId);
+    const selected = h.startTriggerId || assignment?.triggerId;
+    body.querySelector('#startRows').innerHTML = log.triggers.length ? `<table class="tbl"><tr><th>Trigger</th><th>Timestamp</th><th>Source</th><th>Heat</th><th></th></tr>${log.triggers.map((t, i) => {
+      const assigned = Object.entries(log.assignments).filter(([,a])=>a.triggerId === t.id).map(([k])=>k).join(', ');
+      const compatible = reference && t.clockId === reference.clockId;
+      return `<tr><td>${i+1}</td><td class="num">${esc(new Date(t.wallTimeMs).toLocaleTimeString([], {hour12:false}))}.${String(new Date(t.wallTimeMs).getMilliseconds()).padStart(3,'0')}</td><td>${esc(t.source)}</td><td>${esc(assigned || 'Unassigned')}</td><td><button class="btn sm" data-start="${t.id}" ${compatible ? '' : 'disabled'}>${selected === t.id ? 'Assigned · use again' : 'Assign to this heat'}</button></td></tr>`;
+    }).join('')}</table><p class="dimtext">${log.history.length} start assignments retained. ${reference ? '' : 'Start a capture before assigning a trigger to this heat.'}</p>` : '<p>No triggers recorded yet.</p>';
+    body.querySelectorAll('[data-start]').forEach(button => { button.onclick = async () => {
+      try {
+        const a = await OM.call('starts.assign', { dir, heatKey:key, triggerId:button.dataset.start, referenceTriggerId:reference.id });
+        const trigger = log.triggers.find(t => t.id === a.triggerId);
+        h.startReference = reference; h.startTriggerId = trigger.id; h.startCorrection = a.offsetS;
+        h.startTOD = new Date(trigger.wallTimeMs);
+        if (h.state === 'saved') h.state = 'review';
+        toast(`Start updated for ${h.name}, heat ${h.ht}. Times changed by ${(-a.offsetS).toFixed(3)} s.`);
+        renderUI();
+      } catch (err) { toast(err.message, true); }
+    }; });
+  }).catch(err => { if(body.querySelector('#startRows')) body.querySelector('#startRows').textContent = err.message; });
+}
+
 function renderDrawer() {
   const d = $('#drawer');
   d.classList.toggle('open', S.tab !== 'run');
@@ -886,6 +942,7 @@ function renderDrawer() {
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
+  if (S.tab === 'starts') { renderStarts(body); return; }
   if (S.tab === 'network') {
     body.innerHTML = `
       <div class="card"><h3>Camera network (closed loop)</h3>
@@ -998,7 +1055,7 @@ const boardUrl = name => `http://127.0.0.1:${B.port}/scoreboard/${name}/`;
 // Live state for every scoreboard (docs/scoreboard-v1.md).
 function boardState() {
   const h = cur(), done = ['review', 'saved'].includes(h.state), { fin, pl } = places(h), win = done ? fin[0] : null;
-  const timeOf = a => (h.marks[a.lane] && (!h.status[a.lane] || h.status[a.lane] === 'DQ') ? ceilTo(colTime(h, h.marks[a.lane].col), 2) : null);
+  const timeOf = a => (h.marks[a.lane] && (!h.status[a.lane] || h.status[a.lane] === 'DQ') ? ceilTo(raceTime(h, h.marks[a.lane].col), 2) : null);
   const lanes = [...h.athletes].sort((a, b) => a.lane - b.lane).map(a => ({
     lane: h.unlaned ? null : a.lane, id: a.id, first: a.first, last: a.last, affiliation: a.team.name,
     status: h.status[a.lane] || null, time: timeOf(a), place: pl[a.lane] || null,
@@ -1009,7 +1066,7 @@ function boardState() {
     clock: {
       running: h.state === 'running', speed: SPEED,
       startedAtMs: h.state === 'running' && h.startTOD ? h.startTOD.getTime() : null,
-      frozenS: win ? ceilTo(colTime(h, h.marks[win.lane].col), 2) : null,
+      frozenS: win ? ceilTo(raceTime(h, h.marks[win.lane].col), 2) : null,
     },
     lanes, results: lanes.filter(l => l.place).sort((a, b) => a.place - b.place),
     wind: h.wind == null || !done ? null : h.wind, updatedAt: Date.now(),
@@ -1133,6 +1190,8 @@ function renderTools() {
   const sep = () => box.append(h_('span', 'tsep'));
   tool(ICON.crop, 'Crop', 'Drag a box to zoom to it (Shift+drag works any time)', S.cropTool, !captured, () => { S.cropTool = !S.cropTool; renderTools(); syncCursor(); });
   tool(ICON.fit, 'Unzoom', 'Fit the whole capture (Esc)', false, !captured || !S.view.zoomed, () => { fitView(); renderUI(); });
+  tool(ICON.auto, 'Mark', 'Create or replace the selected athlete’s finish here (Enter)', false, !captured || S.selLane == null || S.selCol == null, () => setMark(S.selLane,S.selCol));
+  tool(ICON.clear, 'Delete mark', 'Remove the selected finish (Delete)', false, !captured || S.selLane == null, deleteSelectedFinish);
   tool(ICON.flip, 'Flip', 'Mirror the image: winner on the left or on the right', S.flip, false, () => { S.flip = !S.flip; store.set('flip', S.flip); renderTools(); });
   tool(ICON.lanes, 'Lanes', 'Overlay lane lines on the image', S.lanes, false, () => { S.lanes = !S.lanes; store.set('lanes', S.lanes); renderTools(); });
   sep();
@@ -1157,7 +1216,7 @@ function renderUI() {
 // The timestamp follows the mouse over the line-scan, and falls back to the selected column.
 function updateTs() {
   const ts = $('#ts'), h = cur(), col = S.hoverCol != null ? S.hoverCol : S.selCol;
-  if (col != null && h.img) { ts.textContent = fmtT(colTime(h, col)) + ' s'; ts.classList.remove('none'); }
+  if (col != null && h.img) { ts.textContent = fmtT(raceTime(h, col)) + ' s'; ts.classList.remove('none'); }
   else { ts.textContent = '--.---'; ts.classList.add('none'); }
   ts.classList.toggle('hover', S.hoverCol != null && S.hoverCol !== S.selCol);
 }
@@ -1341,16 +1400,16 @@ function drawScan() {
   // proposals not yet resolved (dashed), then marks (solid)
   const tags = [];
   (h.proposals || []).forEach(p => {
-    if (h.marks[p.lane] || h.status[p.lane]) return;
+    if (h.marks[p.lane] || h.status[p.lane] || h.dismissed?.[p.lane]) return;
     tags.push({ col: p.col, lane: p.lane, color: p.decision === 'auto' ? TK.blue : TK.amber, dashed: true });
   });
   Object.entries(h.marks).forEach(([lane, m]) => tags.push({ col: m.col, lane: +lane, color: h.status[lane] === 'DQ' ? TK.finish : TK.mint, dashed: false }));
   tags.sort((a, b) => a.col - b.col).forEach((t, i) => {
-    const x = xOf(t.col);
+    const x = xOf(S.drag?.mode === 'mark' && S.drag.lane === t.lane && S.drag.moved ? S.selCol : t.col);
     if (x < -20 || x > W + 20) return;
     const sel = S.selLane === t.lane;
     g.strokeStyle = t.color; g.lineWidth = sel ? 2 : 1; g.setLineDash(t.dashed ? [5, 4] : []);
-    g.beginPath(); g.moveTo(x, 18); g.lineTo(x, Hi); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, Hi); g.stroke(); g.setLineDash([]);
     const ty = 3 + (i % 2) * 15;
     g.fillStyle = t.color; g.fillRect(x - 8, ty, 16, 13);
     if (sel) { g.strokeStyle = TK.paper; g.lineWidth = 1; g.strokeRect(x - 8.5, ty - 0.5, 17, 14); }
@@ -1390,7 +1449,7 @@ function drawRuler(g, W, Hc, h, on) {
     const x = Math.round(unflipX(((t - h.tOpen) / P - v.c0) * v.zx));
     g.fillStyle = TK.dim; g.fillRect(x, y0 + 1, 1, 6);
     g.fillStyle = TK.muted; g.textAlign = S.flip ? 'right' : 'left';
-    g.fillText(t.toFixed(dec), x + (S.flip ? -3 : 3), y0 + 16);
+    g.fillText((t-(h.startCorrection||0)).toFixed(dec), x + (S.flip ? -3 : 3), y0 + 16);
   }
   g.textAlign = 'left';
 }
@@ -1554,6 +1613,21 @@ scanCv.addEventListener('wheel', e => {
   }
   v.user = true; clampView(); renderTools(); invalidate();
 }, { passive: false });
+function hitFinish(h, x) {
+  const marks = Object.entries(h.marks).map(([lane,m])=>({lane:+lane,col:m.col}));
+  const proposals = (h.proposals || []).filter(p=>!h.marks[p.lane] && !h.status[p.lane] && !h.dismissed?.[p.lane]).map(p=>({lane:p.lane,col:p.col}));
+  return [...marks,...proposals].map(p=>({...p,distance:Math.abs(xOf(p.col)-x)})).filter(p=>p.distance<=7)
+    .sort((a,b)=>a.distance-b.distance || (a.lane===S.selLane?-1:1))[0];
+}
+function deleteSelectedFinish() {
+  const h=cur(), lane=S.selLane;
+  if(lane==null || !['running','review','saved'].includes(h.state)) return;
+  if(!h.marks[lane] && !(h.proposals||[]).some(p=>p.lane===lane)) return;
+  delete h.marks[lane];
+  (h.dismissed ||= {})[lane]=true;
+  h.proposals=(h.proposals||[]).filter(p=>p.lane!==lane);
+  editHeat(h); renderUI();
+}
 // Hover scrubs the heat's front-camera recording to the frame at that column.
 scanCv.addEventListener('mousemove', e => {
   if (S.drag && S.drag.moved) return;
@@ -1561,13 +1635,16 @@ scanCv.addEventListener('mousemove', e => {
   if (!(h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0))) return;
   const r = scanCv.getBoundingClientRect();
   const col = Math.max(0, Math.min(live ? h.liveCol : h.nCols - 1, colOf(e.clientX - r.left)));
+  scanCv.style.cursor = !S.cropTool && hitFinish(h, e.clientX-r.left) ? 'ew-resize' : '';
   if (col !== S.hoverCol) { S.hoverCol = col; invalidate(); updateTs(); }
 });
 scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
 scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const r = scanCv.getBoundingClientRect();
-  S.drag = { mode: S.cropTool || e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, c0: S.view.c0, r0: S.view.r0, moved: false };
+  const h = cur(), hit = !S.cropTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
+  if(hit) { S.selLane=hit.lane; S.selCol=hit.col; }
+  S.drag = { lane:hit?.lane, mode: hit ? 'mark' : S.cropTool || e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, c0: S.view.c0, r0: S.view.r0, moved: false };
 });
 window.addEventListener('mousemove', e => {
   const d = S.drag;
@@ -1577,6 +1654,11 @@ window.addEventListener('mousemove', e => {
   d.y1 = Math.max(0, Math.min(r.height - RULER, e.clientY - r.top));
   if (Math.hypot(d.x1 - d.x0, d.y1 - d.y0) > 5) d.moved = true;
   invalidate();
+  if (d.mode === 'mark' && d.moved) {
+    const h=cur(), limit=h.state==='running'?h.liveCol:h.nCols-1;
+    S.selCol=Math.max(0,Math.min(limit,colOf(d.x1)));
+    updateTs();
+  }
   if (d.mode === 'pan' && d.moved) {
     const v = S.view;
     v.c0 = d.c0 - (d.x1 - d.x0) / v.zx * (S.flip ? -1 : 1);
@@ -1591,6 +1673,10 @@ window.addEventListener('mouseup', () => {
   if (!d) return;
   const h = cur(), v = S.view;
   if (!['review', 'saved', 'running'].includes(h.state) || (h.state === 'running' && h.liveCol < 0)) return;
+  if(d.mode === 'mark') {
+    if(d.moved) setMark(d.lane,S.selCol); else renderUI();
+    return;
+  }
   if (d.moved && d.mode === 'crop') {
     const w = Math.abs(d.x1 - d.x0), hh = Math.abs(d.y1 - d.y0);
     if (w < 8 || hh < 8) return;
@@ -1605,14 +1691,14 @@ window.addEventListener('mouseup', () => {
     const col = Math.max(0, Math.min(h.nCols - 1, colOf(d.x0)));
     // clicking on a mark or proposal tag selects that athlete
     const near = [...(h.proposals || []).map(p => ({ lane: p.lane, col: p.col })), ...Object.entries(h.marks).map(([l, m]) => ({ lane: +l, col: m.col }))]
-      .find(t => Math.abs(xOf(t.col) - d.x0) < 5 && d.y0 < 34);
+      .find(t => Math.abs(xOf(t.col) - d.x0) < 7);
     if (near) { S.selLane = near.lane; S.selCol = near.col; } else S.selCol = col;
     renderUI();
   }
 });
 scanCv.addEventListener('dblclick', e => {
   const h = cur();
-  if (S.selLane == null || !['review', 'saved'].includes(h.state)) return;
+  if (S.selLane == null || !['running', 'review', 'saved'].includes(h.state)) return;
   const r = scanCv.getBoundingClientRect();
   S.selCol = Math.max(0, Math.min(h.nCols - 1, colOf(e.clientX - r.left)));
   setMark(S.selLane, S.selCol);
@@ -1620,7 +1706,9 @@ scanCv.addEventListener('dblclick', e => {
 window.addEventListener('keydown', e => {
   if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
   const h = cur(), lanes = h.athletes.map(a => a.lane).sort((a, b) => a - b);
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (S.selLane != null) { e.preventDefault(); deleteSelectedFinish(); }
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
     if (S.selCol == null) return;
     e.preventDefault();
     const dir = (e.key === 'ArrowLeft' ? -1 : 1) * (S.flip ? -1 : 1);   // arrows move on screen, whichever way the image faces
