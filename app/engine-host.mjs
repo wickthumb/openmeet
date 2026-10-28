@@ -101,18 +101,21 @@ async function finishService() {
 }
 
 // The captured strip as a native-orientation PNG, read back from the capture store (the record, not the console's copy).
-async function stripPng(dir) {
+// Columns [from, to] of the captured strip (to defaults to the latest), so a capture still being recorded can be read too.
+async function stripPng(dir, from = 0, to = null) {
   const store = core.openCaptureStore(dir, { readOnly: true });
   try {
-    const meta = store.meta(), n = store.columnCount(), rows = meta.rows, ch = meta.channels;
-    const cm = store.readColumns(0, n), rm = Buffer.alloc(n * rows * ch);
+    const meta = store.meta(), total = store.columnCount(), rows = meta.rows, ch = meta.channels;
+    const a = Math.max(0, Math.min(from, total)), b = Math.min(total, to == null ? total : to + 1), n = b - a;
+    if (n <= 0) throw new Error('no captured columns in that range yet');
+    const cm = store.readColumns(a, b), rm = Buffer.alloc(n * rows * ch);
     for (let c = 0; c < n; c++) for (let r = 0; r < rows; r++) {
       const s = (c * rows + r) * ch, d = (r * n + c) * ch;
       for (let k = 0; k < ch; k++) rm[d + k] = cm[s + k];
     }
     return {
       png: core.encodePng({ width: n, height: rows, channels: ch, data: rm }, { filter: () => 1 }),
-      rows, columns: n, channels: ch, firstRaceTime: store.raceTimeOf(0), period: meta.columnPeriod,
+      rows, columns: n, channels: ch, from: a, firstRaceTime: store.raceTimeOf(a), period: meta.columnPeriod,
     };
   } finally { await store.close(); }
 }
@@ -174,10 +177,16 @@ const methods = {
   },
   async 'capture.stop'() { if (active) active.stop = true; return { ok: true }; },
   // Ask the finish model about a finished capture: {captureId, heat: {event, round, heat}, startList: [{lane, id}], laneRows?}.
-  async 'autotiming.predict'({ captureId, heat, startList, laneRows }) {
+  // Live mode for services fast enough to call during the race (the stand-in, or a service configured with live: true).
+  async 'autotiming.info'() {
+    const at = (await loadSettings()).autotiming || {};
+    return { stub: !at.baseUrl && !at.cli, live: (!at.baseUrl && !at.cli) || !!at.live };
+  },
+  // {captureId, heat, startList, laneRows?, fromCol?, toCol?}: columns in the reply are relative to `fromCol` (returned).
+  async 'autotiming.predict'({ captureId, heat, startList, laneRows, fromCol = 0, toCol = null }) {
     const cap = captures.get(captureId);
     if (!cap) throw new Error('unknown capture');
-    const strip = await stripPng(cap.dir);
+    const strip = await stripPng(cap.dir, fromCol, toCol);
     const svc = await finishService();
     if (svc.stub) {
       // The stand-in is not a model: it echoes the simulator truth registered for this exact strip (sha256 of the PNG).
@@ -197,7 +206,7 @@ const methods = {
       // lane_rows may only name lanes on the start list (contract v1)
       ...(laneRows && laneRows.length ? { lane_rows: laneRows.filter(b => startList.some(s => s.lane === b.lane)) } : {}),
     });
-    return { ...res, stub: svc.stub };
+    return { ...res, stub: svc.stub, fromCol: strip.from };
   },
   async 'lif.write'({ dir, name, text }) {
     if (!dir || !/^[\w-]+\.lif$/i.test(name)) throw new Error('bad results file name');

@@ -323,25 +323,76 @@ function makeProposals(h) {
   return props;
 }
 const snap = h => JSON.stringify({ marks: h.marks, status: h.status });
+// Final suggestions for the whole capture. Live marks the operator has not touched follow the final answer.
 function applyProposals(h, props, meta = {}) {
   const untouched = h.base === snap(h);
   h.proposals = props; h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;
   h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
-  h.proposals.forEach(p => { if (p.decision === 'auto' && !h.marks[p.lane] && !h.status[p.lane]) h.marks[p.lane] = { col: p.col, src: 'auto' }; });
+  h.proposals.forEach(p => {
+    const mk = h.marks[p.lane];
+    if (h.status[p.lane]) return;
+    if (p.decision === 'auto' && (!mk || mk.src === 'auto')) h.marks[p.lane] = { col: p.col, src: 'auto' };
+    else if (p.decision === 'review' && mk && mk.src === 'auto') delete h.marks[p.lane];   // a live auto-accept the final pass flags goes back to review
+  });
   if (untouched && !h.saves) h.base = snap(h);                 // machine output on a fresh capture is part of "as captured"
   renderUI();
+}
+const predictParams = (h, extra = {}) => ({
+  captureId: h.captureId,
+  heat: { event: h.ev, round: h.rd, heat: h.ht },
+  startList: h.athletes.filter(a => !['DNS', 'SC'].includes(h.status[a.lane])).map(a => ({ lane: a.lane, id: String(a.id) })),
+  laneRows: h.laneRows ? h.laneRows.map(b => ({ lane: b.lane, top_row: Math.round(b.top), bottom_row: Math.round(b.bottom) })) : null,
+  ...extra,
+});
+const toProps = res => res.predictions.map(p => ({ lane: p.lane, col: (res.fromCol || 0) + p.column, t: p.race_time_s, decision: p.decision, model: p.decision, reason: p.reason || '', conf: p.confidence ?? 0 }));
+
+// ---- live suggestions: as each athlete crosses, not after the race
+// A suggestion is shown once its torso is fully past the line (LIVE_LAG), and auto-accepted only once no
+// neighbour could still be within 0.02 s of it. The final pass at capture close then confirms or corrects.
+const LIVE_LAG = 0.15, LIVE_EVERY = 0.35;
+function mergeLive(h, props, seenToT) {
+  const by = new Map((h.proposals || []).map(p => [p.lane, p]));
+  props.forEach(p => by.set(p.lane, { ...p, model: p.model || p.decision }));
+  const all = [...by.values()].sort((a, b) => a.col - b.col);
+  all.forEach(p => { p.decision = p.model; if (p.model === 'auto') p.reason = p.reason === 'close_finish' ? '' : p.reason; });
+  for (let i = 1; i < all.length; i++) {
+    const gap = (all[i].col - all[i - 1].col) * P;
+    if (gap < 0.02) [all[i - 1], all[i]].forEach(p => { p.decision = 'review'; p.reason = `close finish (${gap.toFixed(3)} s)`; });
+  }
+  h.proposals = all;
+  const settledT = seenToT - LIVE_LAG;
+  all.forEach(p => {
+    if (h.status[p.lane] || h.marks[p.lane]) return;
+    if (p.decision === 'auto' && colTime(h, p.col) + 0.02 <= settledT) h.marks[p.lane] = { col: p.col, src: 'auto' };
+  });
+}
+function liveSuggest(h) {
+  if (!S.autoMark || !S.apiOnline || h.liveCol < 0) return;
+  if (h.asset && OM) {
+    if (!h.captureId || h.liveBusy || (S.atInfo && !S.atInfo.live)) return;
+    if (h.liveTo != null && colTime(h, h.liveCol) - colTime(h, h.liveTo) < LIVE_EVERY) return;
+    const fromCol = Math.max(0, (h.liveTo == null ? 0 : h.liveTo) - Math.round(0.6 / P)), toCol = h.liveCol;
+    h.liveBusy = true; h.req = 'live';
+    OM.call('autotiming.predict', predictParams(h, { fromCol, toCol })).then(res => {
+      if (h.state !== 'running' && h.state !== 'review') return;
+      const seenT = colTime(h, toCol);
+      mergeLive(h, toProps(res).filter(p => p.t <= seenT - LIVE_LAG), seenT);
+      h.liveTo = toCol; h.model = res.model; h.stub = !!res.stub;
+      if (cur() === h) { renderProps(); renderSide(); invalidate(); }
+    }).catch(() => {}).finally(() => { h.liveBusy = false; });
+  } else {
+    if (!h.allProps) h.allProps = makeProposals(h);   // the simulated model, revealed as athletes cross
+    const seenT = h.tNow;
+    h.req = 'live'; h.model = 'sim-0'; h.stub = true;
+    mergeLive(h, h.allProps.filter(p => colTime(h, p.col) <= seenT - LIVE_LAG).map(p => ({ ...p, model: p.decision })), seenT);
+  }
 }
 function requestProposals(h) {
   if (!S.apiOnline) { h.req = 'offline'; renderUI(); return; }
   h.req = 'pending'; h.reqStart = performance.now(); renderUI();
   if (h.asset && OM && h.captureId) {
     // Engine-fed heat: the engine reads the strip from the capture store and calls the finish service.
-    OM.call('autotiming.predict', {
-      captureId: h.captureId,
-      heat: { event: h.ev, round: h.rd, heat: h.ht },
-      startList: h.athletes.filter(a => !['DNS', 'SC'].includes(h.status[a.lane])).map(a => ({ lane: a.lane, id: String(a.id) })),
-      laneRows: h.laneRows ? h.laneRows.map(b => ({ lane: b.lane, top_row: Math.round(b.top), bottom_row: Math.round(b.bottom) })) : null,
-    }).then(res => applyProposals(h, res.predictions.map(p => ({ lane: p.lane, col: p.column, decision: p.decision, reason: p.reason || '', conf: p.confidence ?? 0 })).sort((a, b) => a.col - b.col), res))
+    OM.call('autotiming.predict', predictParams(h)).then(res => applyProposals(h, toProps(res).sort((a, b) => a.col - b.col), res))
       .catch(err => { h.req = 'error'; h.reqErr = err.message; renderUI(); });
     return;
   }
@@ -368,6 +419,7 @@ function fire() {
   const h = cur();
   if (h.state !== 'armed') return;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
+  h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';
   S.view.user = false; S.selCol = null;
   if (h.asset && OM) {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
@@ -383,7 +435,7 @@ function fire() {
 function recall() {
   const h = cur();
   if (h.state !== 'running') return;
-  h.state = 'armed'; h.liveCol = -1; h.startTOD = null; h.tNow = 0;
+  h.state = 'armed'; h.liveCol = -1; h.startTOD = null; h.tNow = 0; h.marks = {}; h.proposals = null; h.allProps = null; h.liveTo = null; h.req = 'idle';
   if (h.asset && OM) { OM.call('capture.stop').catch(() => {}); h.captureId = null; S.pendingCapture = null; blankStrip(h); }
   toast('Recall: false start. Heat re-armed. Set FS on the athlete from their row.');
   renderUI();
@@ -397,7 +449,7 @@ function endCapture(h) {
 function editHeat(h) { if (h.state === 'saved') h.state = 'review'; }
 function setMark(lane, col) {
   const h = cur();
-  if (!['review', 'saved'].includes(h.state) || col == null) return;
+  if (col == null || !(['review', 'saved'].includes(h.state) || (h.state === 'running' && col <= h.liveCol))) return;   // marking works while capturing too
   const p = h.proposals && h.proposals.find(x => x.lane === lane);
   const src = p ? (p.col === col ? (p.decision === 'auto' ? 'auto' : 'checked') : 'edited') : 'manual';
   h.marks[lane] = { col, src };
@@ -470,7 +522,7 @@ async function save() {
 const andList = a => (a.length < 2 ? String(a[0]) : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
 function warnings(h) {
   const w = [];
-  if (h.state === 'running') return [{ k: 'info', t: 'Capturing. Marks open when the capture closes.' }];
+  if (h.state === 'running') return [{ k: 'info', t: S.autoMark ? 'Capturing. Suggested times appear as athletes finish; you can mark as they come in.' : 'Capturing. You can mark finishes as they come in.' }];
   if (h.state === 'loaded') return [{ k: 'info', t: 'Heat loaded from lynx.evt. Arm when the starter is ready.' }];
   if (h.state === 'armed') return [{ k: 'info', t: 'Armed. Waiting for the start signal.' }];
   if (h.req === 'offline') w.push({ k: 'warn', t: 'Auto-timing is offline. Mark finishes by hand; capture is unaffected.' });
@@ -625,7 +677,10 @@ function tickClock() {
   else if (win) c.textContent = official(colTime(h, h.marks[win.lane].col));
   else c.textContent = done ? '--.--' : '0.0';
   c.style.color = h.state === 'running' || win ? 'var(--paper)' : 'var(--dim)';
-  if (sub) sub.textContent = win ? `Winner: lane ${win.lane}, ${win.first} ${win.last}` : h.state === 'running' ? 'Running time' : h.state === 'armed' ? 'Waiting for the start' : done ? 'No finishes marked yet' : 'Not armed';
+  const lead = h.state === 'running' ? places(h).fin[0] : null;
+  if (sub) sub.textContent = win ? `Winner: lane ${win.lane}, ${win.first} ${win.last}`
+    : lead ? `First: lane ${lead.lane} · ${official(colTime(h, h.marks[lead.lane].col))}`
+    : h.state === 'running' ? 'Running time' : h.state === 'armed' ? 'Waiting for the start' : done ? 'No finishes marked yet' : 'Not armed';
 }
 // The whole meet in run order: each event's heats, their state and, once saved, the winner and results file.
 function renderSchedule() {
@@ -664,6 +719,7 @@ function renderProps() {
   $('#apiState').innerHTML = !S.apiOnline ? '<span class="dot warn"></span>offline' :
     h.req === 'pending' ? '<span class="dot warn"></span>timing…' :
     h.req === 'error' ? '<span class="dot warn"></span>failed' :
+    h.req === 'live' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>live` :
     h.req === 'done' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
   const box = $('#props');
   if (h.req === 'offline' || h.req === 'error') {
@@ -671,7 +727,7 @@ function renderProps() {
     return;
   }
   if (!h.proposals) {
-    box.innerHTML = `<div class="empty">${h.req === 'pending' ? `Timing… ${Math.round((performance.now() - h.reqStart) / 1000)} s. Mark finishes by hand meanwhile; suggestions only fill lanes you have not marked.` : S.autoMark ? 'AI-suggested finish times arrive after the capture closes, for your review. Finishes within 0.02 s of a neighbour always need a check.' : 'Auto-mark is off. Press Auto-mark on the line-scan bar to ask for suggested times.'}</div>`;
+    box.innerHTML = `<div class="empty">${h.req === 'pending' ? `Timing… ${Math.round((performance.now() - h.reqStart) / 1000)} s. Mark finishes by hand meanwhile; suggestions only fill lanes you have not marked.` : S.autoMark ? 'AI-suggested finish times appear as athletes cross the line, for your review. Finishes within 0.02 s of a neighbour always need a check.' : 'Auto-mark is off. Press Auto-mark on the line-scan bar to ask for suggested times.'}</div>`;
     return;
   }
   const tb = h_('table', 'props');
@@ -1690,7 +1746,7 @@ function frame(now) {
     h.tNow = (now - h.startPerf) / 1000 * SPEED;
     const lc = h.asset ? (h.recvCols || 0) - 1 : Math.min(h.nCols - 1, Math.floor((h.tNow - h.tOpen) / P));
     if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(h); }
-    if (now - lastLiveRender > 250) { lastLiveRender = now; renderAcc(); renderSide(); renderTools(); }
+    if (now - lastLiveRender > 250) { lastLiveRender = now; liveSuggest(h); renderAcc(); renderSide(); renderProps(); renderTools(); renderSchedule(); publishBoard(); }
     if (!h.asset && h.tNow >= h.tClose) { endCapture(h); renderUI(); }   // engine-fed heats close on the camera's end message
     tickClock();
   } else if (h.req === 'pending' && now - lastLiveRender > 1000) { lastLiveRender = now; renderProps(); }   // "Timing… N s"
@@ -1726,6 +1782,7 @@ if (OM) {
   });
   OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
   OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
+  OM.call('autotiming.info').then(i => { S.atInfo = i; }).catch(() => {});
   OM.call('settings.get').then(s => { if (s.demoDir) openDemo(s.demoDir); else if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});
 }
 })();
