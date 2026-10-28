@@ -1,93 +1,47 @@
-# Proposed three-minute demo
+# OpenMeet demo: run the race, keep the meet moving
 
-Working title: **Can AI Untangle This Race Finish?**
+This walkthrough uses the current desktop prototype. Camera inputs are simulated; the bundled finish service echoes simulator truth and is visibly labelled **STAND-IN**. It demonstrates the operator workflow, not model accuracy. Proprietary timing and crop models are separate services and are not included in the repository or installers.
 
-This script describes the target prototype. Record each action only once it works. Use a real distance finish where another frame supplies the missing bib evidence, and replace the bracketed bib number with the actual value. Identify recorded footage as a replay and label any time compression.
+## 1. Load the meet
 
-## 0:00–0:15 — The challenge
+Open **Meet Link** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied simulator demo meet. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
 
-Screen: show the sprint, then freeze the crowded distance finish on the obscured bib.
+## 2. Capture without losing control
 
-> I'm giving OpenMeet two race finishes: this sprint—and this distance finish, where we can't read a runner's bib.
->
-> Can we get both to results an official can approve?
+Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
 
-## 0:15–0:30 — The setup
+Optionally choose **After timeout** or **All runners marked** before starting another heat. These are explicit modes. A runner's status can resolve a DNS, DNF or DQ without manufacturing a finish time.
 
-Screen: keep the race footage visible. Add progress indicators for Sprint and Distance.
+## 3. Review and correct a finish
 
-> OpenMeet is open source. It calls our proprietary finish-detection model through an API, then uses a Meta-powered agent to help identify runners.
->
-> The official makes the final call.
+Click a column, type `4`, then Enter to assign it to lane 4. Entry accepts multiple digits, including `20` when that number is in the roster. Backspace edits the pending number; Escape cancels it. A missing or ambiguous roster number does not change a finish.
 
-## 0:30–1:00 — Custom model
+Drag any finish hairline along its full height. Select and delete it, then create a replacement. Operator edits are retained when later suggestions arrive. Close finishes remain available for review.
 
-Screen: run the sprint. Briefly show OpenMeet → proprietary model API → proposed finish marks, then enlarge the marks.
+Hover the primary or backup line-scan to inspect the corresponding front-camera frame. Each view can be zoomed and panned.
 
-> First, the sprint. We know who's in each lane.
->
-> OpenMeet sends the finish image to our model API. The model runs on our server and returns proposed finish marks. Its weights stay on the server.
->
-> Here are those marks over the original image, linked to the recorded hardware timestamps.
->
-> I inspect them, adjust anything necessary, and approve the heat.
->
-> One race approved.
+## 4. Fit the display to the venue
 
-## 1:00–1:15 — The harder case
+Use **Lanes ▾** on the line-scan or front-camera panel. Show or hide numbers, adjust font size and weight, colors, thickness and opacity, and enable dragging to position the guides. Appearance is remembered per meet/camera; decorative guides do not alter timing or the private model's input geometry.
 
-Screen: return to the unidentified distance runner from the opening.
+## 5. Correct an accidental start trigger
 
-> Now take away the assigned lanes.
->
-> The model has marked the finishes. But this runner's identity is still missing.
->
-> We have a measured time. We still need the athlete.
+The **Starts** tab retains meet-wide start triggers and assignment history. Record another simulated trigger, then assign the correct trigger to the heat. All elapsed times update while the captured finish columns stay fixed. Re-save to update exported results.
 
-## 1:15–1:50 — Meta agent
+Physical start-sensor integration is still pending; the journal and assignment interface are implemented.
 
-Screen: show nearby frame crops, visible bib details, and roster candidates beside the finish evidence.
+## 6. Save and move on
 
-> I ask the Meta-powered agent to help resolve this finisher.
->
-> It retrieves nearby frames, examines the visible bib details, and checks the race roster.
->
-> OpenMeet brings the supporting images and candidate entries into the official's review.
->
-> But this view still doesn't provide enough evidence. The identity stays unresolved.
->
-> Let's look earlier.
+The sidebar presents one main action for the current state. When every athlete has a finish or status, **Save results** writes `EEE-R-HH.lif` atomically. The next heat loads, and Auto-arm optionally arms it. Confirm AthleticLOCAL import on a test meet before relying on the integration at a real meet; result status conventions still require hands-on verification.
 
-## 1:50–2:20 — The reveal
+## 7. Show the scoreboard
 
-Screen: the official requests an earlier view. Show the clearer frame beside the obscured one.
+Open **Scoreboard** to preview a live board, open it on another display, or use its LAN address with OBS. Create, delete and restore boards. **Build with AI** delegates a requested visual change to an installed, authenticated coding agent. Meta Muse Code, Codex and Grok have separate account requirements; do not claim a successful Meta build unless it actually ran.
 
-> Show me the clearest earlier bib view.
->
-> There—now we can read it.
->
-> The Meta agent extracts [actual bib number] and checks the roster.
->
-> Here's the proposed athlete, alongside the image supporting that match.
->
-> I check the evidence and confirm the identity.
+## Before recording a submission
 
-Pause so viewers can read the bib and matching entry.
-
-## 2:20–2:45 — Official control
-
-Screen: show the confirmed athlete attached to the original finish mark. Open the evidence record, then approve the reviewed results.
-
-> The official controls that confirmation. I can correct the suggestion or leave the identity unresolved.
->
-> The measured time remains tied to the original hardware timestamp. The supporting evidence and review decision remain attached to the result.
->
-> This match checks out. I'm approving the reviewed distance results.
-
-## 2:45–3:00 — The payoff
-
-Screen: show both approved result sets, then transition to the next heat.
-
-> Two finishes. Both approved. The evidence is preserved, and we're ready for the next heat.
->
-> That's OpenMeet: specialized vision, a Meta-powered assistant, and an official in control—keeping the meet moving.
+- Record the actual working build and identify replay inputs and any time compression.
+- Keep **STAND-IN** visible when using the truth-based timing demonstration.
+- Do not show private timing/crop model code, weights or datasets.
+- Use only demonstration footage and backgrounds cleared for public display.
+- Show completed functionality. Distance-runner identification and real camera integration remain roadmap items until implemented and verified.

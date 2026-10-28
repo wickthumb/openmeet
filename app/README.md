@@ -31,3 +31,13 @@ workflow**, build all three OSes. Download `OpenMeet-Windows-installers`,
 `OpenMeet-macOS-installers`, or `OpenMeet-Linux-installers` from the run's
 **Artifacts** section within 14 days. Windows installation and RunMeet shared-folder
 interoperability still need hands-on testing on Windows.
+
+## Operator controls
+
+Capture stops manually by default. Before a heat, expand **Capture options** to enable timeout or all-runners-marked auto-stop. **Stop capture** is always available during a run. The simulator continues streaming empty-track columns after its prerecorded finish window.
+
+Click a finish column, type a roster number, then Enter; multiple digits are supported. Drag hairlines to edit, or delete and replace them. **Starts** keeps trigger history and changes the elapsed-time origin without moving finish columns. Save corrected heats again to update LIF files.
+
+Both camera views have **Lanes ▾** appearance controls. Lane overlays are decorative and are saved per meet/camera. They do not change the private timing service's calibration.
+
+Private model weights, training data and inference implementations are never bundled. Only API clients and the labelled simulator stand-in ship with the app. CI checks the public source boundary before building.

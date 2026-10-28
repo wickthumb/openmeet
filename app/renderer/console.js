@@ -159,6 +159,7 @@ let HEATS = SPECS.map(buildHeat);
 
 const S = {
   idx: 0, tab: 'run', selLane: null, selCol: null, entryNumber: '', source: 'replay', apiOnline: true,
+  autoStop: store.get('autoStop','manual'), stopAfter: store.get('stopAfter',60),
   autoArm: store.get('autoArm', true), autoMark: store.get('autoMark', true),
   flip: store.get('flip', false), lanes: store.get('lanes', false), cropTool: false,
   files: [], view: { c0: 0, zx: 1, r0: 0, zy: 1, user: false, zoomed: false }, drag: null,
@@ -288,23 +289,37 @@ function ensureStrip(h) {
   if (!h.img || (h.imgSrc !== S.source && (h.state === 'loaded' || h.state === 'armed'))) renderStrip(h);
 }
 // A heat whose camera is the engine's: the strip starts black and fills as the engine's columns arrive.
+const STRIP_TILE = 2048;
 function blankStrip(h) {
-  const c = document.createElement('canvas');
-  c.width = h.nCols; c.height = rowsOf(h);
-  const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
-  h.img = c; h.imgSrc = 'engine'; h.recvCols = 0;
+  h.stripTiles = [];
+  h.img = document.createElement('canvas'); h.img.width=1; h.img.height=rowsOf(h);
+  h.imgSrc = 'engine'; h.recvCols = 0;
 }
-// Column-major camera bytes (count x rows x channels) into the strip at column `first`.
-function ingestColumns(h, first, count, data, channels) {
-  const rows = rowsOf(h), g = h.img.getContext('2d'), im = g.createImageData(count, rows), px = im.data;
-  for (let c = 0; c < count; c++) {
-    for (let r = 0; r < rows; r++) {
-      const s = (c * rows + r) * channels, d = (r * count + c) * 4;
-      px[d] = data[s]; px[d + 1] = data[s + (channels > 1 ? 1 : 0)]; px[d + 2] = data[s + (channels > 1 ? 2 : 0)]; px[d + 3] = 255;
-    }
+function drawStrip(g,h,sx,sy,sw,sh,dx,dy,dw,dh) {
+  if(!h.stripTiles) { g.drawImage(h.img,sx,sy,sw,sh,dx,dy,dw,dh); return; }
+  if(sw<=0)return;
+  const lo=Math.floor(sx/STRIP_TILE),hi=Math.floor((sx+sw-1)/STRIP_TILE);
+  for(let i=lo;i<=hi;i++) {
+    const tile=h.stripTiles[i]; if(!tile)continue;
+    const a=Math.max(sx,i*STRIP_TILE),b=Math.min(sx+sw,(i+1)*STRIP_TILE);
+    if(b>a)g.drawImage(tile,a-i*STRIP_TILE,sy,b-a,sh,dx+(a-sx)/sw*dw,dy,(b-a)/sw*dw,dh);
   }
-  g.putImageData(im, first, 0);
-  h.recvCols = Math.max(h.recvCols || 0, first + count);
+}
+// Keep long captures in small canvas tiles; the engine retains every original column on disk.
+function ingestColumns(h, first, count, data, channels) {
+  const rows=rowsOf(h);
+  for(let c=0;c<count;) {
+    const index=Math.floor((first+c)/STRIP_TILE),local=(first+c)%STRIP_TILE,n=Math.min(count-c,STRIP_TILE-local);
+    if(!h.stripTiles[index]) {const tile=document.createElement('canvas');tile.width=STRIP_TILE;tile.height=rows;h.stripTiles[index]=tile;}
+    const g=h.stripTiles[index].getContext('2d'),im=g.createImageData(n,rows),px=im.data;
+    for(let x=0;x<n;x++)for(let r=0;r<rows;r++) {
+      const src=((c+x)*rows+r)*channels,dst=(r*n+x)*4;
+      px[dst]=data[src];px[dst+1]=data[src+(channels>1?1:0)];px[dst+2]=data[src+(channels>1?2:0)];px[dst+3]=255;
+    }
+    g.putImageData(im,local,0);c+=n;
+  }
+  h.recvCols=Math.max(h.recvCols||0,first+count);
+  h.nCols=Math.max(h.nCols,h.recvCols);h.tClose=h.tOpen+h.recvCols*P;
 }
 
 // ---------------------------------------------------------------- simulated auto-timing service
@@ -421,13 +436,16 @@ function fire() {
   const h = cur();
   if (h.state !== 'armed') return;
   h.runVersion = (h.runVersion || 0) + 1;
+  h.stopMode=S.autoStop; h.stopAfter=S.stopAfter; h.stopping=false;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
   h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {};
+  if(!h.asset) { h.sampleStrip=h.sampleStrip||h.img; blankStrip(h); }
   h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';
   S.view.user = false; S.selCol = null;
   if (h.asset && OM) {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
     OM.call('capture.start', {
+      timeoutSeconds:h.stopMode==='timeout'?h.stopAfter:null,
       key: `${h.ev}-${h.rd}-${h.ht}`, png: h.asset.primary, sidecar: h.asset.primaryMeta, speed: SPEED, meetDir: S.meet && S.meet.dir,
       front: h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta } : null,
     })
@@ -451,11 +469,20 @@ function recall() {
   toast('Recall: false start. Heat re-armed. Set FS on the athlete from their row.');
   renderUI();
 }
+function stopCapture() {
+  const h=cur(); if(h.state!=='running'||h.stopping)return;
+  h.stopping=true;renderUI();
+  if(h.asset&&OM) OM.call('capture.stop').catch(err=>{h.stopping=false;toast(err.message,true);renderUI();});
+  else {endCapture(h);renderUI();}
+}
 function endCapture(h) {
-  h.state = 'review'; h.liveCol = h.nCols - 1; h.tNow = h.tClose;
-  h.base = snap(h);
-  fitView();
-  if (S.autoMark) requestProposals(h); else h.req = 'idle';
+  if(h.state!=='running')return;
+  if(h.asset) h.nCols=h.recvCols||0;
+  else h.nCols=Math.min(h.nCols,Math.max(1,h.liveCol+1));
+  h.tClose=h.tOpen+h.nCols*P;
+  h.state='review';h.stopping=false;h.liveCol=h.nCols-1;h.tNow=h.tClose;
+  h.base=snap(h);fitView();
+  if(S.autoMark&&h.nCols>0)requestProposals(h);else h.req='idle';
 }
 function editHeat(h) { if (h.state === 'saved') h.state = 'review'; }
 function setMark(lane, col) {
@@ -470,7 +497,6 @@ function setMark(lane, col) {
 }
 function setStatus(lane, code) {
   const h = cur();
-  if (h.state === 'running') return;
   if (!code || h.status[lane] === code) delete h.status[lane];
   else { h.status[lane] = code; if (code !== 'DQ') delete h.marks[lane]; }
   editHeat(h); renderUI();
@@ -594,26 +620,33 @@ function renderSide() {
   const ctl = $('#ctl'); ctl.innerHTML = '';
   const running = h.state === 'running';
   const btn = (html, cls, on, dis) => { const b = h_('button', 'btn ' + cls); b.innerHTML = html; b.onclick = on; b.disabled = !!dis; ctl.append(b); return b; };
-  btn(ICON.prev + 'Previous heat', '', () => go(S.idx - 1), running || S.idx === 0);
-  btn('Next heat' + ICON.next, '', () => go(S.idx + 1), running || S.idx === HEATS.length - 1);
-  if (h.state === 'loaded') btn('Arm', 'primary', arm);
-  else if (h.state === 'armed') btn('Disarm', '', disarm);
-  else if (running) btn('Recall (false start)', 'warn', recall);
-  else btn('Arm', '', null, true);
-  const st = btn('Start <span class="tag sim">SIM</span>', h.state === 'armed' ? 'go' : '', fire, h.state !== 'armed');
-  st.title = 'Stands in for the start system on the camera network';
-  const swr = h_('div', 'swrow');
-  const sw = h_('button', 'sw' + (S.autoArm ? ' on' : ''));
-  sw.innerHTML = '<i></i>Auto-arm next heat';
-  sw.title = 'Arm each heat as soon as it loads';
-  sw.onclick = () => { S.autoArm = !S.autoArm; store.set('autoArm', S.autoArm); if (S.autoArm && h.state === 'loaded') h.state = 'armed'; renderUI(); };
-  swr.append(sw); ctl.append(swr);
-  const ready = h.state === 'review' && h.athletes.every(a => resolved(h, a));
-  const sv = btn(h.saves && h.state === 'review' ? 'Save again (rewrites LIF)' : h.state === 'saved' ? 'Saved' : 'Save results', 'go wide', save, !ready);
-  if (!ready) sv.classList.remove('go');
-
-  const w = warnings(h), top = w[0];
-  $('#warn').innerHTML = top ? `<div class="warnbox ${top.k === 'ok' ? 'ok' : top.k === 'info' ? 'info' : ''}">${ICON[top.k === 'ok' ? 'ok' : top.k === 'info' ? 'info' : 'warn']}<span>${top.t}</span>${w.length > 1 ? `<span class="more">+${w.length - 1} more</span>` : ''}</div>` : '';
+  const nav=h_('div','heat-nav wide');
+  const prev=h_('button','btn sm'),next=h_('button','btn sm');prev.innerHTML=ICON.prev;next.innerHTML=ICON.next;
+  prev.title='Previous heat';prev.setAttribute('aria-label','Previous heat');prev.disabled=running||S.idx===0;prev.onclick=()=>go(S.idx-1);
+  next.title='Next heat';next.setAttribute('aria-label','Next heat');next.disabled=running||S.idx===HEATS.length-1;next.onclick=()=>go(S.idx+1);
+  nav.append(prev,h_('span','dimtext',`Heat ${h.ht} of ${h.of}`),next);ctl.append(nav);
+  const ready=h.state==='review'&&h.athletes.every(a=>resolved(h,a));
+  if(running)btn(h.stopping?'Stopping…':'Stop capture','go wide',stopCapture,h.stopping);
+  else if(h.state==='loaded')btn('Arm heat','primary wide',arm);
+  else if(h.state==='armed')btn('Start <span class="tag sim">SIM</span>','go wide',fire);
+  else if(h.state==='review'&&ready)btn(h.saves?'Save corrected results':'Save results','go wide',save);
+  else if(h.state==='review')btn('Review next finish','primary wide',()=>{const a=h.athletes.find(a=>!resolved(h,a));if(a)selectLane(a.lane);});
+  else btn('Next heat','primary wide',()=>go(S.idx+1),S.idx===HEATS.length-1);
+  const opts=h_('details','capture-options wide');opts.open=!!S.captureOptionsOpen;
+  opts.innerHTML=`<summary>Capture options <span>${S.autoStop==='manual'?'Manual stop':S.autoStop==='timeout'?`Stop after ${S.stopAfter}s`:'Stop when complete'}</span></summary>
+    <div class="capture-option-fields"><label><span>Auto-arm next heat</span><input id="autoArm" type="checkbox" ${S.autoArm?'checked':''}></label>
+    <label><span>Auto-stop</span><select id="stopMode" ${running?'disabled':''}><option value="manual">Off · manual</option><option value="timeout">After timeout</option><option value="complete">All runners marked</option></select></label>
+    ${S.autoStop==='timeout'?`<label><span>Timeout (seconds)</span><input id="stopAfter" type="number" min="1" max="86400" value="${S.stopAfter}" ${running?'disabled':''}></label>`:''}
+    <div class="capture-secondary"></div></div>`;
+  opts.ontoggle=()=>{S.captureOptionsOpen=opts.open;};ctl.append(opts);
+  opts.querySelector('#autoArm').onchange=e=>{S.autoArm=e.target.checked;store.set('autoArm',S.autoArm);if(S.autoArm&&h.state==='loaded')h.state='armed';renderUI();};
+  opts.querySelector('#stopMode').value=S.autoStop;
+  opts.querySelector('#stopMode').onchange=e=>{S.autoStop=e.target.value;store.set('autoStop',S.autoStop);renderUI();};
+  const timeoutInput=opts.querySelector('#stopAfter');if(timeoutInput)timeoutInput.onchange=e=>{S.stopAfter=Math.max(1,Math.min(86400,Number(e.target.value)||60));store.set('stopAfter',S.stopAfter);};
+  if(h.state==='armed'||running){const secondary=h_('button','btn sm',running?'Recall false start':'Disarm');secondary.onclick=running?recall:disarm;opts.querySelector('.capture-secondary').append(secondary);}
+  const problems=warnings(h).filter(w=>w.k==='warn'),top=problems[0];
+  $('#warn').innerHTML=top?`<div class="sidebar-problem">${ICON.warn}<span>${esc(top.t)}</span></div>`:'';
+  const progress=h_('div','roster-progress');progress.innerHTML=`<span>Athletes</span><span>${h.athletes.filter(a=>resolved(h,a)).length} / ${h.athletes.length} resolved</span>`;$('#warn').append(progress);
 
   const { pl } = places(h);
   const list = $('#list'); list.innerHTML = '';
@@ -625,7 +658,7 @@ function renderSide() {
       res = `<span class="tag ${st === 'DQ' ? 'bad' : 'review'}">${st}</span>${st === 'DQ' && mk ? `<span class="sub num">${official(raceTime(h, mk.col))}</span>` : ''}`;
     } else if (mk) {
       const src = { auto: ['AUTO', 'auto'], checked: ['CHECKED', 'info'], edited: ['EDITED', 'info'], manual: ['MANUAL', 'info'] }[mk.src];
-      res = `<span class="t">${official(raceTime(h, mk.col))}</span><span class="sub"><span class="num">P${pl[a.lane]} · ${fmtT(raceTime(h, mk.col))}</span><span class="tag ${src[1]}">${src[0]}</span></span>`;
+      res = `<span class="t" title="${fmtT(raceTime(h,mk.col))} s">${official(raceTime(h,mk.col))}</span><span class="sub"><span class="num">P${pl[a.lane]}</span><span class="result-source" title="${src[0]}">${mk.src==='auto'?'AI':mk.src==='manual'?'Manual':'Checked'}</span></span>`;
     } else if (p) {
       res = `<span class="t prop">${official(raceTime(h, p.col))}</span><span class="sub"><span class="tag review">REVIEW</span></span>`;
     } else {
@@ -633,22 +666,15 @@ function renderSide() {
     }
     row.innerHTML = `
       <div class="lane">${a.lane}</div>
-      <div class="who"><div class="nm">${a.last}, ${a.first}</div><div class="sc"><span class="num">#${a.id}</span> · ${a.team.name}</div></div>
+      <div class="who"><div class="nm">${a.last}, ${a.first}</div><div class="sc">${a.team.name} <span class="athlete-id">· #${a.id}</span></div></div>
       <div class="res">${res}</div>`;
-    row.onclick = e => { if (e.target.closest('button')) return; selectLane(S.selLane === a.lane ? null : a.lane); };
-    if (S.selLane === a.lane && !running) {
+    row.onclick = e => { if (e.target.closest('button,select,input')) return; selectLane(S.selLane === a.lane ? null : a.lane); };
+    if (S.selLane === a.lane) {
       const rc = h_('div', 'rowctl');
-      ['DNS', 'DNF', 'DQ', 'FS'].forEach(code => {
-        const b = h_('button', 'btn sm' + (st === code ? ' primary' : ''), code);
-        b.onclick = () => setStatus(a.lane, code);
-        rc.append(b);
-      });
-      if (mk && ['review', 'saved'].includes(h.state)) {
-        const c = h_('button', 'btn sm', 'Clear mark');
-        c.onclick = () => { delete h.marks[a.lane]; editHeat(h); renderUI(); };
-        rc.append(c);
-      }
-      if (['review', 'saved'].includes(h.state)) rc.append(h_('span', 'hint', 'Enter marks at the selected column'));
+      const status=h_('select','athlete-status');status.setAttribute('aria-label',`Race status for ${a.first} ${a.last}`);
+      status.innerHTML='<option value="">Race status…</option>'+['DNS','DNF','DQ','FS'].map(c=>`<option value="${c}">${c}</option>`).join('');status.value=st||'';
+      status.onchange=e=>setStatus(a.lane,e.target.value);rc.append(status);
+      if(mk){const exact=h_('span','num dimtext',fmtT(raceTime(h,mk.col))+' s');rc.append(exact);const clear=h_('button','btn sm clear-athlete');clear.innerHTML=ICON.trash;clear.title='Clear finish mark';clear.setAttribute('aria-label','Clear finish mark');clear.onclick=deleteSelectedFinish;rc.append(clear);}
       row.append(rc);
     }
     list.append(row);
@@ -1177,6 +1203,54 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
   const l = $('#bLog'); if (l) { l.textContent = B.log; l.scrollTop = l.scrollHeight; }
 });
 
+// Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
+const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
+function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
+function overlayStyle(kind) { const saved=store.get(overlayKey(kind),{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false}:{enabled:S.lanes}), ...saved,positions:{...(saved.positions||{})} }; }
+function saveOverlay(kind,value) { store.set(overlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);} updateFrontOverlay(); invalidate(); }
+let overlayMenu=null;
+function showOverlaySettings(kind,anchor) {
+  overlayMenu?.remove();
+  const o=overlayStyle(kind),menu=h_('div','overlay-settings');overlayMenu=menu;
+  menu.innerHTML=`<div class="overlay-title">${kind==='front'?'Front camera':'Line-scan'} lanes<button class="btn sm" data-close>×</button></div>
+    <label><span>Show overlay</span><input data-key="enabled" type="checkbox" ${o.enabled?'checked':''}></label>
+    <label><span>Drag to position</span><input data-key="edit" type="checkbox" ${o.edit?'checked':''}></label>
+    <label><span>Font size</span><input data-key="fontSize" type="number" min="8" max="96" value="${o.fontSize}"></label>
+    <label><span>Font weight</span><select data-key="weight">${[400,500,600,700,800,900].map(v=>`<option ${v===o.weight?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label><span>Line thickness</span><input data-key="thickness" type="number" min="0" max="12" step="0.5" value="${o.thickness}"></label>
+    <label><span>Text color</span><input data-key="textColor" type="color" value="${o.textColor}"></label>
+    <label><span>Line color</span><input data-key="lineColor" type="color" value="${o.lineColor}"></label>
+    <label><span>Opacity</span><input data-key="opacity" type="range" min="0.1" max="1" step="0.05" value="${o.opacity}"></label>
+    <div class="overlay-actions"><button class="btn sm" data-reset>Reset positions</button><button class="btn sm" data-defaults>Reset appearance</button></div>`;
+  menu.querySelector('[data-close]').onclick=()=>{menu.remove();overlayMenu=null;};
+  menu.querySelectorAll('[data-key]').forEach(input=>{input.oninput=()=>{
+    const key=input.dataset.key;
+    let value=input.type==='checkbox'?input.checked:input.type==='color'?input.value:Number(input.value);
+    const limits={fontSize:[8,96],thickness:[0,12],opacity:[0.1,1],weight:[400,900]};
+    if(limits[key]) {if(!Number.isFinite(value))return;value=Math.max(limits[key][0],Math.min(limits[key][1],value));}
+    o[key]=value;saveOverlay(kind,o);
+  };});
+  menu.querySelector('[data-reset]').onclick=()=>{o.positions={};saveOverlay(kind,o);};
+  menu.querySelector('[data-defaults]').onclick=()=>{saveOverlay(kind,{...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5}:{}),enabled:o.enabled,positions:o.positions});showOverlaySettings(kind,anchor);};
+  document.body.append(menu);const r=anchor.getBoundingClientRect();
+  menu.style.left=Math.max(8,Math.min(innerWidth-270,r.left))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,r.bottom+5))+'px';
+}
+function updateFrontOverlay() {
+  const layer=document.getElementById('frontLaneOverlay');if(!layer)return;
+  const o=overlayStyle('front'),lanes=[...new Set(cur().athletes.map(a=>a.lane))].sort((a,b)=>a-b);
+  layer.hidden=!o.enabled;
+  if(!o.enabled)return;
+  layer.style.opacity=o.opacity;
+  layer.innerHTML=lanes.map((lane,i)=>{const pos=o.positions[lane]||{x:(i+0.5)/lanes.length,y:0.8};return `<span class="front-lane" data-lane="${lane}" style="left:${pos.x*100}%;top:${pos.y*100}%;font-size:${o.fontSize}px;font-weight:${o.weight};color:${o.textColor};-webkit-text-stroke:${o.thickness}px ${o.lineColor};cursor:${o.edit?'grab':'default'};pointer-events:${o.edit?'auto':'none'}">${lane}</span>`;}).join('');
+  layer.querySelectorAll('.front-lane').forEach(label=>{label.onpointerdown=e=>{
+    if(!o.edit)return;e.preventDefault();e.stopPropagation();label.setPointerCapture(e.pointerId);
+    const lane=label.dataset.lane,rect=frontPb.getBoundingClientRect(),f=S.fview;
+    const move=ev=>{const x=Math.max(0.02,Math.min(0.98,(ev.clientX-rect.left-f.x)/f.s/rect.width)),y=Math.max(0.02,Math.min(0.98,(ev.clientY-rect.top-f.y)/f.s/rect.height));o.positions[lane]={x,y};label.style.left=x*100+'%';label.style.top=y*100+'%';};
+    const up=()=>{label.onpointermove=null;label.onpointerup=null;label.onpointercancel=null;saveOverlay('front',o);};
+    label.onpointermove=move;label.onpointerup=up;label.onpointercancel=up;
+  };});
+}
+
 // ---------------------------------------------------------------- line-scan toolbar
 function renderTools() {
   invalidate();
@@ -1194,7 +1268,7 @@ function renderTools() {
   tool(ICON.auto, 'Mark', 'Create or replace the selected athlete’s finish here (Enter)', false, !captured || S.selLane == null || S.selCol == null, () => setMark(S.selLane,S.selCol));
   tool(ICON.clear, 'Delete mark', 'Remove the selected finish (Delete)', false, !captured || S.selLane == null, deleteSelectedFinish);
   tool(ICON.flip, 'Flip', 'Mirror the image: winner on the left or on the right', S.flip, false, () => { S.flip = !S.flip; store.set('flip', S.flip); renderTools(); });
-  tool(ICON.lanes, 'Lanes', 'Overlay lane lines on the image', S.lanes, false, () => { S.lanes = !S.lanes; store.set('lanes', S.lanes); renderTools(); });
+  const laneOptions=tool(ICON.lanes, 'Lanes ▾', 'Lane overlay appearance and positions', overlayStyle('scan').enabled, false, () => showOverlaySettings('scan',laneOptions));
   sep();
   tool(ICON.auto, 'Auto-mark', 'Ask the finish model for suggested times now (for your review)', false, !review || !S.apiOnline || h.req === 'pending', () => requestProposals(h));
   const sw = h_('button', 'sw' + (S.autoMark ? ' on' : ''));
@@ -1212,6 +1286,7 @@ function renderUI() {
   invalidate();
   renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderSchedule(); renderDrawer(); renderTools();
   publishBoard();
+  updateFrontOverlay();
   updateTs();
 }
 // The timestamp follows the mouse over the line-scan, and falls back to the selected column.
@@ -1377,33 +1452,26 @@ function drawScan() {
   if (ex > sx) {
     g.save();
     if (S.flip) { g.translate(W, 0); g.scale(-1, 1); }
-    g.drawImage(h.img, sx, v.r0, ex - sx, Hi / v.zy, (sx - v.c0) * v.zx, 0, (ex - sx) * v.zx, Hi);
+    drawStrip(g,h,sx,v.r0,ex-sx,Hi/v.zy,(sx-v.c0)*v.zx,0,(ex-sx)*v.zx,Hi);
     g.restore();
   }
   if (live) { g.fillStyle = TK.blue; g.fillRect(xOf(last) - 1, 0, 2, Hi); }
 
-  // lane overlay: boundary lines at the finish plane, from the camera's lane geometry
+  // Decorative lane guides can be adjusted without changing the model's lane geometry.
   const yRow = row => (row - v.r0) * v.zy;
-  const bands = laneBands(h);
-  if (S.lanes) {
-    g.strokeStyle = 'rgba(107,165,231,0.75)'; g.lineWidth = 1;
-    [...new Set(bands.flatMap(b => [Math.round(b.top), Math.round(b.bottom)]))].forEach(row => {
-      const y = Math.round(yRow(row)) + 0.5;
-      if (y < 0 || y > Hi) return;
-      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
-    });
+  const o=overlayStyle('scan'),bands=laneBands(h);
+  if(o.enabled) {
+    g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
+    bands.forEach(b=>{
+      const custom=o.positions[b.lane],top=custom?.top??b.top,bottom=custom?.bottom??b.bottom;
+      if(o.thickness>0)[top,bottom].forEach(row=>{const y=yRow(row);g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();});
+      const y=yRow((top+bottom)/2);if(y<0||y>Hi)return;
+      g.fillStyle=o.textColor;g.fillText(String(b.lane),6,y+o.fontSize*.35);
+    });g.restore();
   }
-  g.font = '700 10px ' + TK.mono;
-  let lastY = -99;
-  bands.forEach(b => {
-    const y = yRow((b.top + b.bottom) / 2) + 5;
-    if (y < 8 || y > Hi - 2 || y - lastY < 13) return;   // far lanes can be thinner than a label: skip rather than overlap
-    lastY = y;
-    g.fillStyle = 'rgba(8,16,34,0.72)'; g.fillRect(0, y - 11, 18, 13);
-    g.fillStyle = '#f7f8fa'; g.fillText(String(b.lane), 6, y - 1);
-  });
 
   // proposals not yet resolved (dashed), then marks (solid)
+  g.font='700 10px '+TK.mono;
   const tags = [];
   (h.proposals || []).forEach(p => {
     if (h.marks[p.lane] || h.status[p.lane] || h.dismissed?.[p.lane]) return;
@@ -1500,7 +1568,7 @@ function drawBackup() {
     if (b > a) g.drawImage(src.img, 0, sy, 1, sh, x(a), 0, x(b) - x(a), Hh);
   }
   const i0 = Math.max(0, Math.floor((r.t0 - src.t) / src.p)), i1 = Math.min(src.w, Math.ceil((tEnd - src.t) / src.p));
-  if (i1 > i0) g.drawImage(src.img, i0, sy, i1 - i0, sh, x(src.t + i0 * src.p), 0, (i1 - i0) * src.p / r.spp, Hh);
+  if (i1 > i0) { if(src.own) g.drawImage(src.img, i0, sy, i1 - i0, sh, x(src.t + i0 * src.p), 0, (i1 - i0) * src.p / r.spp, Hh); else drawStrip(g,h,i0,sy,i1-i0,sh,x(src.t+i0*src.p),0,(i1-i0)*src.p/r.spp,Hh); }
   g.restore();
   // marks, then the shared hover and selected hairlines
   Object.values(h.marks).forEach(m => { g.fillStyle = TK.mint; g.fillRect(Math.round(bX(colTime(h, m.col), r, W)), 0, 1, Hh); });
@@ -1649,7 +1717,16 @@ scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   S.entryNumber = ''; updateEntryNumber();
   const r = scanCv.getBoundingClientRect();
-  const h = cur(), hit = !S.cropTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
+  const h = cur(),overlay=overlayStyle('scan');
+  if(overlay.enabled&&overlay.edit&&!e.shiftKey) {
+    const y=(e.clientY-r.top)/S.view.zy+S.view.r0;
+    const candidates=laneBands(h).map(b=>{const pos=overlay.positions[b.lane]||b;return {...b,top:pos.top,bottom:pos.bottom,d:Math.abs((pos.top+pos.bottom)/2-y)};}).sort((a,b)=>a.d-b.d);
+    if(candidates[0] && (e.clientX-r.left<65 || candidates[0].d*S.view.zy<8)) {
+      const b=candidates[0],offset=y-(b.top+b.bottom)/2;
+      S.drag={mode:'lane-overlay',lane:b.lane,band:b,offset,moved:false,x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top};return;
+    }
+  }
+  const hit = !S.cropTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
   if(hit) { S.selLane=hit.lane; S.selCol=hit.col; }
   S.drag = { lane:hit?.lane, mode: hit ? 'mark' : S.cropTool || e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, c0: S.view.c0, r0: S.view.r0, moved: false };
 });
@@ -1661,6 +1738,10 @@ window.addEventListener('mousemove', e => {
   d.y1 = Math.max(0, Math.min(r.height - RULER, e.clientY - r.top));
   if (Math.hypot(d.x1 - d.x0, d.y1 - d.y0) > 5) d.moved = true;
   invalidate();
+  if(d.mode==='lane-overlay'&&d.moved) {
+    const o=overlayStyle('scan'),b=d.band,centre=d.y1/S.view.zy+S.view.r0-d.offset,half=(b.bottom-b.top)/2;
+    o.positions[d.lane]={top:centre-half,bottom:centre+half};saveOverlay('scan',o);
+  }
   if (d.mode === 'mark' && d.moved) {
     const h=cur(), limit=h.state==='running'?h.liveCol:h.nCols-1;
     S.selCol=Math.max(0,Math.min(limit,colOf(d.x1)));
@@ -1680,6 +1761,7 @@ window.addEventListener('mouseup', () => {
   if (!d) return;
   const h = cur(), v = S.view;
   if (!['review', 'saved', 'running'].includes(h.state) || (h.state === 'running' && h.liveCol < 0)) return;
+  if(d.mode==='lane-overlay'){invalidate();return;}
   if(d.mode === 'mark') {
     if(d.moved) setMark(d.lane,S.selCol); else renderUI();
     return;
@@ -1827,9 +1909,15 @@ backupCv.title = 'Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: 
 
 // ---------------------------------------------------------------- front camera zoom and pan (for context; the recording itself is untouched)
 const frontPb = document.getElementById('front').parentNode;
+const frontLaneLayer=h_('div','front-lane-overlay');frontLaneLayer.id='frontLaneOverlay';frontPb.append(frontLaneLayer);
+const frontLaneButton=h_('button','btn sm','Lanes ▾');
+frontLaneButton.onpointerdown=e=>e.stopPropagation();frontLaneButton.onmousedown=e=>e.stopPropagation();
+frontLaneButton.onclick=e=>{e.stopPropagation();showOverlaySettings('front',frontLaneButton);};
+const frontHeader=frontPb.parentNode.querySelector('.ph');frontLaneButton.style.marginLeft='auto';frontHeader.append(frontLaneButton);
+
 function applyFrontView() {
   const f = S.fview, t = `translate(${f.x}px, ${f.y}px) scale(${f.s})`;
-  [document.getElementById('front'), vidEl].forEach(el => { if (el) { el.style.transformOrigin = '0 0'; el.style.transform = t; } });
+  [document.getElementById('front'), vidEl,document.getElementById('frontLaneOverlay')].forEach(el => { if (el) { el.style.transformOrigin = '0 0'; el.style.transform = t; } });
 }
 function clampFront() {
   const f = S.fview, W = frontPb.clientWidth, H = frontPb.clientHeight;
@@ -1854,15 +1942,29 @@ frontPb.addEventListener('dblclick', () => { Object.assign(S.fview, { s: 1, x: 0
 frontPb.title = 'Wheel: zoom · Drag: pan · Double-click: reset';
 
 // ---------------------------------------------------------------- frame loop (canvases redraw only while running or after a change)
-let lastSec = -1, lastLiveRender = 0;
+let lastSec = -1, lastLiveRender = 0, lastSideStamp='';
 function frame(now) {
   const h = cur();
   if (h.state === 'running') {
     h.tNow = (now - h.startPerf) / 1000 * SPEED;
-    const lc = h.asset ? (h.recvCols || 0) - 1 : Math.min(h.nCols - 1, Math.floor((h.tNow - h.tOpen) / P));
+    if(!h.asset && h.sampleStrip) {
+      const target=Math.max(0,Math.floor((h.tNow-h.tOpen)/P)),from=h.recvCols||0;
+      for(let c=from;c<target;) {
+        const index=Math.floor(c/STRIP_TILE),local=c%STRIP_TILE,n=Math.min(target-c,STRIP_TILE-local);
+        if(!h.stripTiles[index]){const tile=document.createElement('canvas');tile.width=STRIP_TILE;tile.height=rowsOf(h);h.stripTiles[index]=tile;}
+        const g=h.stripTiles[index].getContext('2d'),im=h.sampleStrip,inside=Math.max(0,Math.min(n,im.width-c));
+        if(inside)g.drawImage(im,c,0,inside,im.height,local,0,inside,im.height);
+        if(inside<n)g.drawImage(im,im.width-1,0,1,im.height,local+inside,0,n-inside,im.height);
+        c+=n;
+      }
+      h.recvCols=target;h.nCols=Math.max(h.nCols,target);h.tClose=h.tOpen+target*P;
+    }
+    const lc=(h.recvCols||0)-1;
     if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(h); }
-    if (now - lastLiveRender > 250) { lastLiveRender = now; liveSuggest(h); renderAcc(); renderSide(); renderProps(); renderTools(); renderSchedule(); publishBoard(); }
-    if (!h.asset && h.tNow >= h.tClose) { endCapture(h); renderUI(); }   // engine-fed heats close on the camera's end message
+    if (now - lastLiveRender > 250) { lastLiveRender = now; liveSuggest(h); renderAcc(); const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();} renderProps(); renderTools(); renderSchedule(); publishBoard(); }
+    if(h.stopMode==='timeout'&&h.tNow>=h.stopAfter)stopCapture();
+    if(h.stopMode==='complete'&&h.athletes.length&&h.athletes.every(a=>resolved(h,a)))stopCapture();
+
     tickClock();
   } else if (h.req === 'pending' && now - lastLiveRender > 1000) { lastLiveRender = now; renderProps(); }   // "Timing… N s"
   const sec = Math.floor(Date.now() / 1000);

@@ -4,23 +4,23 @@ Open-source track-and-field timing and meet operations, with AI assistance and o
 
 OpenMeet is a Track Tools Pro LLC project. The goal is to make finish review, runner identification, and results handling easier to operate so meets can keep moving.
 
-**Status:** early development. This initial repository contains the architecture, roadmap, configuration template, and proposed demo. A trained finish-detection model and a working end-to-end application have not been implemented here yet.
+**Status:** working Electron prototype for Windows, macOS and Linux. Run simulated camera captures, review and correct finish marks, exchange start lists and results through a meet folder, and display live scoreboards. Real camera integration and interoperability with AthleticLOCAL still require meet-day validation. The bundled timing stand-in echoes simulator truth; it is labelled in the interface and does not demonstrate model accuracy.
 
-## Planned workflow
+## Run the meet
 
-1. Load the race entries and finish evidence with its hardware timestamps.
-2. Call our proprietary vision model through an API to propose sprint finish marks and lane associations.
-3. Use a Meta-powered agent to gather bib evidence, check the race roster, and suggest distance-runner identities.
-4. Let an official inspect, correct, or leave suggestions unresolved.
-5. Produce approved results with their supporting evidence and decision history.
+1. Load the meet manager's start lists through a shared folder.
+2. Capture the race and inspect live suggested finishes, or mark them by hand.
+3. Correct marks, athlete statuses or the selected start trigger.
+4. Save results and move to the next heat.
+5. Present the live race and results on a customizable scoreboard.
 
-Hardware timestamps provide the measurement foundation. Model predictions are proposals. Officials control approval.
+The camera clock supplies measurements. Suggested marks require operator review. Start-trigger history and original captured columns are retained when timing is corrected. See the [working demo walkthrough](docs/demo-script.md) for an honest tour of the prototype and its current limits.
 
 ## Open app, proprietary model API
 
 The OpenMeet application, integration code, and documentation in this repository are open source under the MIT license.
 
-The custom finish-detection model is a separate, planned proprietary service. OpenMeet will call its inference API; its weights remain on the service's infrastructure. The model weights, training implementation, and training data are not distributed by this repository. Access to that service will have separate terms.
+Timing, cropping and other proprietary models run as separate services. This repository contains their API contracts and client adapters, plus labelled demo stand-ins. Model weights, inference implementations, training code and datasets are excluded from source releases and installers. Connecting a private service does not distribute that service. Access has separate terms.
 
 The Meta agent and the custom finish model have different roles: the custom model proposes finish marks; the Meta agent helps reconcile runner identities and coordinate the review workflow.
 
@@ -34,7 +34,19 @@ The Meta agent and the custom finish model have different roles: the custom mode
 
 ## Development setup
 
-The runtime and implementation stack are still to be selected. There is no application installation or run command yet.
+Requires Node 22.2 or newer. The application uses Electron and a separate Node engine process.
+
+```sh
+npm --prefix app ci
+npm --prefix app start
+```
+
+See [desktop setup and installers](app/README.md) and the [design blueprint](docs/blueprint.md). The demo inputs are provided separately.
+
+```sh
+npm --prefix engine test
+node scripts/check-public-boundary.mjs
+```
 
 When configuration is needed, copy `.env.example` to a local `.env` and supply your own values. Keep provider credentials in the backend or local service configuration, outside browser bundles and source control.
 
