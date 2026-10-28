@@ -1,5 +1,5 @@
 import { scanBoundaries, movedBoundaryRow, scanBackground, writeForegroundMask, foregroundInRows } from './scan-overlays.mjs';
-import { FrontFrameCache, linkedCameraRange, cameraAsset } from './front-preview.mjs';
+import { FrontFrameCache, linkedCameraRange, cameraAsset, cameraLaneBody } from './front-preview.mjs';
 
 (() => {
 'use strict';
@@ -32,7 +32,7 @@ const ICON = {
   ok: '<svg class="i" viewBox="0 0 14 14"><path d="M2.5 7.5 5.6 10.4 11.5 3.8"/></svg>',
   info: '<svg class="i" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.6"/><path d="M7 6.2v4M7 3.9v.2"/></svg>',
   close: svg('<path d="M3 3l6 6M9 3 3 9"/>'),
-  crop: svg('<path d="M3 1v8h8M1 3h8v8"/>'),
+  zoom: svg('<path d="M3 1v8h8M1 3h8v8"/>'),
   fit: svg('<path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8"/>'),
   flip: svg('<path d="M6 1v10M4 3.5 1.5 6 4 8.5M8 3.5 10.5 6 8 8.5"/>'),
   lanes: svg('<path d="M1 3h10M1 6h10M1 9h10"/>'),
@@ -167,7 +167,7 @@ const S = {
   rosterOrder: store.get('rosterOrder','lane'),
   autoStop: store.get('autoStop','manual'), stopAfter: store.get('stopAfter',60),
   autoArm: store.get('autoArm', true), autoMark: store.get('autoMark', true),
-  flip: store.get('flip', false), lanes: store.get('lanes', false), cropTool: false,
+  flip: store.get('flip', false), lanes: store.get('lanes', false), zoomTool: false,
   files: [], view: { c0: 0, zx: 1, r0: 0, zy: 1, user: false, zoomed: false }, drag: null,
   layout: null, max: null, rects: {},
   meet: null,   // {dir, files} when a real meet folder is open (Electron); null = built-in sample meet
@@ -177,7 +177,71 @@ const S = {
 const OM = window.openmeet || null;   // the Electron bridge; absent when this page runs as the static replica
 const windStr = h => (h.wind == null ? '—' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1) + ' m/s');
 const cur = () => HEATS[S.idx];
-const viewHeat = () => S.cameraSetup?.heat || cur();
+const scanSourceViews=new Map();
+const viewHeat = () => S.cameraSetup?.heat || scanPresentation(cur());
+function scanPresentation(h) {
+  if(!h.asset)return h;
+  const main=h.viewCameraId||h.asset.mainCameraId,comparison=h.viewCompareId||h.asset.comparisonCameraId;
+  if(main===h.asset.mainCameraId&&comparison===h.asset.comparisonCameraId)return h;
+  const selected=cameraAsset(h.asset,{main,comparison}),source=scanSourceViews.get(selected.primary);
+  if(main!==h.asset.mainCameraId&&!source)return h;
+  const p=h.presentation||(h.presentation=Object.create(h));
+  p.recordingHeat=h;p.displaySource=main===h.asset.mainCameraId?null:source;p.displayMeta=p.displaySource?.meta||h.asset.primaryMeta;
+  p.rows=p.displaySource?.rows||h.rows;p.laneRows=p.displaySource?p.displayMeta.lane_rows?.map(b=>({lane:b.lane,top:b.top_row,bottom:b.bottom_row})):h.laneRows;
+  p.asset={...h.asset,mainCameraId:selected.mainCameraId,mainCameraLabel:selected.mainCameraLabel,comparisonCameraId:selected.comparisonCameraId,comparisonCameraLabel:selected.comparisonCameraLabel,backup:selected.backup,backupMeta:selected.backupMeta};
+  return p;
+}
+async function loadScanSource(h,descriptor) {
+  let source=scanSourceViews.get(descriptor.png);
+  if(source){if(h.captureId&&!source.saved.has(h.captureId)){await OM.call('camera.image',{png:descriptor.png,captureId:h.captureId,includePixels:false});source.saved.add(h.captureId);}return source;}
+  const image=await OM.call('camera.image',{png:descriptor.png,captureId:h.captureId}),canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+  const g=canvas.getContext('2d'),rgba=g.createImageData(image.width,image.height),channels=image.channels;
+  for(let i=0;i<image.width*image.height;i++){rgba.data[i*4]=image.data[i*channels];rgba.data[i*4+1]=image.data[i*channels+(channels>2?1:0)];rgba.data[i*4+2]=image.data[i*channels+(channels>2?2:0)];rgba.data[i*4+3]=255;}g.putImageData(rgba,0,0);
+  const pixels={...image,layout:'rows'},mask=new Uint8Array(Math.ceil(image.width*image.height/8));writeForegroundMask(mask,0,pixels,scanBackground(pixels));
+  source={img:canvas,mask,rows:image.height,w:image.width,t:descriptor.meta.first_column_race_time_s,p:descriptor.meta.column_period_s,meta:descriptor.meta,id:descriptor.id,label:descriptor.label,saved:new Set(h.captureId?[h.captureId]:[])};
+  scanSourceViews.set(descriptor.png,source);return source;
+}
+async function chooseScanView(role,id) {
+  const h=cur(),scans=h.asset?.lineScans;if(!scans?.some(s=>s.id===id)||h.viewLoading)return;
+  const previous=viewHeat(),main=role==='main'?id:previous.asset.mainCameraId,comparison=role==='comparison'?id:previous.asset.comparisonCameraId;
+  const selected=cameraAsset(h.asset,{main,comparison:main===comparison?previous.asset.mainCameraId:comparison});
+  overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;
+  if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;await chooseScanView(role,id);await startCameraSetup();return;}
+  if(['loaded','armed'].includes(h.state)){store.set(cameraRoleKey(),{main:selected.mainCameraId,comparison:selected.comparisonCameraId});for(const heat of HEATS)if(heat.asset&&['loaded','armed'].includes(heat.state)){heat.viewCameraId=null;heat.viewCompareId=null;attachAsset(heat,heat.asset);}ensureStrip(h);fitView();renderUI();return;}
+  h.viewLoading=true;renderTools();
+  try {
+    for(const cameraId of [selected.mainCameraId,selected.comparisonCameraId])if(cameraId&&cameraId!==h.asset.mainCameraId)await loadScanSource(h,scans.find(s=>s.id===cameraId));
+    const linked=linkedCameraRange(S.view,{rows:rowsOf(previous),height:scanH(),width:scanW(),period:periodOf(previous),timeOrigin:previous.tOpen,otherWidth:scanW(),otherRows:selected.primarySize.height,mainLanes:(previous.displayMeta||previous.asset.primaryMeta).lane_rows,otherLanes:selected.primaryMeta.lane_rows});
+    h.viewCameraId=selected.mainCameraId;h.viewCompareId=selected.comparisonCameraId;S.bview.linked=true;
+    if(role==='main'){S.view.r0=linked.r0*selected.primarySize.height;S.view.zy=scanH()/(linked.rv*selected.primarySize.height);}
+    store.set(cameraRoleKey(),{main:selected.mainCameraId,comparison:selected.comparisonCameraId});
+    renderUI();
+  }catch(err){toast('Camera view could not load: '+err.message,true);}finally{h.viewLoading=false;renderTools();}
+}
+let sourceMenu=null;
+function showSourceMenu(role,anchor) {
+  sourceMenu?.close(false);
+  const h=viewHeat(),scans=cur().asset?.lineScans;if(!scans?.length)return;
+  const menu=h_('div','camera-source-menu');menu.setAttribute('role','menu');menu.setAttribute('aria-label',role==='main'?'Main scan camera':'Comparison camera');sourceMenu=menu;
+  const close=(restore=true)=>{menu.remove();window.removeEventListener('pointerdown',outside);anchor.setAttribute('aria-expanded','false');if(sourceMenu===menu)sourceMenu=null;if(restore&&anchor.isConnected)anchor.focus();};
+  const outside=e=>{if(!menu.contains(e.target)&&!anchor.contains(e.target))close(false);};menu.close=close;
+  anchor.setAttribute('aria-expanded','true');
+  for(const source of scans){
+    if(role==='comparison'&&source.id===h.asset.mainCameraId)continue;
+    const b=h_('button','',source.label);b.setAttribute('role','menuitemradio');
+    b.setAttribute('aria-checked',String(source.id===(role==='main'?h.asset.mainCameraId:h.asset.comparisonCameraId)));
+    b.onclick=()=>{close();chooseScanView(role,source.id);};menu.append(b);
+  }
+  const rect=anchor.getBoundingClientRect();document.body.append(menu);
+  menu.style.left=Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,rect.left))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,rect.bottom+4))+'px';
+  (menu.querySelector('[aria-checked="true"]')||menu.querySelector('button'))?.focus();window.addEventListener('pointerdown',outside);
+  menu.onkeydown=e=>{
+    e.stopPropagation();const items=[...menu.querySelectorAll('button')],index=items.indexOf(document.activeElement);
+    if(e.key==='Escape'){e.preventDefault();close();}
+    else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();items[e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();}
+    else if(e.key==='Tab')close(false);
+  };
+}
 
 // ---------------------------------------------------------------- shared-folder files (what RunMeet's AthleticLOCAL writes, and what OpenMeet writes back)
 const q = v => (/[",]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v));
@@ -603,7 +667,9 @@ function setMark(lane, col) {
   const p = h.proposals && h.proposals.find(x => x.lane === lane);
   const src = p ? (p.col === col ? 'checked' : 'edited') : 'manual';
   if (h.dismissed) delete h.dismissed[lane];
-  h.marks[lane] = { col, src };
+  const display=p?.col===col?null:viewHeat().displaySource,time=colTime(h,col),nativeColumn=display?(time-display.t)/display.p-0.5:null;
+  if(display&&(nativeColumn<-.5||nativeColumn>=display.w-.5)){toast('This camera has no captured image at that time.',true);return;}
+  h.marks[lane] = { col, src, ...(display?{cameraId:display.id,cameraColumn:nativeColumn}:{cameraId:h.asset?.mainCameraId}) };
   if (h.status[lane] && h.status[lane] !== 'DQ') delete h.status[lane];
   editHeat(h); renderUI();
 }
@@ -634,7 +700,7 @@ const resolved = (h, a) => !!(h.marks[a.lane] || h.status[a.lane]);
 function lifRequest(h) {
   const d = h.startTOD, tod = d ? d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000 : null;
   return {
-    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,
+    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,review:{at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0},
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
     results: h.athletes.map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
@@ -904,6 +970,7 @@ function renderProps() {
     h.req === 'live' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>live` :
     h.req === 'done' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
   if(h.inputDerived) $('#apiState').append(h_('span','tag info','GUIDED INPUT'));
+  if(viewHeat().asset?.mainCameraId!==h.asset?.mainCameraId){const source=h_('span','timing-source',h.asset.mainCameraLabel);source.title='Auto-timing uses this recorded camera';$('#apiState').prepend(source);}
   const box = $('#props');
   if (h.req === 'offline' || h.req === 'error') {
     box.innerHTML = `<div class="empty">${h.req === 'error' ? 'Auto-timing failed: ' + esc(h.reqErr || '') + '.' : 'The auto-timing service could not be reached.'} Every lane can still be marked by hand.</div>`;
@@ -1351,8 +1418,8 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 // Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
-function cameraOverlayKey(kind){return kind==='scan'?`${overlayKey(kind)}:${viewHeat().asset?.mainCameraId||'primary'}`:overlayKey(kind);}
-function overlayStyle(kind) { const camera=viewHeat().asset?.mainCameraId||'primary',saved=store.get(cameraOverlayKey(kind),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true}), ...saved,positions:{...(saved.positions||{})},boundaries:{...(saved.boundaries||{})},sizes:{...(saved.sizes||{})} }; }
+function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
+function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary') { const saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,pendingColor:'#ffb020',pendingOpacity:0.12}), ...saved,positions:{...(saved.positions||{})},boundaries:{...(saved.boundaries||{})},sizes:{...(saved.sizes||{})} }; }
 function frontLanePoint(o,lane) {
   if(o.positions[lane])return o.positions[lane];
   const a=o.positions[1]||{x:0.1,y:0.8},b=o.positions[o.laneCount]||{x:0.9,y:0.8};
@@ -1372,51 +1439,276 @@ function spreadFrontLanes(o) {
   o.positions=points;
 }
 function modelLaneGuides(h) {
-  const o=overlayStyle('scan');if(!o.modelInput)return null;
+  const o=overlayStyle('scan',h.asset?.mainCameraId||'primary');if(!o.modelInput)return null;
   const rows=[...new Set(scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>Math.round(b.row)))];
   return {enabled:true,rows,color:o.lineColor,thickness:Math.max(1,Math.round(o.thickness))};
 }
-function saveOverlay(kind,value) { store.set(cameraOverlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);} updateFrontOverlay(); invalidate(); }
+function saveOverlay(kind,value) { store.set(cameraOverlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);syncLaneGutter(value);} updateFrontOverlay(); invalidate(); }
 let overlayMenu=null;
-function showOverlaySettings(kind,anchor) {
+function showOverlaySettings(kind, anchor) {
+  // Clean up listeners as well as the previous popover when switching cameras.
+  overlayMenu?.overlaySettingsCleanup?.();
   overlayMenu?.remove();
-  const o=overlayStyle(kind),menu=h_('div','overlay-settings');overlayMenu=menu;
-  menu.innerHTML=`<div class="overlay-title">${kind==='front'?'Front camera':'Line-scan'} lanes<button class="btn sm" data-close>×</button></div>
-    <label><span>Show overlay</span><input data-key="enabled" type="checkbox" ${o.enabled?'checked':''}></label>
-    <label><span>${kind==='scan'?'Edit boundary lines':'Drag to position'}</span><input data-key="edit" type="checkbox" ${o.edit?'checked':''}></label>
-    ${kind==='front'?`<label><span>Lane count</span><input data-lane-count type="number" min="2" max="24" value="${o.laneCount}"></label>
-    <label><span>Positioning</span><select data-placement><option value="anchors">Set first + last</option><option value="individual">Fine-tune each lane</option></select></label>
-    <label><span>First lane size</span><input data-end-size="first" type="number" min="8" max="160" value="${Math.round(o.fontSize*o.firstScale)}"></label>
-    <label><span>Last lane size</span><input data-end-size="last" type="number" min="8" max="160" value="${Math.round(o.fontSize*o.lastScale)}"></label>
-    <p class="dimtext overlay-hint">Place the first and last numbers; the rest follow their positions and sizes. In fine-tune mode, drag any number. Alt + wheel adjusts its size.</p>`:''}
-    ${kind==='scan'?`<p class="dimtext overlay-hint">Drag a line or its number. Each line is a shared lane boundary; neighbouring lines stay put.</p><label><span>Guides behind runners</span><input data-key="behindRunners" type="checkbox" ${o.behindRunners?'checked':''}></label><label><span>Lane guides in model input</span><input data-key="modelInput" type="checkbox" ${o.modelInput?'checked':''}></label><p class="dimtext overlay-hint">Renders opaque guide lines into a derived image. Original pixels stay unchanged. No finish marks or text are included.</p>`:''}
-    <label><span>Font size</span><input data-key="fontSize" type="number" min="8" max="96" value="${o.fontSize}"></label>
-    <label><span>Font weight</span><select data-key="weight">${[400,500,600,700,800,900].map(v=>`<option ${v===o.weight?'selected':''}>${v}</option>`).join('')}</select></label>
-    <label><span>Line thickness</span><input data-key="thickness" type="number" min="0" max="12" step="0.5" value="${o.thickness}"></label>
-    <label><span>Text color</span><input data-key="textColor" type="color" value="${o.textColor}"></label>
-    <label><span>Line color</span><input data-key="lineColor" type="color" value="${o.lineColor}"></label>
-    <label><span>Opacity</span><input data-key="opacity" type="range" min="0.1" max="1" step="0.05" value="${o.opacity}"></label>
-    <div class="overlay-actions"><button class="btn sm" data-reset>Reset positions</button><button class="btn sm" data-defaults>Reset appearance</button></div>`;
-  menu.querySelector('[data-close]').onclick=()=>{menu.remove();overlayMenu=null;};
-  menu.querySelectorAll('[data-key]').forEach(input=>{input.oninput=()=>{
-    const key=input.dataset.key;
-    let value=input.type==='checkbox'?input.checked:input.type==='color'?input.value:Number(input.value);
-    const limits={fontSize:[8,96],thickness:[0,12],opacity:[0.1,1],weight:[400,900]};
-    if(limits[key]) {if(!Number.isFinite(value))return;value=Math.max(limits[key][0],Math.min(limits[key][1],value));}
-    o[key]=value;
-    if(kind==='front'&&key==='fontSize')menu.querySelectorAll('[data-end-size]').forEach(e=>{e.value=Math.round(o.fontSize*(e.dataset.endSize==='first'?o.firstScale:o.lastScale));});
-    saveOverlay(kind,o);
-  };});
-  if(kind==='front'){
-    const count=menu.querySelector('[data-lane-count]'),placement=menu.querySelector('[data-placement]');placement.value=o.placement||'anchors';
-    count.onchange=()=>{const last=frontLanePoint(o,o.laneCount),first=frontLanePoint(o,1);o.laneCount=Math.max(2,Math.min(24,Math.round(Number(count.value)||8)));count.value=o.laneCount;o.positions={1:first,[o.laneCount]:last};o.sizes={};spreadFrontLanes(o);saveOverlay(kind,o);};
-    placement.onchange=()=>{o.placement=placement.value;saveOverlay(kind,o);};
-    menu.querySelectorAll('[data-end-size]').forEach(input=>{input.oninput=()=>{const size=Math.max(8,Math.min(160,Number(input.value)||8));o[input.dataset.endSize==='first'?'firstScale':'lastScale']=size/o.fontSize;o.sizes={};if(o.placement==='anchors')spreadFrontLanes(o);saveOverlay(kind,o);};});
+
+  const isFront = kind === 'front';
+  const id = `overlay-settings-${kind}`;
+  const menu = h_('div', 'overlay-settings overlay-settings--grouped');
+  let o = overlayStyle(kind);
+  overlayMenu = menu;
+  menu.id = id;
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-modal', 'false');
+  menu.setAttribute('aria-labelledby', `${id}-title`);
+  menu.setAttribute('aria-describedby', `${id}-autosave`);
+  menu.tabIndex = -1;
+  menu.innerHTML = `
+    <div class="overlay-title">
+      <h2 id="${id}-title">${isFront ? 'Front camera' : 'Line-scan'} lanes</h2>
+      <button type="button" class="btn sm overlay-close" data-close aria-label="Close lane settings">×</button>
+    </div>
+    <label class="overlay-master">
+      <span>${isFront ? 'Show lane numbers' : 'Show lanes'}</span>
+      <input data-key="enabled" type="checkbox" role="switch">
+    </label>
+    <p class="overlay-autosave" id="${id}-autosave">Changes save automatically for this camera.</p>
+
+    <details class="overlay-group" data-settings-group="placement" open>
+      <summary>Placement</summary>
+      <div class="overlay-group-body">
+        <label>
+          <span>${isFront ? 'Drag to position' : 'Edit lane dividers'}</span>
+          <input data-key="edit" type="checkbox" role="switch" aria-describedby="${id}-placement-help">
+        </label>
+        ${isFront ? `
+          <label><span>Lane count</span><input data-lane-count type="number" min="2" max="24" step="1"></label>
+          <label><span>Positioning</span><select data-placement>
+            <option value="anchors">First + last lanes</option>
+            <option value="individual">Each lane individually</option>
+          </select></label>
+          <fieldset class="overlay-subgroup">
+            <legend>First and last lane sizes</legend>
+            <label><span>First lane size (px)</span><input data-end-size="first" type="number" min="8" max="160" step="1"></label>
+            <label><span>Last lane size (px)</span><input data-end-size="last" type="number" min="8" max="160" step="1"></label>
+          </fieldset>
+          <p class="overlay-hint" id="${id}-placement-help">Place the first and last numbers; the others follow their positions and sizes. Choose each lane individually to drag any number. Alt + wheel adjusts its size.</p>
+        ` : `
+          <p class="overlay-hint" id="${id}-placement-help">Numbers live in a separate left lane column. Drag shared lane dividers there or over the image; neighbouring dividers stay put.</p>
+        `}
+        <div class="overlay-actions"><button type="button" class="btn sm" data-reset>Reset positions</button></div>
+      </div>
+    </details>
+
+    ${!isFront ? `
+      <fieldset class="overlay-group overlay-static">
+        <legend>Race checks <span class="overlay-optional">Optional</span></legend>
+        <label>
+          <span>Highlight lanes awaiting a finish</span>
+          <input data-key="needsFinish" type="checkbox" role="switch" aria-describedby="${id}-race-help">
+        </label>
+        <p class="overlay-hint" id="${id}-race-help">A finish or DNS/DNF/DQ/FS resolves a lane. Highlighting can also flag a review proposal awaiting acceptance. No result is created automatically.</p>
+      </fieldset>
+      <fieldset class="overlay-group overlay-static">
+        <legend>Display effects</legend>
+        <label><span>Guides behind runners</span><input data-key="behindRunners" type="checkbox" role="switch"></label>
+      </fieldset>
+    ` : ''}
+
+    <details class="overlay-group" data-settings-group="appearance">
+      <summary>Appearance</summary>
+      <div class="overlay-group-body">
+        <label><span>Font size (px)</span><input data-key="fontSize" type="number" min="8" max="96" step="1"></label>
+        <label><span>Font weight</span><select data-key="weight">${[400, 500, 600, 700, 800, 900].map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
+        <label><span>Line thickness (px)</span><input data-key="thickness" type="number" min="0" max="12" step="0.5"></label>
+        <label><span>Text color</span><input data-key="textColor" type="color"></label>
+        <label><span>Line color</span><input data-key="lineColor" type="color"></label>
+        <label><span>Opacity</span><span class="overlay-range"><input data-key="opacity" type="range" min="0.1" max="1" step="0.05"><output data-value-for="opacity" aria-hidden="true"></output></span></label>
+        ${!isFront ? `
+          <fieldset class="overlay-subgroup">
+            <legend>Awaiting-finish highlight</legend>
+            <label><span>Highlight color</span><input data-key="pendingColor" type="color"></label>
+            <label><span>Highlight opacity</span><span class="overlay-range"><input data-key="pendingOpacity" type="range" min="0.05" max="0.35" step="0.01"><output data-value-for="pendingOpacity" aria-hidden="true"></output></span></label>
+          </fieldset>
+        ` : ''}
+        <div class="overlay-actions"><button type="button" class="btn sm" data-defaults>Reset appearance</button></div>
+      </div>
+    </details>
+
+    ${!isFront ? `
+      <details class="overlay-group" data-settings-group="advanced">
+        <summary>Advanced</summary>
+        <div class="overlay-group-body">
+          <label><span>Lane guides in model input</span><input data-key="modelInput" type="checkbox" role="switch" aria-describedby="${id}-model-help ${id}-model-reason"></label>
+          <p class="overlay-hint" id="${id}-model-help" data-model-input-help>Renders opaque lane guides into a derived model image. Original pixels stay unchanged. Finish marks and text are excluded.</p>
+          <p class="overlay-hint overlay-model-reason" id="${id}-model-reason" data-model-input-reason role="status" hidden></p>
+        </div>
+      </details>
+    ` : ''}`;
+
+  const uiDefaults = { needsFinish: false, pendingColor: '#ffb020', pendingOpacity: 0.12 };
+  const inputs = [...menu.querySelectorAll('[data-key]')];
+  const endSizes = [...menu.querySelectorAll('[data-end-size]')];
+  const syncRange = input => {
+    const percent = `${Math.round(Number(input.value) * 100)}%`;
+    menu.querySelector(`[data-value-for="${input.dataset.key}"]`).value = percent;
+    input.setAttribute('aria-valuetext', percent);
+  };
+  const syncEndSizes = () => endSizes.forEach(input => {
+    const scale = input.dataset.endSize === 'first' ? (o.firstScale || 1) : (o.lastScale || 0.55);
+    input.value = Math.round(o.fontSize * scale);
+  });
+  const syncControls = () => {
+    inputs.forEach(input => {
+      const value = o[input.dataset.key] ?? uiDefaults[input.dataset.key];
+      if (input.type === 'checkbox') input.checked = !!value;
+      else input.value = value;
+      if (input.type === 'range') syncRange(input);
+    });
+    if (isFront) {
+      menu.querySelector('[data-lane-count]').value = o.laneCount;
+      menu.querySelector('[data-placement]').value = o.placement || 'anchors';
+      syncEndSizes();
+    }
+  };
+  syncControls();
+  if (!isFront && viewHeat().asset?.mainCameraId !== cur().asset?.mainCameraId) {
+    menu.querySelector('[data-key="modelInput"]').disabled = true;
+    const reason = menu.querySelector('[data-model-input-reason]');
+    reason.hidden = false;
+    reason.textContent = `Auto-timing uses the recorded ${cur().asset.mainCameraLabel}. Select that camera to edit its model-input guides.`;
   }
-  menu.querySelector('[data-reset]').onclick=()=>{o.positions={};o.boundaries={};saveOverlay(kind,o);};
-  menu.querySelector('[data-defaults]').onclick=()=>{saveOverlay(kind,{...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,laneCount:o.laneCount,placement:o.placement,firstScale:1,lastScale:0.55}:{behindRunners:true,modelInput:o.modelInput}),enabled:o.enabled,positions:o.positions,boundaries:o.boundaries});showOverlaySettings(kind,anchor);};
-  document.body.append(menu);const r=anchor.getBoundingClientRect();
-  menu.style.left=Math.max(8,Math.min(innerWidth-270,r.left))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,r.bottom+5))+'px';
+
+  inputs.forEach(input => {
+    input.oninput = () => {
+      if (input.disabled || (input.type === 'number' && input.value === '')) return;
+      const key = input.dataset.key;
+      let value = input.type === 'checkbox' ? input.checked : input.type === 'color' ? input.value : Number(input.value);
+      const limits = { fontSize: [8, 96], thickness: [0, 12], opacity: [0.1, 1], weight: [400, 900], pendingOpacity: [0.05, 0.35] };
+      if (limits[key]) {
+        if (!Number.isFinite(value)) return;
+        value = Math.max(limits[key][0], Math.min(limits[key][1], value));
+      }
+      // Image dragging may have saved newer geometry while this menu stayed open.
+      o = overlayStyle(kind);
+      o[key] = value;
+      if (isFront && key === 'fontSize') syncEndSizes();
+      if (input.type === 'range') syncRange(input);
+      saveOverlay(kind, o);
+    };
+    if (input.type === 'number') input.onchange = () => {
+      o = overlayStyle(kind);
+      input.value = o[input.dataset.key];
+    };
+  });
+
+  if (isFront) {
+    const count = menu.querySelector('[data-lane-count]');
+    const placement = menu.querySelector('[data-placement]');
+    count.onchange = () => {
+      o = overlayStyle(kind);
+      const first = frontLanePoint(o, 1), last = frontLanePoint(o, o.laneCount);
+      o.laneCount = Math.max(2, Math.min(24, Math.round(Number(count.value) || 8)));
+      count.value = o.laneCount;
+      o.positions = { 1: first, [o.laneCount]: last };
+      o.sizes = {};
+      spreadFrontLanes(o);
+      saveOverlay(kind, o);
+    };
+    placement.onchange = () => {
+      o = overlayStyle(kind);
+      o.placement = placement.value;
+      saveOverlay(kind, o);
+    };
+    endSizes.forEach(input => {
+      input.oninput = () => {
+        if (input.value === '') return;
+        const value = Number(input.value);
+        if (!Number.isFinite(value)) return;
+        const size = Math.max(8, Math.min(160, value));
+        o = overlayStyle(kind);
+        o[input.dataset.endSize === 'first' ? 'firstScale' : 'lastScale'] = size / o.fontSize;
+        o.sizes = {};
+        if (o.placement === 'anchors') spreadFrontLanes(o);
+        saveOverlay(kind, o);
+      };
+      input.onchange = () => { o = overlayStyle(kind); syncEndSizes(); };
+    });
+  }
+
+  menu.querySelector('[data-reset]').onclick = () => {
+    o = overlayStyle(kind);
+    o.positions = {};
+    o.boundaries = {};
+    saveOverlay(kind, o);
+  };
+  menu.querySelector('[data-defaults]').onclick = () => {
+    o = overlayStyle(kind);
+    // Only appearance fields reset. Geometry, display effects and opt-ins survive.
+    Object.assign(o, {
+      fontSize: isFront ? 28 : overlayDefaults.fontSize,
+      weight: overlayDefaults.weight,
+      thickness: overlayDefaults.thickness,
+      textColor: overlayDefaults.textColor,
+      lineColor: overlayDefaults.lineColor,
+      opacity: isFront ? 0.5 : overlayDefaults.opacity,
+      ...(!isFront ? { pendingColor: uiDefaults.pendingColor, pendingOpacity: uiDefaults.pendingOpacity } : {})
+    });
+    saveOverlay(kind, o);
+    syncControls();
+  };
+
+  const previousExpanded = anchor.getAttribute('aria-expanded');
+  const previousControls = anchor.getAttribute('aria-controls');
+  anchor.setAttribute('aria-expanded', 'true');
+  anchor.setAttribute('aria-controls', id);
+
+  const placeMenu = () => {
+    const viewport = window.visualViewport;
+    const width = viewport ? viewport.width : window.innerWidth;
+    const height = viewport ? viewport.height : window.innerHeight;
+    const left = viewport ? viewport.offsetLeft : 0;
+    const top = viewport ? viewport.offsetTop : 0;
+    const margin = 8;
+    menu.style.maxWidth = `${Math.max(0, width - 2 * margin)}px`;
+    menu.style.maxHeight = `${Math.max(0, height - 2 * margin)}px`;
+    const rect = anchor.getBoundingClientRect();
+    menu.style.left = `${Math.max(left + margin, Math.min(left + width - menu.offsetWidth - margin, rect.left))}px`;
+    menu.style.top = `${Math.max(top + margin, Math.min(top + height - menu.offsetHeight - margin, rect.bottom + 5))}px`;
+  };
+  const close = () => {
+    menu.overlaySettingsCleanup();
+    menu.remove();
+    if (overlayMenu === menu) overlayMenu = null;
+    if (anchor.isConnected) anchor.focus({ preventScroll: true });
+  };
+  const onEscape = event => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    close();
+  };
+  const observer = new ResizeObserver(placeMenu);
+  menu.overlaySettingsCleanup = () => {
+    observer.disconnect();
+    window.removeEventListener('resize', placeMenu);
+    window.visualViewport?.removeEventListener('resize', placeMenu);
+    window.visualViewport?.removeEventListener('scroll', placeMenu);
+    window.removeEventListener('keydown', onEscape, true);
+    if (previousExpanded === null) anchor.removeAttribute('aria-expanded');
+    else anchor.setAttribute('aria-expanded', previousExpanded);
+    if (previousControls === null) anchor.removeAttribute('aria-controls');
+    else anchor.setAttribute('aria-controls', previousControls);
+  };
+  menu.querySelector('[data-close]').onclick = close;
+  // Preserve native control keys while keeping race-entry shortcuts out of here.
+  menu.addEventListener('keydown', event => event.stopPropagation());
+  document.body.append(menu);
+  placeMenu();
+  observer.observe(menu);
+  window.addEventListener('resize', placeMenu);
+  window.visualViewport?.addEventListener('resize', placeMenu);
+  window.visualViewport?.addEventListener('scroll', placeMenu);
+  window.addEventListener('keydown', onEscape, true);
+  menu.querySelector('[data-key="enabled"]').focus({ preventScroll: true });
 }
 function updateFrontOverlay() {
   const layer=document.getElementById('frontLaneOverlay');if(!layer)return;
@@ -1447,9 +1739,10 @@ function updateFrontOverlay() {
 function renderTools() {
   invalidate();
   const h = viewHeat(), box = $('#tools'); box.innerHTML = '';
-  $('#scanCameraLabel').textContent=h.asset?.mainCameraLabel||'Main scan';
-  $('#scanCameraLabel').title='Main line-scan camera · choose cameras in Camera alignment';
-  const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} · comparison`:'Backup line-scan';
+  syncLaneGutter(overlayStyle('scan'));
+  $('#scanCameraLabel').textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';$('#scanCameraLabel').disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;$('#scanCameraLabel').onclick=e=>showSourceMenu('main',e.currentTarget);
+  $('#scanCameraLabel').title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:'Choose main line-scan view';
+  const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} ▾`:'Backup line-scan';
   const captured = h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0);
   const review = !S.cameraSetup && (h.state === 'review' || h.state === 'saved');
   const tool = (icon, label, title, on, dis, act) => {
@@ -1459,27 +1752,27 @@ function renderTools() {
   };
   const sep = () => box.append(h_('span', 'tsep'));
   tool(ICON.next, 'Follow live', 'Return to the latest captured columns', h.state==='running'&&!S.view.user, h.state!=='running', () => {
-    S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.cropTool=false;S.hoverCol=null;
+    S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.zoomTool=false;S.hoverCol=null;
     follow(h);renderTools();invalidate();
   });
-  tool(ICON.crop, 'Crop', 'Drag a box to zoom to it (Shift+drag works any time)', S.cropTool, !captured, () => { S.cropTool = !S.cropTool; renderTools(); syncCursor(); });
-  tool(ICON.fit, 'Unzoom', 'Fit the whole capture (Esc)', false, !captured || !S.view.zoomed, () => { fitView(); renderUI(); });
+  tool(ICON.zoom, 'Zoom', 'Drag a box to zoom to it (Shift+drag works any time)', S.zoomTool, !captured, () => { S.zoomTool = !S.zoomTool; renderTools(); syncCursor(); });
+  if(S.view.zoomed)tool(ICON.fit, 'Unzoom', 'Fit the whole capture (Esc)', false, !captured || !S.view.zoomed, () => { fitView(); renderUI(); });
   tool(ICON.auto, 'Mark', 'Create or replace the selected athlete’s finish here (Enter)', false, !!S.cameraSetup || !captured || S.selLane == null || S.selCol == null, () => setMark(S.selLane,S.selCol));
   tool(ICON.clear, 'Delete mark', 'Remove the selected finish (Delete)', false, !!S.cameraSetup || !captured || S.selLane == null, deleteSelectedFinish);
   tool(ICON.flip, 'Flip', 'Mirror the image: winner on the left or on the right', S.flip, false, () => { S.flip = !S.flip; store.set('flip', S.flip); renderTools(); });
   const laneOptions=tool(ICON.lanes, 'Lanes ▾', 'Lane overlay appearance and positions', overlayStyle('scan').enabled, false, () => showOverlaySettings('scan',laneOptions));
   sep();
-  tool(ICON.auto, 'Auto-mark', 'Ask the finish model for suggested times now (for your review)', false, !review || !S.apiOnline || h.req === 'pending', () => requestProposals(h));
+  tool(ICON.auto, 'Auto-mark', 'Ask the finish model for suggested times now (for your review)', false, !review || !S.apiOnline || h.req === 'pending', () => requestProposals(cur()));
   const sw = h_('button', 'sw' + (S.autoMark ? ' on' : ''));
   sw.innerHTML = '<i></i>Auto';
-  sw.title = 'Run Auto-mark automatically when each capture closes';
+  sw.title = 'Suggest finishes as athletes arrive and after capture stops';
   sw.onclick = () => { S.autoMark = !S.autoMark; store.set('autoMark', S.autoMark); renderUI(); };
   box.append(sw);
   sep();
   tool(ICON.clear, 'Clear', 'Remove every mark in this heat (statuses stay)', false, !review || !Object.keys(h.marks).length, clearMarks);
   tool(ICON.revert, 'Revert', h.saves ? 'Back to the last saved results' : 'Back to the capture as it closed', false, !review || !h.base || h.base === snap(h), revert);
 }
-function syncCursor() { scanCv.classList.toggle('crop', S.cropTool); }
+function syncCursor() { scanCv.classList.toggle('zoom', S.zoomTool); }
 
 function renderUI() {
   invalidate();
@@ -1577,20 +1870,14 @@ function renderCameraRoles(container) {
     const row=h_('label'),select=h_('select');select.setAttribute('aria-label',label);
     scans.filter(s=>key==='main'||s.id!==selected.mainCameraId).forEach(s=>{const option=h_('option','',s.label);option.value=s.id;select.append(option);});
     select.value=value||'';select.disabled=cur().state==='running'||S.cameraSetup?.starting||S.cameraSetup?.stopping||select.options.length<2;
-    select.onchange=async()=>{
-      const next={main:selected.mainCameraId,comparison:selected.comparisonCameraId,[key]:select.value};
-      if(next.main===next.comparison)next.comparison=scans.find(s=>s.id!==next.main)?.id;
-      const preview=!!S.cameraSetup;if(preview){await stopCameraSetup(true);if(S.cameraSetup)return;}
-      store.set(cameraRoleKey(),next);
-      for(const h of HEATS)if(h.asset&&['loaded','armed'].includes(h.state))attachAsset(h,h.asset);
-      ensureStrip(cur());fitView();if(preview)await startCameraSetup();else renderUI();
-    };
+    select.onchange=()=>chooseScanView(key,select.value);
     row.append(h_('span','',label),select);box.append(row);
   }
   container.append(box);
-  if(['review','saved'].includes(cur().state))box.append(h_('p','dimtext','Camera roles apply to new captures; earlier attempts keep their recorded source.'));
+  if(['review','saved'].includes(cur().state))box.append(h_('p','dimtext','Changing the view keeps the original recording and finish times. The chosen roles also prepare the next capture.'));
 }
 async function openDemo(dir) {
+  scanSourceViews.clear();
   try {
     const r = await OM.call('assets.open', { dir });
     if (!r.meet || !r.meet.files['lynx.evt']) { toast(`No meet/lynx.evt in ${dir}.`, true); return; }
@@ -1625,13 +1912,56 @@ function fitCanvas(cv) {
   return [g, w, hgt];
 }
 const scanCv = $('#scan');
+const laneGutter=$('#laneGutter');
 const scanW = () => scanCv.clientWidth, scanH = () => scanCv.clientHeight - RULER;
+function pendingLaneIds(h,o) {
+  return new Set(o.needsFinish&&!S.cameraSetup&&['running','review','saved'].includes(h.state)?h.athletes.filter(a=>!resolved(h,a)).map(a=>a.lane):[]);
+}
+function syncLaneGutter(o) {
+  const wrap=laneGutter.parentNode,width=Math.max(38,Math.ceil(o.fontSize*0.65*String(Math.max(...laneBands(viewHeat()).map(b=>b.lane))).length)+16),size=width+'px';
+  if(laneGutter.hidden===!o.enabled&&wrap.style.getPropertyValue('--lane-gutter-width')===size)return;
+  const oldWidth=scanW(),center=S.view.c0+oldWidth/(2*S.view.zx);
+  laneGutter.hidden=!o.enabled;wrap.classList.toggle('with-lane-gutter',o.enabled);wrap.style.setProperty('--lane-gutter-width',size);
+  if(oldWidth&&S.view.zx){S.view.c0=center-scanW()/(2*S.view.zx);clampView();}
+  laneGutter.dataset.renderKey='';
+}
+function renderLaneGutter(h) {
+  if(laneGutter.hidden)return;
+  const o=overlayStyle('scan'),edges=scanBoundaries(laneBands(h),o,rowsOf(h)),pending=pendingLaneIds(h,o),v=S.view,Hi=scanH();
+  const key=JSON.stringify([Hi,v.r0,v.zy,edges,o.fontSize,o.weight,o.textColor,o.lineColor,o.thickness,o.opacity,o.edit,[...pending],S.selLane]);
+  if(laneGutter.dataset.renderKey===key)return;laneGutter.dataset.renderKey=key;laneGutter.replaceChildren();
+  for(let i=0;i<edges.length-1;i++){
+    const lane=edges[i].below,top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);
+    if(lane==null||bottom<=top)continue;
+    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(pending.has(lane)?' pending':''));row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.min(o.fontSize,Math.max(8,bottom-top-3))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
+    if(bottom-top>=10)row.textContent=lane;
+    row.setAttribute('aria-label',`Lane ${lane}${pending.has(lane)?', awaiting a finish or status':''}`);row.setAttribute('aria-pressed',String(S.selLane===lane));
+    row.onclick=()=>{if(S.cameraSetup){S.selLane=lane;renderUI();}else selectLane(lane);};laneGutter.append(row);
+  }
+  edges.forEach(b=>{
+    const y=(b.row-v.r0)*v.zy;if(y<0||y>Hi)return;
+    const divider=h_('button','lane-divider');divider.dataset.boundary=b.key;divider.style.top=(y-6)+'px';divider.style.setProperty('--divider-color',o.lineColor);divider.style.setProperty('--divider-width',Math.max(1,o.thickness)+'px');divider.style.setProperty('--divider-opacity',o.opacity);
+    const name=b.above==null?`Top edge of lane ${b.below}`:b.below==null?`Bottom edge of lane ${b.above}`:`Boundary between lanes ${b.above} and ${b.below}`;
+    divider.title=name;divider.setAttribute('aria-label',name);divider.disabled=!o.edit;
+    divider.onmousedown=e=>{if(e.button!==0||!o.edit)return;e.preventDefault();divider.focus();const r=laneGutter.getBoundingClientRect(),offset=(e.clientY-r.top)/S.view.zy+S.view.r0-b.row;S.drag={mode:'lane-boundary',key:b.key,offset,moved:false,x0:0,y0:e.clientY-r.top,x1:0,y1:e.clientY-r.top};};
+    divider.onkeydown=e=>{if(!['ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();const value=overlayStyle('scan'),index=edges.findIndex(edge=>edge.key===b.key);value.boundaries=Object.fromEntries(edges.map(edge=>[edge.key,edge.row]));value.boundaries[b.key]=movedBoundaryRow(edges,index,b.row+(e.key==='ArrowUp'?-1:1)*(e.shiftKey?10:1),rowsOf(h));value.positions={};saveOverlay('scan',value);requestAnimationFrame(()=>{renderLaneGutter(viewHeat());laneGutter.querySelector(`[data-boundary="${CSS.escape(b.key)}"]`)?.focus();});};laneGutter.append(divider);
+  });
+}
+function initWorkspaceSplit() {
+  const main=$('.main'),bar=$('#workspaceSplit');let ratio=store.get('workspaceSplit',0.5);
+  const apply=next=>{const old=scanH(),available=main.clientHeight-8,min=140,max=Math.max(min,available-220),height=Math.max(min,Math.min(max,next*available));ratio=height/available;main.style.gridTemplateRows=`${height}px 8px minmax(0,1fr)`;const now=scanH();if(old>0&&S.view.zy)S.view.zy*=now/old;bar.setAttribute('aria-valuemin',Math.round(min/available*100));bar.setAttribute('aria-valuemax',Math.round(max/available*100));bar.setAttribute('aria-valuenow',Math.round(ratio*100));bar.setAttribute('aria-valuetext',`${Math.round(ratio*100)} percent workspace`);renderTiles();invalidate();};
+  bar.title='Drag to resize · Up/Down to adjust · Enter to reset';
+  bar.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();bar.setPointerCapture(e.pointerId);const move=ev=>apply((ev.clientY-main.getBoundingClientRect().top)/(main.clientHeight-8)),up=()=>{bar.removeEventListener('pointermove',move);bar.removeEventListener('pointerup',up);bar.removeEventListener('pointercancel',up);store.set('workspaceSplit',ratio);};bar.addEventListener('pointermove',move);bar.addEventListener('pointerup',up,{once:true});bar.addEventListener('pointercancel',up,{once:true});};
+  bar.onkeydown=e=>{let next=ratio;if(e.key==='ArrowUp')next-=(e.shiftKey?40:10)/(main.clientHeight-8);else if(e.key==='ArrowDown')next+=(e.shiftKey?40:10)/(main.clientHeight-8);else if(e.key==='Home')next=0;else if(e.key==='End')next=1;else if(e.key==='Enter')next=0.5;else return;e.preventDefault();e.stopPropagation();apply(next);store.set('workspaceSplit',ratio);};
+  new ResizeObserver(()=>apply(ratio)).observe(main);apply(ratio);
+}
 // The line-scan never condenses past MIN_ZX px per column (about 3 s of race on a laptop screen):
 // beyond that it scrolls instead. The default view ends at the capture's end, where the finishers are.
 const MIN_ZX = 0.6;
 function fitView() {
   const h = viewHeat(), v = S.view, W = scanW();
   S.bview.linked=true;
+  v.focusLane=null;
   v.zx = Math.max(MIN_ZX, Math.min(1, W / h.nCols));
   v.c0 = Math.max(0, h.nCols - W / v.zx);
   v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
@@ -1642,9 +1972,12 @@ function clampView() {
   v.r0 = Math.max(0, Math.min(rowsOf(h) - scanH() / v.zy, v.r0));
 }
 function focusFinish(col) {
-  const v = S.view;
+  const v = S.view,h=viewHeat();
+  S.bview.linked=true;v.focusLane=S.selLane;
   v.zx = Math.max(v.zx, 1.5);
   v.c0 = col + 0.5 - scanW() / (2 * v.zx);
+  const body=cameraLaneBody((h.displayMeta||h.asset?.primaryMeta)?.lane_rows,S.selLane),span=scanH()/v.zy;
+  if(body&&span<rowsOf(h)-0.5)v.r0=body.center-span/2;
   v.zoomed = true; v.user = true;
   clampView();
 }
@@ -1656,13 +1989,14 @@ function centerOn(col) {
 function follow(h) {
   const v = S.view, W = scanW(), n = Math.max(1, h.liveCol + 1);
   v.zy = scanH() / rowsOf(h); v.r0 = 0;
+  v.focusLane=null;
   v.zx = Math.max(MIN_ZX, v.followZoom ?? Math.min(1, W / n));      // stream in at 1:1, condense to the floor, then autoscroll
   v.c0 = Math.max(0, n - W / v.zx);
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)
 const unflipX = x => (S.flip ? scanW() - x : x);
 const xOf = col => unflipX((col + 0.5 - S.view.c0) * S.view.zx);
-const colOf = x => Math.floor(S.view.c0 + unflipX(x) / S.view.zx);
+const colOf = x => {const h=viewHeat(),column=S.view.c0+unflipX(x)/S.view.zx;if(!h.displaySource)return Math.floor(column);const s=h.displaySource,time=h.tOpen+column*periodOf(h),native=Math.floor((time-s.t)/s.p);return (s.t+(native+0.5)*s.p-h.tOpen)/periodOf(h)-0.5;};
 
 function sampleForeground(h) {
   if(h.asset||h.preview||h.sampleForeground)return;
@@ -1673,6 +2007,7 @@ function sampleForeground(h) {
   writeForegroundMask(h.sampleForeground,0,image,h.overlayBackground);
 }
 function guideOccluded(h, x0, x1, row0, row1) {
+  if(h.displaySource){const s=h.displaySource,a=Math.floor((colTime(h,colOf(x0))-s.t)/s.p)-1,b=Math.ceil((colTime(h,colOf(x1))-s.t)/s.p)+1;for(let x=Math.max(0,Math.min(a,b));x<=Math.min(s.w-1,Math.max(a,b));x++)if(foregroundInRows(s.mask,x,s.rows,Math.max(0,Math.floor(row0)-2),Math.ceil(row1)+2))return true;return false;}
   const first=Math.max(0,Math.min(colOf(x0),colOf(x1))-1),last=Math.min((h.state==='running'?h.liveCol:h.nCols-1),Math.max(colOf(x0),colOf(x1))+1);
   const rows=rowsOf(h),lo=Math.max(0,Math.floor(row0)-2),hi=Math.min(rows-1,Math.ceil(row1)+2);
   for(let c=first;c<=last;c++) {
@@ -1682,18 +2017,17 @@ function guideOccluded(h, x0, x1, row0, row1) {
   }
   return false;
 }
-function hitScanBoundary(h,x,y) {
+function hitScanBoundary(h,x,y,inGutter=false) {
   const o=overlayStyle('scan'),captured=h.state==='review'||h.state==='saved'||(h.state==='running'&&h.liveCol>=0);
-  if(!captured||!o.enabled||!o.edit||S.cropTool||y<0||y>scanH())return null;
+  if(!captured||!o.enabled||!o.edit||(!inGutter&&S.zoomTool)||y<0||y>scanH())return null;
   return scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
     const lineY=(b.row-S.view.r0)*S.view.zy;
-    const label=b.below!=null&&x<Math.max(40,String(b.below).length*o.fontSize)&&y>=lineY+2&&y<=lineY+o.fontSize+6;
     const distance=Math.abs(lineY-y);
-    return {...b,d:distance<=8?distance:label?8:Infinity};
+    return {...b,d:distance};
   }).filter(b=>b.d<=8).sort((a,b)=>a.d-b.d)[0]||null;
 }
 function guideRenderData(h,o,W,Hi,g) {
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,o.behindRunners,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,h.asset?.mainCameraId,o.behindRunners,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
   if(h.guideRenderCache?.key===key)return h.guideRenderCache.lines;
   const lines=scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
     const y=(b.row-v.r0)*v.zy,path=new Path2D();
@@ -1705,9 +2039,7 @@ function guideRenderData(h,o,W,Hi,g) {
         if(hidden&&start!=null){path.moveTo(start,y);path.lineTo(x,y);start=null;}
       }}
     }
-    const baseline=y+o.fontSize+3,width=b.below==null?0:g.measureText(String(b.below)).width;
-    const label=b.below!=null&&baseline>=0&&baseline<=Hi&&(!o.behindRunners||!guideOccluded(h,6,6+width,b.row+3/v.zy,b.row+(o.fontSize+3)/v.zy));
-    return {boundary:b,path,baseline,label};
+    return {boundary:b,path};
   });
   h.guideRenderCache={key,lines};return lines;
 }
@@ -1715,6 +2047,7 @@ function guideRenderData(h,o,W,Hi,g) {
 function drawScan() {
   const [g, W, Hc] = fitCanvas(scanCv), Hi = Hc - RULER, h = viewHeat(), v = S.view;
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hc);
+  renderLaneGutter(h);
   const live = h.state === 'running', last = live ? h.liveCol : h.nCols - 1;
   const captured = h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0);
   if (!captured) {
@@ -1722,7 +2055,7 @@ function drawScan() {
     const msg = { loaded: 'Heat loaded. Arm to receive the start.', armed: 'Armed. The capture streams here after the start.', running: 'Running. Capture opens as the field reaches the line.' }[h.state];
     g.fillText(msg, W / 2, Hi / 2 - 8);
     g.font = '12px ' + TK.sans;
-    g.fillText('Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: crop · Click: select column · Arrows: nudge · Enter or double-click: mark', W / 2, Hi / 2 + 14);
+    g.fillText('Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: zoom · Click: select column · Arrows: nudge · Enter or double-click: mark', W / 2, Hi / 2 + 14);
     g.textAlign = 'left';
     drawRuler(g, W, Hc, h, false);
     return;
@@ -1732,7 +2065,11 @@ function drawScan() {
   if (ex > sx) {
     g.save();
     if (S.flip) { g.translate(W, 0); g.scale(-1, 1); }
-    drawStrip(g,h,sx,v.r0,ex-sx,Hi/v.zy,(sx-v.c0)*v.zx,0,(ex-sx)*v.zx,Hi);
+    if(h.displaySource){const s=h.displaySource,p=periodOf(h),start=h.tOpen+sx*p,end=h.tOpen+ex*p,x=t=>(t-h.tOpen-v.c0*p)/p*v.zx,sh=Hi/v.zy;
+      if(start<s.t){const stop=Math.min(end,s.t);g.drawImage(s.img,0,v.r0,1,sh,x(start),0,x(stop)-x(start),Hi);}
+      const a=Math.max(0,(start-s.t)/s.p),b=Math.min(s.w,(end-s.t)/s.p);if(b>a)g.drawImage(s.img,a,v.r0,b-a,sh,x(s.t+a*s.p),0,(b-a)*s.p/p*v.zx,Hi);
+      const tail=Math.max(start,s.t+s.w*s.p);if(end>tail)g.drawImage(s.img,0,v.r0,1,sh,x(tail),0,x(end)-x(tail),Hi);
+    }else drawStrip(g,h,sx,v.r0,ex-sx,Hi/v.zy,(sx-v.c0)*v.zx,0,(ex-sx)*v.zx,Hi);
     g.restore();
   }
   if (live) { g.fillStyle = TK.blue; g.fillRect(xOf(last) - 1, 0, 2, Hi); }
@@ -1740,11 +2077,12 @@ function drawScan() {
   // Decorative lane guides can be adjusted without changing the model's lane geometry.
   const o=overlayStyle('scan');
   if(o.enabled) {
+    const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
+    if(pending.size){g.save();g.fillStyle=o.pendingColor;g.globalAlpha=o.pendingOpacity;for(let i=0;i<edges.length-1;i++){if(!pending.has(edges[i].below))continue;const top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);if(bottom>top)g.fillRect(0,top,W,bottom-top);}g.restore();}
     if(o.behindRunners)sampleForeground(h);
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
     guideRenderData(h,o,W,Hi,g).forEach(line=>{
       if(o.thickness>0)g.stroke(line.path);
-      if(line.label){g.fillStyle=o.textColor;g.fillText(String(line.boundary.below),6,line.baseline);}
     });g.restore();
   }
 
@@ -1778,7 +2116,7 @@ function drawScan() {
     g.fillStyle = TK.finish; g.fillRect(Math.round(x), 0, 1, Hi);
     if (v.zx >= 3) { g.strokeStyle = TK.finish; g.lineWidth = 1; g.strokeRect(Math.round(x - v.zx / 2) + 0.5, 0.5, Math.max(1, Math.round(v.zx)), Hi - 1); }
   }
-  if (S.drag && S.drag.mode === 'crop' && S.drag.moved) {
+  if (S.drag && S.drag.mode === 'zoom' && S.drag.moved) {
     g.strokeStyle = TK.blue; g.setLineDash([4, 3]); g.lineWidth = 1;
     const { x0, y0, x1, y1 } = S.drag;
     g.strokeRect(Math.min(x0, x1) + 0.5, Math.min(y0, y1) + 0.5, Math.abs(x1 - x0), Math.abs(y1 - y0));
@@ -1812,21 +2150,38 @@ function drawRuler(g, W, Hc, h, on) {
 // The backup line-scan has its own zoom and pan in race time. Until the operator moves it, it shows the
 // primary's time window; double-click links it back. Hover and click are shared with the primary by time.
 function backupSource(h) {
+  const original=h.recordingHeat||h,id=h.viewCompareId||h.asset?.comparisonCameraId;
+  if(id===original.asset?.mainCameraId)return {img:original.img,t:original.tOpen,p:periodOf(original),w:original.nCols,rows:rowsOf(original),own:false,meta:original.asset.primaryMeta};
+  const descriptor=original.asset?.lineScans?.find(s=>s.id===id),cached=descriptor&&scanSourceViews.get(descriptor.png);if(cached)return {...cached,own:true};
   if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
     const bm = h.asset.backupMeta;
-    return { img: h.backupImg, t: bm.first_column_race_time_s, p: bm.column_period_s, w: h.backupImg.naturalWidth, rows: h.backupImg.naturalHeight, own: true };
+    return { img: h.backupImg, t: bm.first_column_race_time_s, p: bm.column_period_s, w: h.backupImg.naturalWidth, rows: h.backupImg.naturalHeight, own: true,meta:bm };
   }
   return { img: h.img, t: h.tOpen, p: periodOf(h), w: h.nCols, rows: rowsOf(h), own: false };
 }
 function backupRange(h) {
-  if (S.bview.linked) return linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period:periodOf(h),timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth});
+  if (S.bview.linked) {
+    const period=periodOf(h),start=h.tOpen+S.view.c0*period,end=start+scanW()/S.view.zx*period,src=backupSource(h);
+    const finishes=[...Object.entries(h.marks).map(([lane,m])=>({lane:+lane,col:m.col})),...(h.proposals||[])];
+    const finishLanes=[...new Set(finishes.filter(m=>colTime(h,m.col)>=start&&colTime(h,m.col)<=end).map(m=>m.lane))];
+    return linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period,timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth,otherRows:src.rows,mainLanes:(h.displayMeta||h.asset?.primaryMeta)?.lane_rows,otherLanes:src.meta?.lane_rows,finishLanes});
+  }
   return S.bview;
 }
 const backupCv = document.getElementById('backup');
+const comparisonPicker=h_('button','kicker camera-source-picker');comparisonPicker.id='comparisonCameraPicker';comparisonPicker.setAttribute('aria-label','Choose comparison line-scan view');comparisonPicker.setAttribute('aria-haspopup','menu');
+comparisonPicker.onpointerdown=e=>e.stopPropagation();comparisonPicker.onmousedown=e=>e.stopPropagation();comparisonPicker.onclick=e=>{e.stopPropagation();showSourceMenu('comparison',comparisonPicker);};backupCv.parentNode.parentNode.querySelector('.kicker').replaceWith(comparisonPicker);
+const backupLinkButton=h_('button','btn sm','Linked');
+backupLinkButton.setAttribute('aria-label','Link comparison view');backupLinkButton.style.marginLeft='auto';
+backupLinkButton.onpointerdown=e=>e.stopPropagation();backupLinkButton.onmousedown=e=>e.stopPropagation();
+backupLinkButton.onclick=e=>{e.stopPropagation();if(S.bview.linked)unlinkBackup(viewHeat());else S.bview.linked=true;invalidate();};
+backupCv.parentNode.parentNode.querySelector('.ph').append(backupLinkButton);
 const bX = (t, r, W) => { const x = (t - r.t0) / r.spp; return S.flip ? W - x : x; };
 const bT = (x, r, W) => r.t0 + (S.flip ? W - x : x) * r.spp;
 function drawBackup() {
   const cv = backupCv;
+  backupLinkButton.textContent=S.bview.linked?'Linked':'Link views';backupLinkButton.setAttribute('aria-pressed',String(S.bview.linked));
+  backupLinkButton.title=S.bview.linked?'Comparison follows the main view; click to move it independently':'Relink the comparison to the main view';
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hh] = fitCanvas(cv), h = viewHeat();
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hh);
@@ -1856,7 +2211,7 @@ function drawBackup() {
   if (S.hoverCol != null) { g.fillStyle = 'rgba(247,248,250,0.5)'; g.fillRect(Math.round(bX(colTime(h, S.hoverCol), r, W)), 0, 1, Hh); }
   if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bX(colTime(h, S.selCol), r, W)), 0, 1, Hh); }
   const d = S.bdrag;
-  if (d && d.mode === 'crop' && d.moved) {
+  if (d && d.mode === 'zoom' && d.moved) {
     g.strokeStyle = TK.blue; g.lineWidth = 1; g.setLineDash([4, 3]);
     g.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
     g.setLineDash([]);
@@ -1996,7 +2351,7 @@ function hitFinish(h, x) {
     .sort((a,b)=>a.distance-b.distance || (a.lane===S.selLane?-1:1))[0];
 }
 function deleteSelectedFinish() {
-  const h=viewHeat(), lane=S.selLane;
+  const h=cur(), lane=S.selLane;
   if(lane==null || !['running','review','saved'].includes(h.state)) return;
   if(!h.marks[lane] && !(h.proposals||[]).some(p=>p.lane===lane)) return;
   delete h.marks[lane];
@@ -2011,7 +2366,7 @@ scanCv.addEventListener('mousemove', e => {
   if (!(h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0))) return;
   const r = scanCv.getBoundingClientRect();
   const col = Math.max(0, Math.min(live ? h.liveCol : h.nCols - 1, colOf(e.clientX - r.left)));
-  scanCv.style.cursor = hitScanBoundary(h,e.clientX-r.left,e.clientY-r.top) ? 'ns-resize' : !S.cropTool && hitFinish(h, e.clientX-r.left) ? 'ew-resize' : '';
+  scanCv.style.cursor = hitScanBoundary(h,e.clientX-r.left,e.clientY-r.top) ? 'ns-resize' : !S.zoomTool && hitFinish(h, e.clientX-r.left) ? 'ew-resize' : '';
   if (col !== S.hoverCol) { S.hoverCol = col; invalidate(); updateTs(); }
 });
 scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
@@ -2024,9 +2379,9 @@ scanCv.addEventListener('mousedown', e => {
     const offset=(e.clientY-r.top)/S.view.zy+S.view.r0-boundary.row;
     S.drag={mode:'lane-boundary',key:boundary.key,offset,moved:false,x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top};return;
   }
-  const hit = !S.cropTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
+  const hit = !S.zoomTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
   if(hit) { S.selLane=hit.lane; S.selCol=hit.col; }
-  S.drag = { lane:hit?.lane, mode: hit ? 'mark' : S.cropTool || e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, c0: S.view.c0, r0: S.view.r0, moved: false };
+  S.drag = { lane:hit?.lane, mode: hit ? 'mark' : S.zoomTool || e.shiftKey ? 'zoom' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, c0: S.view.c0, r0: S.view.r0, moved: false };
 });
 window.addEventListener('mousemove', e => {
   const d = S.drag;
@@ -2048,6 +2403,7 @@ window.addEventListener('mousemove', e => {
   }
   if (d.mode === 'pan' && d.moved) {
     const v = S.view;
+    v.focusLane=null;
     v.c0 = d.c0 - (d.x1 - d.x0) / v.zx * (S.flip ? -1 : 1);
     v.r0 = d.r0 - (d.y1 - d.y0) / v.zy;
     v.user = true; v.zoomed = true; clampView();
@@ -2065,14 +2421,15 @@ window.addEventListener('mouseup', () => {
     if(d.moved) setMark(d.lane,S.selCol); else renderUI();
     return;
   }
-  if (d.moved && d.mode === 'crop') {
+  if (d.moved && d.mode === 'zoom') {
     S.bview.linked=true;
+    v.focusLane=null;
     const w = Math.abs(d.x1 - d.x0), hh = Math.abs(d.y1 - d.y0);
     if (w < 8 || hh < 8) return;
     const ca = v.c0 + unflipX(d.x0) / v.zx, cb = v.c0 + unflipX(d.x1) / v.zx;
     const r0 = v.r0 + Math.min(d.y0, d.y1) / v.zy;
     v.zx = scanW() / Math.abs(cb - ca); v.zy = scanH() / (hh / v.zy); v.c0 = Math.min(ca, cb); v.r0 = r0;
-    v.zoomed = true; v.user = true; S.cropTool = false;
+    v.zoomed = true; v.user = true; S.zoomTool = false;
     clampView(); syncCursor(); renderTools();
   } else if (d.moved) {
     renderTools();
@@ -2093,6 +2450,7 @@ scanCv.addEventListener('dblclick', e => {
   setMark(S.selLane, S.selCol);
 });
 window.addEventListener('keydown', e => {
+  if(e.target instanceof Element&&e.target.closest('#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings'))return;
   if (document.querySelector('.race-reset-dialog[open]')) return;
   if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable=true]')) return;
   if (S.cameraSetup)return;
@@ -2114,7 +2472,7 @@ window.addEventListener('keydown', e => {
     if (S.selCol == null) return;
     e.preventDefault();
     const dir = (e.key === 'ArrowLeft' ? -1 : 1) * (S.flip ? -1 : 1);   // arrows move on screen, whichever way the image faces
-    S.selCol = Math.max(0, Math.min(h.nCols - 1, S.selCol + dir * (e.shiftKey ? 10 : 1)));
+    S.selCol = Math.max(0, Math.min(h.nCols - 1, S.selCol + dir * (e.shiftKey ? 10 : 1)*(h.displaySource?h.displaySource.p/periodOf(h):1)));
     S.hoverCol=null;
     centerOn(S.selCol); renderUI();
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2135,7 +2493,7 @@ window.addEventListener('keydown', e => {
     } else if (S.selLane != null && S.selCol != null) { e.preventDefault(); setMark(S.selLane, S.selCol); }
   } else if (e.key === 'Escape') {
     if (S.entryNumber) { e.preventDefault(); S.entryNumber = ''; updateEntryNumber(); return; }
-    if (S.cropTool) { S.cropTool = false; syncCursor(); }
+    if (S.zoomTool) { S.zoomTool = false; syncCursor(); }
     else if (S.view.zoomed) fitView();
     else { S.selLane = null; S.selCol = null; }
     renderUI();
@@ -2166,7 +2524,7 @@ backupCv.addEventListener('mousedown', e => {
   if (e.button !== 0 || !backupReady(viewHeat())) return;
   S.entryNumber = ''; updateEntryNumber();
   const r = backupCv.getBoundingClientRect();
-  S.bdrag = { mode: e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, moved: false, start: { ...backupRange(viewHeat()) } };
+  S.bdrag = { mode: e.shiftKey ? 'zoom' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, moved: false, start: { ...backupRange(viewHeat()) } };
 });
 window.addEventListener('mousemove', e => {
   const d = S.bdrag;
@@ -2186,7 +2544,7 @@ window.addEventListener('mouseup', () => {
   const d = S.bdrag; S.bdrag = null;
   if (!d) return;
   const h = viewHeat(), r = backupCv.getBoundingClientRect();
-  if (d.moved && d.mode === 'crop') {
+  if (d.moved && d.mode === 'zoom') {
     const w = Math.abs(d.x1 - d.x0), hh = Math.abs(d.y1 - d.y0);
     if (w > 8 && hh > 8) {
       const st = d.start, ta = bT(d.x0, st, r.width), tb = bT(d.x1, st, r.width);
@@ -2208,7 +2566,7 @@ backupCv.addEventListener('mousemove', e => {
 });
 backupCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
 backupCv.addEventListener('dblclick', () => { S.bview.linked = true; invalidate(); });
-backupCv.title = 'Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: crop · Click: select · Double-click: link to the primary';
+backupCv.title = 'Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: zoom · Click: select · Double-click: link to the primary';
 
 // ---------------------------------------------------------------- front camera zoom and pan (for context; the recording itself is untouched)
 const frontPb = document.getElementById('front').parentNode;
@@ -2275,7 +2633,7 @@ function frame(now) {
       h.recvCols=target;h.nCols=Math.max(h.nCols,target);h.tClose=h.tOpen+target*periodOf(h);
     }
     const lc=(h.recvCols||0)-1;
-    if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(h); }
+    if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(viewHeat()); }
     if (now - lastLiveRender > 250) { lastLiveRender = now; liveSuggest(h); renderAcc(); const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();} renderProps(); renderTools(); renderSchedule(); publishBoard(); }
     if(h.stopMode==='timeout'&&h.tNow>=h.stopAfter)stopCapture();
     if(h.stopMode==='complete'&&h.athletes.length&&h.athletes.every(a=>resolved(h,a)))stopCapture();
@@ -2289,7 +2647,7 @@ function frame(now) {
 }
 
 document.documentElement.dataset.theme = store.get('theme', 'dark');
-wordmark(); readTokens(); initTiles(); syncCursor();
+wordmark(); readTokens(); initTiles(); initWorkspaceSplit(); syncCursor();
 const h0 = cur();
 ensureStrip(h0);
 if (S.autoArm) h0.state = 'armed';

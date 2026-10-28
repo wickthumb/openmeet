@@ -37,14 +37,15 @@
       </div>
     </section>
 
+    <div id="workspaceSplit" class="workspace-split" role="separator" aria-label="Resize workspace and line-scan" aria-orientation="horizontal" tabindex="0"></div>
     <section class="scan">
       <div class="scanbar">
-        <span id="scanCameraLabel" class="scan-camera-label"></span>
+        <button id="scanCameraLabel" class="scan-camera-label btn sm" aria-label="Choose main line-scan view" aria-haspopup="menu"></button>
         <span id="entryNumber" class="entry-number" hidden></span>
         <span class="ts none" id="ts" title="Race time of the selected column">--.---</span>
         <div class="tools" id="tools"></div>
       </div>
-      <div class="scanwrap"><canvas id="scan"></canvas></div>
+      <div class="scanwrap"><div id="laneGutter" class="lane-gutter" aria-label="Lane rows" hidden></div><div class="scan-image"><canvas id="scan"></canvas></div></div>
     </section>
   </main>
 </div>

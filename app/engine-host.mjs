@@ -83,6 +83,7 @@ async function runCapture(id, store, gen, preview=false) {
 
 // Capture id -> {dir, sidecar}. The simulator's truth stays here in the engine: the console never receives it.
 const captures = new Map();
+const scanSources = new Map();
 
 // Auto-timing: the configured TTP finish service, or the labelled stand-in (simulator truth echo) on loopback.
 const locate = rel => [path.join(here, '..', rel), path.join(here, rel)].find(p => fs.existsSync(p));
@@ -165,12 +166,13 @@ const methods = {
     return meet;
   },
   // Build and write one heat's results with the engine core: {dir, heat: LifHeat, results: LifResult[]}.
-  async 'lif.save'({ dir, heat, results, captureId }) {
+  async 'lif.save'({ dir, heat, results, captureId, review }) {
     if (!core) throw new Error('engine core missing from this build');
     if (!dir) throw new Error('no meet folder open');
     const name = core.lifName(heat.event, heat.round, heat.heat);
     const text = core.buildLif(heat, results);
     if(captureId && captures.has(captureId)) await core.writeLifAtomic(captures.get(captureId).dir,name,text);
+    if(captureId&&review&&captures.has(captureId))await fsp.writeFile(path.join(captures.get(captureId).dir,'review.json'),JSON.stringify(review,null,2));
     const p = await core.writeLifAtomic(dir, name, text);
     return { path: p, name, text };
   },
@@ -251,6 +253,12 @@ const methods = {
     const p = await writeAtomic(dir, name, text);
     return { path: p, bytes: Buffer.byteLength(text, 'latin1') };
   },
+  async 'camera.image'({png,captureId,includePixels=true}) {
+    const source=scanSources.get(png);if(!source)throw new Error('Open this camera source first');
+    const cap=captures.get(captureId);
+    if(cap){const dir=path.join(cap.dir,'views');await fsp.mkdir(dir,{recursive:true});await fsp.copyFile(png,path.join(dir,source.id+'.png'));await fsp.writeFile(path.join(dir,source.id+'.json'),JSON.stringify({id:source.id,label:source.label,column_period_s:source.meta.column_period_s,first_column_race_time_s:source.meta.first_column_race_time_s,lane_rows:source.meta.lane_rows},null,2));}
+    return includePixels?core.decodePng(await fsp.readFile(png)):{ok:true};
+  },
   async 'assets.open'({ dir }) {
     // A rendered demo meet: meet/ (lynx.*) plus heat-<n>/ (primary.png/json, backup.png/json, front.mp4/json).
     emit('roots.add', [dir]);
@@ -263,7 +271,8 @@ const methods = {
       for(const f of files.filter(f=>/^(primary|backup|scan-[\w-]+)\.png$/i.test(f)).sort((a,b)=>(a==='primary.png'?-1:b==='primary.png'?1:a==='backup.png'?-1:b==='backup.png'?1:a.localeCompare(b)))) {
         const id=f.slice(0,-4),meta=await json(id+'.json');if(!meta)continue;
         const png=path.join(hd,f);
-        lineScans.push({id,label:meta.camera_name||(id==='primary'?'Line-scan A':id==='backup'?'Line-scan B':id.replace(/^scan-/,'Line-scan ')),png,meta,size:await pngSize(png)});
+        const source={id,label:meta.camera_name||(id==='primary'?'Line-scan A':id==='backup'?'Line-scan B':id.replace(/^scan-/,'Line-scan ')),png,meta,size:await pngSize(png)};
+        lineScans.push(source);scanSources.set(png,source);
       }
       let frontFrames=null;
       if(files.includes('front')) {

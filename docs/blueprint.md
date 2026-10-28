@@ -26,7 +26,7 @@ The bar is "times the meet very well". That means never losing capture data, bei
 |---|---|
 | Heat loading from the meet manager's start lists | Entries, seeding, lane draws (RunMeet / Hy-Tek) |
 | Arm / start / capture / review / save state per heat | Scoring, team points, publishing results (RunMeet) |
-| Line-scan view: scroll, zoom/crop, mark, nudge | Field events (AthleticFIELD / LynxPad) |
+| Line-scan view: scroll, zoom, mark, nudge | Field events (AthleticFIELD / LynxPad) |
 | DNS / DNF / DQ / FS per athlete | Distance races, lap counting, bib reading (later) |
 | Auto-timing proposals with operator accept/override | Real camera drivers (later; v1 uses simulated cameras) |
 | Writing LIF results files RunMeet already imports | Scoreboards and video boards (later) |
@@ -151,6 +151,26 @@ Real drivers come after v1:
 - GigE Vision and USB3 Vision line-scan cameras, which are open standards.
 - Vendor cameras, only where their protocol is documented or licensed.
 
+### Camera flexibility: native scans and video-derived scans
+
+**Architecture decision, Oct 28.** A finish source need not be a dedicated photo-finish camera. A supported area-scan camera, USB camera or Raspberry Pi camera can supply frames from which OpenMeet samples a calibrated finish-line strip. Operators can use the same review, marking, start assignment and comparison views. Physical adapters remain planned until their integration details are verified; the present executable uses simulated input.
+
+| Source kind | Original evidence | Derived view |
+|---|---|---|
+| Native line-scan | Original columns, source timestamps and clock identity | Time-indexed scan |
+| Area-scan / video | Original received frames, exposure timestamps, sequence numbers and source settings | A sampled finish-line strip referencing each original frame |
+| Replay / simulator | Source raster or frames plus replay timing metadata | The same operator views, clearly labelled simulated |
+
+Each adapter advertises its capabilities instead of relying on a camera's brand: supported resolutions and native rates, pixel formats, sensor ROI limits, exposure controls, global/rolling shutter, timestamp meaning, start-trigger support and clock synchronization. Unsupported capabilities are shown as unavailable. Camera identity, finish location and recording role are separate from the view an operator selects.
+
+**Capture modes and alignment.** Camera alignment shows the full available frame and lets the operator position the sampling line or narrow strip at the finish plane. Store this calibration as a versioned recipe: source ID, frame size, endpoints, strip width, sampling rule and direction. A video-derived column references its frame ID and timestamp; averaging a strip or drawing it wider never creates extra temporal samples. The original received frames remain available for review. Several cameras can have independent resolutions, rates, clocks and finishes; only views mapped to the same finish and verified timebase are linked as timing comparisons.
+
+**Sensor ROI and view zoom are separate controls.** A sensor ROI changes what the device reads/transmits; display Zoom changes only what the operator sees. Basler documents that reducing sensor ROI, especially its height, can increase frame rate on supported models. The achievable rate still depends on the device and settings. A narrow vertical strip is therefore not a universal speed boost. See [Basler Image ROI](https://docs.baslerweb.com/image-roi) and [Resulting Acquisition Frame Rate](https://docs.baslerweb.com/resulting-acquisition-frame-rate). Raspberry Pi exposes camera modes and requested frame rates; select an available mode, then measure the delivered timestamps and dropped frames. See [Raspberry Pi camera mode controls](https://github.com/raspberrypi/documentation/blob/master/documentation/asciidoc/computers/camera/rpicam_options_common.adoc) and [video controls](https://github.com/raspberrypi/documentation/blob/master/documentation/asciidoc/computers/camera/rpicam_options_vid.adoc).
+
+**Timing evidence.** 60 fps samples about every 16.67 ms; 100 fps every 10 ms; 300 fps every 3.33 ms. These intervals are not accuracy guarantees. Store exposure duration, timestamp origin (sensor or host arrival), rolling-shutter readout where available, dropped-frame gaps, and the mapping to the meet's start clock. Display the measured rate and timing limitations. Do not interpolate missing frames or duplicate columns and present them as measured finish times. Private model processing is a separate API and must explicitly support the source type, sampling interval and calibration. The current fixed-period replay path must gain per-sample clock handling before claiming support for variable-rate or unsynchronized live cameras.
+
+**Storage and starts.** Original evidence is append-only. Zoom, overlays and derived scans are reversible recipes; no view operation removes pixels. Start triggers remain meet-wide events and can be reassigned without rewriting source times. Continuous all-day recording and compression are under separate research; no storage ceiling is promised. Hardware packet details, discovery and controls will be bound to these contracts once the camera/scoreboard integration breakdown is available.
+
 ## 5. Screen layout
 
 The replica is in `docs/mockup/`.
@@ -165,7 +185,7 @@ The replica is in `docs/mockup/`.
 │ controls     │ accessories · auto-timing proposals                       │
 │ warning      ├───────────────────────────────────────────────────────────┤
 │ lanes /      │ LINE-SCAN BAR: selected-column timestamp (only, for now)  │
-│ athletes /   │ LINE-SCAN: scroll, zoom/crop, mark finishes               │
+│ athletes /   │ LINE-SCAN: scroll, zoom, mark finishes               │
 │ status       │                                                           │
 └──────────────┴───────────────────────────────────────────────────────────┘
 ```
@@ -200,17 +220,23 @@ The workspace is a **tiling layout, like Hyprland**: a split tree, so panels nev
 - Double-click a header to maximise that panel.
 - The layout is saved per computer.
 
-**Line-scan** (bottom half, full width minus the sidebar).
+**Line-scan** (bottom region, full width minus the sidebar).
+
+Drag the horizontal divider above it to change workspace and scan heights. Both regions keep a usable minimum height; the scan cannot become a side-by-side panel. The split is remembered per computer. Keyboard Up/Down adjusts the divider; Home/End reaches the limits; Enter restores an even split.
+
+Click the main scan's camera name or the comparison card's camera name to choose a source. During review, the selected view changes while the original recording and finish times remain intact. Different camera heights and sampling periods are mapped through race time. Calibrated lane/body regions guide linked vertical zoom; without calibration the fallback is a normalized image region. Sidebar review relinks and centers the selected runner. Independent comparison navigation remains available.
+
+Lane numbers occupy a separate gutter immediately left of the image. Each row identifies one lane; each shared divider can be dragged there or over the image. Adjacent lanes need not have equal heights. Lane settings group placement, optional race checks, appearance and advanced model-input processing. Optional highlighting flags roster lanes awaiting an accepted finish or a race status; DNS/DNF/DQ/FS resolves a lane without creating a time.
 
 - The top bar shows the selected column's timestamp, with no caption, and the line-scan tools.
 
 | Tool | What it does |
 |---|---|
-| Crop | Drag a box to zoom to it (one use, then it switches off; Shift+drag works any time) |
-| Unzoom | Fit the whole capture (Esc) |
+| Zoom | Drag a box to zoom to it (one use, then it switches off; Shift+drag works any time) |
+| Unzoom | Fit the whole capture (Esc); shown only while the view is zoomed |
 | Flip | Mirror the image, so the winner is on the left or the right, whichever the operator prefers. The choice is remembered. |
 | Lanes | Overlay lane lines, drawn from the camera's lane geometry |
-| Auto-mark, with an Auto switch | Ask the auto-timing service for proposals now. With Auto on, it runs when each capture closes. |
+| Auto-mark, with an Auto switch | Ask the auto-timing service for proposals now. With Auto on, suggestions arrive as athletes finish, with a final request after capture stops. |
 | Clear | Remove every mark in the heat. Statuses stay. |
 | Revert | Back to the last saved results, or, before the first save, to the capture as it closed |
 
@@ -219,7 +245,7 @@ The workspace is a **tiling layout, like Hyprland**: a split tree, so panels nev
 | Scroll | Mouse wheel / trackpad |
 | Zoom in time | Ctrl + wheel |
 | Pan | Drag |
-| Crop (zoom to box) | Shift + drag, or the Crop tool. Esc fits the image again. |
+| Zoom to box | Shift + drag, or the Zoom tool. Esc fits the image again. Original pixels are retained. |
 | Select a column | Click |
 | Nudge the column | ← / → (Shift = 10 columns) |
 | Mark the selected athlete at that column | Enter, or double-click |

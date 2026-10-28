@@ -38,7 +38,7 @@ Capture stops manually by default. Before a heat, expand **Capture options** to 
 
 Click a finish column, type a roster number, then Enter; multiple digits are supported. Drag hairlines to edit, or delete and replace them. **Starts** keeps trigger history and changes the elapsed-time origin without moving finish columns. Save corrected heats again to update LIF files.
 
-Both camera views have **Lanes ▾** appearance controls. On the line-scan, **Edit boundary lines** lets you drag a single shared edge or its number. The adjacent lane heights change while every other edge stays fixed; lines cannot cross. Numbers identify the lane immediately below the edge. Old band-based profiles are reconciled into shared boundaries. Lane overlays are saved per meet/camera and do not change the private timing service's calibration.
+Both camera views have **Lanes ▾** appearance controls. On the line-scan, **Placement → Edit lane dividers** lets you drag a single shared edge in the separate left lane column or over the image. The adjacent lane heights change while every other edge stays fixed; lines cannot cross. Numbers stay outside the image, centered in each lane row. Old band-based profiles are reconciled into shared boundaries. Lane overlays are saved per meet/camera and do not change the private timing service's calibration.
 
 **Guides behind runners** is on by default. A compact display mask compares incoming pixels with an initial empty-track reference, allowing guides to remain on the background while athletes cover them. The check tolerates small background noise; shadows and lighting changes can also hide guides, and similar foreground/background colors can be missed. This is display processing, not a timing or identity model. Finish hairlines remain visible above the image. Original capture pixels and timestamps are unchanged.
 
@@ -58,11 +58,15 @@ Front-camera scrubbing uses available indexed demo frames, a cache of at most 48
 
 ## Multiple line-scan views
 
-Choose **Main line-scan** and **Comparison** in Camera alignment or Network. These are roles assigned to source identities, not fixed first/second hardware slots. The prototype discovers `primary.png/json`, `backup.png/json`, and additional `scan-<name>.png/json` pairs per demo heat. A metadata `camera_name` supplies a readable label. Each source retains its own pixel height, lane profile and column period; overlay placement is saved per camera. New captures record their source identity in `source.json`. A role change prepares new captures; earlier attempts retain their recorded main source.
+Choose **Main line-scan** and **Comparison** in Camera alignment or Network. These are roles assigned to source identities, not fixed first/second hardware slots. The prototype discovers `primary.png/json`, `backup.png/json`, and additional `scan-<name>.png/json` pairs per demo heat. A metadata `camera_name` supplies a readable label. Each source retains its own pixel height, lane profile and column period; overlay placement is saved per camera. New captures record their source identity in `source.json`. Click the camera name directly on the main toolbar or comparison card to change that view. Before a capture, this selects the recording source. During capture/review it changes the viewed evidence while the recording and auto-timing retain their original source; the role also prepares later captures. Alternate images used for review are retained under the capture’s `views/` folder, and saved results include source-specific mark evidence in `review.json`.
 
-The comparison view follows the main scan's visible race-time interval and vertical image fraction. For example, the middle 50% of a 2000-row image maps to the middle 50% of a 1000-row image even when their panels have different widths. Zooming the main scan relinks the comparison; independent comparison pan/zoom remains available, with double-click to relink. Normalized image regions do not imply pixel-perfect athlete correspondence between different camera angles.
+The comparison follows the same race-time interval. When both sources have lane/body calibration, linked vertical zoom maps the selected runner or visible runner group, accounting for different heights, body scales and reversed lane order. Sidebar review relinks and centers the runner. Without calibration it falls back to a normalized region; correspondence across camera angles then needs manual adjustment. **Linked / Link views** toggles the link, and independent comparison pan/zoom remains available.
 
-This is simulated source selection. Real concurrent camera drivers, shared hardware-clock verification, finish-location/race-direction profiles and camera-specific geometric alignment remain integration work.
+These are simulated sources. Real concurrent camera drivers, shared hardware-clock verification and finish-location/race-direction profiles remain integration work. The [camera architecture](../docs/blueprint.md#camera-flexibility-native-scans-and-video-derived-scans) also allows video cameras to supply derived finish-line scans while retaining original frames and native timing evidence; no live video adapter is implemented yet.
+
+**Zoom** changes only the view. **Unzoom** appears after zooming and fits the capture again. Original capture pixels are retained. Drag the horizontal divider above the scan to change the workspace/scan height; the scan always remains full width. The split is remembered, has usable limits, and supports Up/Down, Home/End and Enter when focused.
+
+**Lanes → Race checks → Highlight lanes awaiting a finish** is optional. It highlights roster lanes needing an accepted finish or status, including pending review proposals. DNS/DNF/DQ/FS resolves the warning. Placement stays separate from Appearance; advanced model-input processing remains an explicit opt-in. Reset appearance keeps positions and opt-ins intact.
 
 ## Visual regression check
 
@@ -72,4 +76,12 @@ After installing the app dependencies, run the real Electron preview against a l
 node app/test/visual-cameras.mjs "$PWD/app" /path/to/demo /tmp/openmeet-visual-check
 ```
 
-The check captures every demo heat with both scan roles, normal/flipped direction, and zoom. Screenshots stay local. Use it alongside `npm --prefix app test` and `npm --prefix engine test`; the synthetic tests also check native resolutions, clock periods, cache eviction and stale-request handling. Actual camera footage and additional hardware still require validation.
+The check captures every demo heat with both scan roles, normal/flipped direction, and zoom. Screenshots stay local.
+
+For the current eight-lane simulator demo, also run:
+
+```sh
+node app/test/visual-workspace.mjs "$PWD/app" /path/to/demo /tmp/openmeet-workspace-check
+```
+
+This creates its own fixture and capture folder, shares only read-only source assets, and adds a generated 2000-row / 2 ms test camera. It checks the lane gutter, individual divider drag, race-status highlighting, scoped appearance resets, height limits, camera selectors and source-specific mark timestamps. It verifies that reviewing and saving leaves the original pixels and clocks byte-for-byte unchanged. Use it alongside `npm --prefix app test` and `npm --prefix engine test`; the synthetic tests also check native resolutions, clock periods, cache eviction and stale-request handling. Actual camera footage and additional hardware still require validation.
