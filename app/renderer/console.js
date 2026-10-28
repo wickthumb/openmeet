@@ -163,6 +163,8 @@ const S = {
   files: [], view: { c0: 0, zx: 1, r0: 0, zy: 1, user: false, zoomed: false }, drag: null,
   layout: null, max: null, rects: {},
   meet: null,   // {dir, files} when a real meet folder is open (Electron); null = built-in sample meet
+  bview: { linked: true, t0: 0, spp: 0.00125, r0: 0, rv: 1 }, bdrag: null,   // backup line-scan view (race time)
+  fview: { s: 1, x: 0, y: 0 },                                               // front camera zoom/pan
 };
 const OM = window.openmeet || null;   // the Electron bridge; absent when this page runs as the static replica
 const windStr = h => (h.wind == null ? '—' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1) + ' m/s');
@@ -351,7 +353,8 @@ function requestProposals(h) {
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
 function go(i) {
   if (cur().state === 'running' || i < 0 || i >= HEATS.length) return;
-  S.idx = i; S.selLane = null; S.selCol = null;
+  S.idx = i; S.selLane = null; S.selCol = null; S.hoverCol = null;
+  S.bview.linked = true; Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView();
   const h = cur();
   ensureStrip(h);
   if (S.autoArm && h.state === 'loaded') h.state = 'armed';
@@ -1070,9 +1073,14 @@ function fitCanvas(cv) {
 }
 const scanCv = $('#scan');
 const scanW = () => scanCv.clientWidth, scanH = () => scanCv.clientHeight - RULER;
+// The line-scan never condenses past MIN_ZX px per column (about 3 s of race on a laptop screen):
+// beyond that it scrolls instead. The default view ends at the capture's end, where the finishers are.
+const MIN_ZX = 0.6;
 function fitView() {
-  const h = cur(), v = S.view;
-  v.zx = scanW() / h.nCols; v.c0 = 0; v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
+  const h = cur(), v = S.view, W = scanW();
+  v.zx = Math.max(MIN_ZX, Math.min(1, W / h.nCols));
+  v.c0 = Math.max(0, h.nCols - W / v.zx);
+  v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
 }
 function clampView() {
   const h = cur(), v = S.view, vis = scanW() / v.zx;
@@ -1083,12 +1091,12 @@ function centerOn(col) {
   const v = S.view, vis = scanW() / v.zx;
   if (col < v.c0 + vis * 0.1 || col > v.c0 + vis * 0.9) { v.c0 = col - vis / 2; clampView(); }
 }
-// While running, show the entire scan so far: it streams in at 1:1, then compresses to keep the whole race in view.
-// (An auto-crop model will pick the region later.)
+// While running: the scan streams in at 1:1, condenses down to MIN_ZX, then autoscrolls with the live edge at the right.
 function follow(h) {
-  const v = S.view;
-  v.zy = scanH() / rowsOf(h); v.r0 = 0; v.c0 = 0;
-  v.zx = Math.min(1, scanW() / Math.max(1, h.liveCol + 1));
+  const v = S.view, W = scanW(), n = Math.max(1, h.liveCol + 1);
+  v.zy = scanH() / rowsOf(h); v.r0 = 0;
+  v.zx = Math.max(MIN_ZX, Math.min(1, W / n));      // stream in at 1:1, condense to the floor, then autoscroll
+  v.c0 = Math.max(0, n - W / v.zx);
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)
 const unflipX = x => (S.flip ? scanW() - x : x);
@@ -1198,8 +1206,24 @@ function drawRuler(g, W, Hc, h, on) {
   g.textAlign = 'left';
 }
 
+// The backup line-scan has its own zoom and pan in race time. Until the operator moves it, it shows the
+// primary's time window; double-click links it back. Hover and click are shared with the primary by time.
+function backupSource(h) {
+  if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
+    const bm = h.asset.backupMeta;
+    return { img: h.backupImg, t: bm.first_column_race_time_s, p: bm.column_period_s, w: h.backupImg.naturalWidth, rows: h.backupImg.naturalHeight, own: true };
+  }
+  return { img: h.img, t: h.tOpen, p: P, w: h.nCols, rows: rowsOf(h), own: false };
+}
+function backupRange(h) {
+  if (S.bview.linked) { const v = S.view; return { t0: h.tOpen + v.c0 * P, spp: P / v.zx, r0: 0, rv: 1 }; }
+  return S.bview;
+}
+const backupCv = document.getElementById('backup');
+const bX = (t, r, W) => { const x = (t - r.t0) / r.spp; return S.flip ? W - x : x; };
+const bT = (x, r, W) => r.t0 + (S.flip ? W - x : x) * r.spp;
 function drawBackup() {
-  const cv = $('#backup');
+  const cv = backupCv;
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hh] = fitCanvas(cv), h = cur();
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hh);
@@ -1209,24 +1233,35 @@ function drawBackup() {
     g.fillText('Backup capture follows the primary.', W / 2, Hh / 2); g.textAlign = 'left';
     return;
   }
-  const zx = W / h.nCols, bx = x => (S.flip ? W - x : x);
+  const src = backupSource(h), r = backupRange(h), liveT = colTime(h, last) + P / 2;
+  const tEnd = Math.min(liveT, r.t0 + W * r.spp), sy = r.r0 * src.rows, sh = r.rv * src.rows;
+  const x = t => (t - r.t0) / r.spp;
   g.save();
   if (S.flip) { g.translate(W, 0); g.scale(-1, 1); }
-  g.filter = 'grayscale(1) contrast(1.1)';
-  if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
-    // the backup camera's own image, clipped to the same race time as the primary's live edge
-    // on the same whole-race time axis as the primary: the empty scene from the gun, then the backup camera's frames
-    const bm = h.asset.backupMeta, im = h.backupImg, sx = bm.column_period_s / P * zx;
-    const x0 = (bm.first_column_race_time_s - h.tOpen) / P * zx, liveX = (last + 1) * zx;
-    const bLast = Math.min(im.naturalWidth, Math.round((colTime(h, last) - bm.first_column_race_time_s) / bm.column_period_s));
-    g.drawImage(im, 0, 0, 1, im.naturalHeight, 0, 0, Math.min(x0, liveX), Hh);
-    if (bLast > 0) g.drawImage(im, 0, 0, bLast, im.naturalHeight, x0, 0, bLast * sx, Hh);
-  } else g.drawImage(h.img, 0, 0, last + 1, rowsOf(h), 0, 0, (last + 1) * zx, Hh);
+  if (!src.own) g.filter = 'grayscale(1) contrast(1.1)';
+  g.imageSmoothingEnabled = src.p / r.spp < 3;
+  // empty scene from the gun until this camera's first frame (sim renders cover the finish window only)
+  if (src.own && src.t > r.t0) {
+    const a = Math.max(r.t0, h.tOpen), b = Math.min(src.t, tEnd);
+    if (b > a) g.drawImage(src.img, 0, sy, 1, sh, x(a), 0, x(b) - x(a), Hh);
+  }
+  const i0 = Math.max(0, Math.floor((r.t0 - src.t) / src.p)), i1 = Math.min(src.w, Math.ceil((tEnd - src.t) / src.p));
+  if (i1 > i0) g.drawImage(src.img, i0, sy, i1 - i0, sh, x(src.t + i0 * src.p), 0, (i1 - i0) * src.p / r.spp, Hh);
   g.restore();
-  if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bx((S.selCol + 0.5) * zx)), 0, 1, Hh); }
-  const v = S.view, vw = Math.min(W, (scanW() / v.zx) * zx), vx = Math.max(0, v.c0 * zx);
-  g.strokeStyle = TK.blue; g.lineWidth = 1;
-  g.strokeRect((S.flip ? W - vx - vw : vx) + 0.5, 0.5, vw - 1, Hh - 1);
+  // marks, then the shared hover and selected hairlines
+  Object.values(h.marks).forEach(m => { g.fillStyle = TK.mint; g.fillRect(Math.round(bX(colTime(h, m.col), r, W)), 0, 1, Hh); });
+  if (S.hoverCol != null) { g.fillStyle = 'rgba(247,248,250,0.5)'; g.fillRect(Math.round(bX(colTime(h, S.hoverCol), r, W)), 0, 1, Hh); }
+  if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bX(colTime(h, S.selCol), r, W)), 0, 1, Hh); }
+  const d = S.bdrag;
+  if (d && d.mode === 'crop' && d.moved) {
+    g.strokeStyle = TK.blue; g.lineWidth = 1; g.setLineDash([4, 3]);
+    g.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+    g.setLineDash([]);
+  }
+  if (!S.bview.linked) {
+    g.fillStyle = 'rgba(8,16,34,0.72)'; g.fillRect(W - 62, Hh - 19, 58, 15);
+    g.fillStyle = '#d8dee9'; g.font = '10px ' + TK.mono; g.fillText('unlinked', W - 57, Hh - 8);
+  }
 }
 
 // What moment the front camera shows: live while running; afterwards the hovered column, else the selected one.
@@ -1244,6 +1279,7 @@ function frontVideo() {
     vidEl.onloadedmetadata = invalidate;
     vidTag = h_('div', 'frametag');
     pb.append(vidEl, vidTag);
+    applyFrontView();
   }
   return vidEl;
 }
@@ -1419,6 +1455,99 @@ window.addEventListener('keydown', e => {
 });
 $('#drawerClose').onclick = () => { S.tab = 'run'; renderUI(); };
 window.addEventListener('resize', () => { renderTiles(); if (!S.view.zoomed && cur().state !== 'running') fitView(); invalidate(); });
+
+// ---------------------------------------------------------------- backup line-scan input (its own view, shared time)
+const colAtTime = (h, t) => Math.max(0, Math.min(h.nCols - 1, Math.round((t - h.tOpen) / P - 0.5)));
+const backupReady = h => h.img && (h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0));
+function unlinkBackup(h) {
+  if (S.bview.linked) Object.assign(S.bview, backupRange(h), { linked: false });
+}
+backupCv.addEventListener('wheel', e => {
+  const h = cur();
+  if (!backupReady(h)) return;
+  e.preventDefault(); unlinkBackup(h);
+  const b = S.bview, rect = backupCv.getBoundingClientRect(), W = rect.width, mx = e.clientX - rect.left;
+  if (e.ctrlKey || e.metaKey) {
+    const tAt = bT(mx, b, W);
+    b.spp = Math.max(P / 16, Math.min((h.tClose - h.tOpen) / W, b.spp * Math.exp(e.deltaY * 0.0018)));
+    b.t0 = tAt - (S.flip ? W - mx : mx) * b.spp;
+  } else b.t0 += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * b.spp * (S.flip ? -1 : 1);
+  invalidate();
+}, { passive: false });
+backupCv.addEventListener('mousedown', e => {
+  if (e.button !== 0 || !backupReady(cur())) return;
+  const r = backupCv.getBoundingClientRect();
+  S.bdrag = { mode: e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, moved: false, start: { ...backupRange(cur()) } };
+});
+window.addEventListener('mousemove', e => {
+  const d = S.bdrag;
+  if (!d) return;
+  const r = backupCv.getBoundingClientRect(), h = cur();
+  d.x1 = Math.max(0, Math.min(r.width, e.clientX - r.left)); d.y1 = Math.max(0, Math.min(r.height, e.clientY - r.top));
+  if (Math.hypot(d.x1 - d.x0, d.y1 - d.y0) > 5) d.moved = true;
+  if (d.moved && d.mode === 'pan') {
+    unlinkBackup(h);
+    const b = S.bview;
+    b.t0 = d.start.t0 - (d.x1 - d.x0) * d.start.spp * (S.flip ? -1 : 1);
+    b.r0 = Math.max(0, Math.min(1 - d.start.rv, d.start.r0 - (d.y1 - d.y0) / r.height * d.start.rv));
+  }
+  invalidate();
+});
+window.addEventListener('mouseup', () => {
+  const d = S.bdrag; S.bdrag = null;
+  if (!d) return;
+  const h = cur(), r = backupCv.getBoundingClientRect();
+  if (d.moved && d.mode === 'crop') {
+    const w = Math.abs(d.x1 - d.x0), hh = Math.abs(d.y1 - d.y0);
+    if (w > 8 && hh > 8) {
+      const st = d.start, ta = bT(d.x0, st, r.width), tb = bT(d.x1, st, r.width);
+      Object.assign(S.bview, { linked: false, t0: Math.min(ta, tb), spp: Math.abs(tb - ta) / r.width, r0: st.r0 + Math.min(d.y0, d.y1) / r.height * st.rv, rv: hh / r.height * st.rv });
+    }
+  } else if (!d.moved) {
+    S.selCol = colAtTime(h, bT(d.x0, backupRange(h), r.width));     // select by time: Enter marks it, as on the primary
+    renderUI();
+  }
+  invalidate();
+});
+backupCv.addEventListener('mousemove', e => {
+  if (S.bdrag && S.bdrag.moved) return;
+  const h = cur();
+  if (!backupReady(h)) return;
+  const r = backupCv.getBoundingClientRect(), col = colAtTime(h, bT(e.clientX - r.left, backupRange(h), r.width));
+  const lim = h.state === 'running' ? h.liveCol : h.nCols - 1;
+  S.hoverCol = Math.min(col, lim); invalidate(); updateTs();
+});
+backupCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
+backupCv.addEventListener('dblclick', () => { S.bview.linked = true; invalidate(); });
+backupCv.title = 'Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: crop · Click: select · Double-click: link to the primary';
+
+// ---------------------------------------------------------------- front camera zoom and pan (for context; the recording itself is untouched)
+const frontPb = document.getElementById('front').parentNode;
+function applyFrontView() {
+  const f = S.fview, t = `translate(${f.x}px, ${f.y}px) scale(${f.s})`;
+  [document.getElementById('front'), vidEl].forEach(el => { if (el) { el.style.transformOrigin = '0 0'; el.style.transform = t; } });
+}
+function clampFront() {
+  const f = S.fview, W = frontPb.clientWidth, H = frontPb.clientHeight;
+  f.x = Math.min(0, Math.max(W - W * f.s, f.x)); f.y = Math.min(0, Math.max(H - H * f.s, f.y));
+}
+frontPb.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = S.fview, r = frontPb.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const s2 = Math.max(1, Math.min(8, f.s * Math.exp(-e.deltaY * 0.0018)));
+  f.x = mx - (mx - f.x) * (s2 / f.s); f.y = my - (my - f.y) * (s2 / f.s); f.s = s2;
+  clampFront(); applyFrontView();
+}, { passive: false });
+frontPb.addEventListener('mousedown', e => {
+  if (e.button !== 0 || S.fview.s <= 1) return;
+  const f = S.fview, x0 = e.clientX, y0 = e.clientY, fx = f.x, fy = f.y;
+  const move = ev => { f.x = fx + ev.clientX - x0; f.y = fy + ev.clientY - y0; clampFront(); applyFrontView(); };
+  const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); document.body.classList.remove('grabbing'); };
+  document.body.classList.add('grabbing');
+  window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+});
+frontPb.addEventListener('dblclick', () => { Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView(); });
+frontPb.title = 'Wheel: zoom · Drag: pan · Double-click: reset';
 
 // ---------------------------------------------------------------- frame loop (canvases redraw only while running or after a change)
 let lastSec = -1, lastLiveRender = 0;
