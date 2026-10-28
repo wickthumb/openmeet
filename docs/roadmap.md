@@ -39,6 +39,12 @@ The initial milestones below were recorded on October 26, 2026. See the [working
 
 Expand toward a complete open-source photo-finish and meet-operations application: more race formats, dependable hardware integration, resilient operation, interoperability, and a simpler workflow for meet operators.
 
+## Continuous line-scan compression research
+
+Research only; no continuous-recording format or compression implementation is committed yet. Investigate whether an eight-hour capture can fit within a 10 GB storage budget, comparing lossless and controlled-lossy methods against representative camera noise, lighting changes and crowded finishes. Exact timestamp preservation, random access, crash recovery and finish-edge fidelity matter alongside size and throughput. Repeated simulator background columns alone cannot establish real-camera performance or a universal size guarantee.
+
+Explore one logical meet recording with an indexed start-trigger journal and race views referencing its columns, so a heat can use a different start without rewriting the original evidence. Keep proprietary models separate. Any storage or timing claim needs measured results and a real-camera validation plan.
+
 ## Optional custom line-scan background
 
 Requested for a later iteration; not implemented yet.
