@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,7 @@ const emit = (event, data) => port.postMessage({ event, data });
 // The engine core library (engine/) lives beside the app; load it if this build includes it.
 let core = null;
 for (const p of [path.join(here, '..', 'engine', 'index.js'), path.join(here, 'engine', 'index.js')]) {
-  if (fs.existsSync(p)) { core = await import(p); break; }
+  if (fs.existsSync(p)) { core = await import(pathToFileURL(p).href); break; }
 }
 
 const decode = buf => new TextDecoder('windows-1252').decode(buf).replace(/^﻿/, '');
@@ -87,12 +87,12 @@ async function finishService() {
   const at = (await loadSettings()).autotiming || {};
   const clientPath = locate('engine/autotiming/client.js');
   if (!clientPath) throw new Error('auto-timing client missing from this build');
-  const { createFinishClient } = await import(clientPath);
+  const { createFinishClient } = await import(pathToFileURL(clientPath).href);
   const timeoutMs = at.timeoutMs || 60000;   // the real model's full stack can take longer than a few seconds on CPU
   if (at.baseUrl) return (finish = { client: createFinishClient({ baseUrl: at.baseUrl, apiKey: at.apiKey, timeoutMs }), stub: false, model: null });
   const stubPath = locate('services/finish-api-stub/server.js');
   if (!stubPath) throw new Error('no auto-timing service configured');
-  const { createStubServer } = await import(stubPath);
+  const { createStubServer } = await import(pathToFileURL(stubPath).href);
   const server = createStubServer();
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;

@@ -628,7 +628,7 @@ function renderAcc() {
   const start = { loaded: 'idle', armed: 'armed', running: 'fired', review: 'fired', saved: 'fired' }[h.state];
   const cap = h.state === 'running' ? (h.liveCol >= 0 ? 'capturing' : 'waiting') : 'idle';
   const rows = [
-    ['ok', 'Primary line-scan', '.21', `${S.source === 'replay' ? 'sim-replay' : 'sim-render'} · ${cap}`],
+    ['ok', 'Primary line-scan', '.21', `${h.asset || S.source === 'render' ? 'sim-render' : 'sim-replay'} · ${cap}`],
     ['ok', 'Backup line-scan', '.22', `sim · ${cap}`],
     ['ok', 'Front camera', '.30', 'sim · streaming'],
     ['ok', 'Start system', '.40', `sim · ${start}`],
@@ -1105,9 +1105,11 @@ function drawScan() {
     });
   }
   g.font = '700 10px ' + TK.mono;
+  let lastY = -99;
   bands.forEach(b => {
-    const y = yRow((b.top + b.bottom) / 2 + (S.lanes ? 5 : -4));
-    if (y < 8 || y > Hi - 2) return;
+    const y = yRow((b.top + b.bottom) / 2) + 5;
+    if (y < 8 || y > Hi - 2 || y - lastY < 13) return;   // far lanes can be thinner than a label: skip rather than overlap
+    lastY = y;
     g.fillStyle = 'rgba(8,16,34,0.72)'; g.fillRect(0, y - 11, 18, 13);
     g.fillStyle = '#f7f8fa'; g.fillText(String(b.lane), 6, y - 1);
   });

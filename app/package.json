@@ -3,6 +3,7 @@
   "productName": "OpenMeet",
   "version": "0.1.0",
   "description": "Open-source track-and-field photo-finish timing",
+  "homepage": "https://github.com/wickthumb/openmeet",
   "license": "MIT",
   "author": "Track Tools Pro LLC",
   "private": true,
@@ -10,9 +11,103 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "pack": "electron-builder --dir --publish never"
   },
   "devDependencies": {
-    "electron": "44.7.1"
+    "electron": "44.7.1",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "pro.tracktools.openmeet",
+    "productName": "OpenMeet",
+    "asar": false,
+    "publish": null,
+    "artifactName": "OpenMeet-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "engine-host.mjs",
+      "renderer/**",
+      {
+        "from": "../engine",
+        "to": "engine",
+        "filter": [
+          "**/*.js",
+          "package.json",
+          "!**/{test,testing,fixtures}/**",
+          "!**/*.test.js"
+        ]
+      },
+      {
+        "from": "../services/finish-api-stub",
+        "to": "services/finish-api-stub",
+        "filter": [
+          "server.js",
+          "package.json"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "OpenMeet-${version}-win-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "OpenMeet-${version}-win-${arch}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "maintainer": "Track Tools Pro LLC"
+    }
   }
 }
