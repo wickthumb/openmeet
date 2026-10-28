@@ -37,7 +37,7 @@ test('display mask tolerates background noise, hides changed pixels and preserve
   const width=24,height=6,channels=3,data=new Uint8Array(width*height*channels);
   for(let x=0;x<width;x++)for(let y=0;y<height;y++)for(let c=0;c<3;c++)data[(x*height+y)*3+c]=100+(x%3)-1;
   const image={data,width,height,channels},background=scanBackground(image);
-  const passing=new Uint8Array(data);passing[(8*height+2)*3]=15;passing[(8*height+3)*3+1]=230;
+  const passing=new Uint8Array(data);for(let x=8;x<=10;x++)for(let y=2;y<=3;y++){passing[(x*height+y)*3]=15;passing[(x*height+y)*3+1]=230;}
   const before=passing.slice(),mask=new Uint8Array(Math.ceil(width*height/8));
   writeForegroundMask(mask,0,{...image,data:passing},background);
   assert.equal(foregroundInRows(mask,8,height,2,3),true);
@@ -47,14 +47,14 @@ test('display mask tolerates background noise, hides changed pixels and preserve
 });
 
 test('row-major sample images and streamed columns produce the same mask, including tile offsets',()=>{
-  const width=24,height=4,channels=4,columns=new Uint8Array(width*height*channels).fill(80);
+  const width=24,height=8,channels=4,columns=new Uint8Array(width*height*channels).fill(80);
   const reference=scanBackground({data:columns,width,height,channels});
-  columns[(7*height+2)*channels]=170;
+  for(let x=7;x<=9;x++)for(let y=1;y<=2;y++)columns[(x*height+y)*channels]=170;
   const rows=new Uint8Array(columns.length);
   for(let x=0;x<width;x++)for(let y=0;y<height;y++)rows.set(columns.subarray((x*height+y)*channels,(x*height+y+1)*channels),(y*width+x)*channels);
   const a=new Uint8Array(Math.ceil((width+3)*height/8)),b=a.slice();
   writeForegroundMask(a,3,{data:columns,width,height,channels},reference);
-  writeForegroundMask(b,3,{data:rows,width,height,channels,layout:'rows'},reference);
+  writeForegroundMask(b,3,{data:rows,width,height,channels,layout:'rows'},scanBackground({data:new Uint8Array(columns.length).fill(80),width,height,channels}));
   assert.deepEqual(a,b);
   assert.equal(foregroundInRows(a,10,height,2,2),true);
   assert.equal(foregroundInRows(a,7,height,2,2),false);

@@ -1,4 +1,5 @@
 import { scanBoundaries, movedBoundaryRow, scanBackground, writeForegroundMask, foregroundInRows } from './scan-overlays.mjs';
+import { FrontFrameCache, linkedCameraRange, cameraAsset } from './front-preview.mjs';
 
 (() => {
 'use strict';
@@ -200,7 +201,8 @@ function places(h) {
   });
   return { fin, pl };
 }
-const colTime = (h, col) => h.tOpen + (col + 0.5) * P;
+const periodOf = h => h.asset?.primaryMeta?.column_period_s || P;
+const colTime = (h, col) => h.tOpen + (col + 0.5) * periodOf(h);
 const raceTime = (h, col) => colTime(h, col) - (h.startCorrection || 0);
 function lifText(h) {
   const tod = h.startTOD ? todStr(h.startTOD) : '';
@@ -303,6 +305,7 @@ const STRIP_TILE = 2048;
 function blankStrip(h) {
   h.stripTiles = [];
   h.foregroundTiles = []; h.overlayBackground = null; h.sampleForeground = null;
+  h.guideRenderCache=null;
   h.img = document.createElement('canvas'); h.img.width=1; h.img.height=rowsOf(h);
   h.imgSrc = 'engine'; h.recvCols = 0;
 }
@@ -335,7 +338,7 @@ function ingestColumns(h, first, count, data, channels) {
   }
   h.recvCols=Math.max(h.recvCols||0,first+count);
   if(h.preview){h.minCol=Math.max(0,h.recvCols-STRIP_TILE*8);const firstTile=Math.floor(h.minCol/STRIP_TILE);for(let i=h.firstTile||0;i<firstTile;i++){delete h.stripTiles[i];delete h.foregroundTiles[i];}h.firstTile=firstTile;}
-  h.nCols=Math.max(h.nCols,h.recvCols);h.tClose=h.tOpen+h.recvCols*P;
+  h.nCols=Math.max(h.nCols,h.recvCols);h.tClose=h.tOpen+h.recvCols*periodOf(h);
 }
 
 // ---------------------------------------------------------------- simulated auto-timing service
@@ -390,7 +393,7 @@ function mergeLive(h, props, seenToT) {
   const all = [...by.values()].sort((a, b) => a.col - b.col);
   all.forEach(p => { p.decision = p.model; if (p.model === 'auto') p.reason = p.reason === 'close_finish' ? '' : p.reason; });
   for (let i = 1; i < all.length; i++) {
-    const gap = (all[i].col - all[i - 1].col) * P;
+    const gap = (all[i].col - all[i - 1].col) * periodOf(h);
     if (gap < 0.02) [all[i - 1], all[i]].forEach(p => { p.decision = 'review'; p.reason = `close finish (${gap.toFixed(3)} s)`; });
   }
   h.proposals = all;
@@ -405,7 +408,7 @@ function liveSuggest(h) {
   if (h.asset && OM) {
     if (!h.captureId || h.liveBusy || (S.atInfo && !S.atInfo.live)) return;
     if (h.liveTo != null && colTime(h, h.liveCol) - colTime(h, h.liveTo) < LIVE_EVERY) return;
-    const fromCol = Math.max(0, (h.liveTo == null ? 0 : h.liveTo) - Math.round(0.6 / P)), toCol = h.liveCol;
+    const fromCol = Math.max(0, (h.liveTo == null ? 0 : h.liveTo) - Math.round(0.6 / periodOf(h))), toCol = h.liveCol;
     const runVersion = h.runVersion;
     h.liveBusy = true; h.req = 'live';
     OM.call('autotiming.predict', predictParams(h, { fromCol, toCol })).then(res => {
@@ -440,7 +443,7 @@ function requestProposals(h) {
 // Camera setup preview is independent of the official heat and its start journal.
 async function startCameraSetup() {
   if(cur().state==='running'||S.cameraSetup?.starting)return;
-  const source=cur();ensureStrip(source);
+  const source={...cur()};if(source.asset)attachAsset(source,source.asset);ensureStrip(source);
   if(!S.cameraSetup) S.cameraSetup={previousView:{...S.view},previousSelection:{lane:S.selLane,col:S.selCol},mode:'alignment'};
   const setup=S.cameraSetup;
   S.tab='alignment';
@@ -451,7 +454,7 @@ async function startCameraSetup() {
   S.selLane=null;S.selCol=null;S.hoverCol=null;S.view.user=false;S.view.followZoom=null;blankStrip(setup.heat);fitView();renderUI();
   try {
     if(OM&&source.asset){
-      const result=await OM.call('preview.start',{png:source.asset.primary,sidecar:source.asset.primaryMeta,speed:SPEED});
+      const result=await OM.call('preview.start',{png:source.asset.primary,sidecar:source.asset.primaryMeta,speed:SPEED,cameraId:source.asset.mainCameraId,cameraLabel:source.asset.mainCameraLabel});
       setup.id=result.id;
     }
     if(S.cameraSetup!==setup)return;
@@ -474,6 +477,7 @@ function renderSetupSidebar() {
   const setup=S.cameraSetup;
   $('#ev').innerHTML='<div class="ev-top"><span class="kicker">CAMERA ALIGNMENT</span><span class="tag sim">SIMULATOR</span></div><div class="ev-name">Align cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>';
   const ctl=$('#ctl');ctl.innerHTML='';
+  renderCameraRoles(ctl);
   const stop=h_('button','btn primary wide',setup.starting?'Starting preview…':setup.live?'Stop preview':'Start preview');stop.disabled=setup.starting||setup.stopping;stop.onclick=()=>setup.live?stopCameraSetup():startCameraSetup();ctl.append(stop);
   const modes=h_('div','setup-modes wide');
   ['alignment','overlays'].forEach(mode=>{const b=h_('button','btn sm'+(setup.mode===mode?' primary':''),mode==='alignment'?'Alignment':'Overlays');b.onclick=()=>{setup.mode=mode;renderUI();};modes.append(b);});ctl.append(modes);
@@ -510,8 +514,8 @@ function fire() {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
     OM.call('capture.start', {
       timeoutSeconds:h.stopMode==='timeout'?h.stopAfter:null,
-      key: `${h.ev}-${h.rd}-${h.ht}`, png: h.asset.primary, sidecar: h.asset.primaryMeta, speed: SPEED, meetDir: S.meet && S.meet.dir,
-      front: h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta } : null,
+      key: `${h.ev}-${h.rd}-${h.ht}`, png: h.asset.primary, sidecar: h.asset.primaryMeta, speed: SPEED, meetDir: S.meet && S.meet.dir,cameraId:h.asset.mainCameraId,cameraLabel:h.asset.mainCameraLabel,
+      front: h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta, frames:h.asset.frontFrames } : null,
     })
       .then(r => { h.captureId = r.id; h.captureDir = r.dir; if (r.trigger) { h.startReference = r.trigger; h.startCorrection = 0; h.startTOD = new Date(r.trigger.wallTimeMs); } if (r.front) h.frontRec = r.front; })
       .catch(err => { S.pendingCapture = null; h.state = 'armed'; toast('The camera did not start: ' + err.message, true); renderUI(); });
@@ -543,7 +547,7 @@ function prepareRestart(h) {
     stopping:false,restartAfterStop:false,runVersion:(h.runVersion||0)+1};
   next.athletes.forEach(a=>{if(a.pre)next.status[a.lane]=a.pre;});
   if(next.asset)attachAsset(next,next.asset);
-  else {next.img=h.sampleStrip||h.img;next.nCols=next.img?.width||h.nCols;next.tClose=next.tOpen+next.nCols*P;}
+  else {next.img=h.sampleStrip||h.img;next.nCols=next.img?.width||h.nCols;next.tClose=next.tOpen+next.nCols*periodOf(next);}
   attempts.push(next);attemptsByHeat.set(key,attempts);HEATS[S.idx]=next;
   S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';S.view.user=false;S.view.followZoom=null;
   ensureStrip(next);fitView();renderUI();
@@ -585,7 +589,7 @@ function endCapture(h) {
   if(h.state!=='running')return;
   if(h.asset) h.nCols=h.recvCols||0;
   else h.nCols=Math.min(h.nCols,Math.max(1,h.liveCol+1));
-  h.tClose=h.tOpen+h.nCols*P;
+  h.tClose=h.tOpen+h.nCols*periodOf(h);
   h.state='review';h.stopping=false;h.liveCol=h.nCols-1;h.tNow=h.tClose;
   h.base=snap(h);fitView();
   if(h.restartAfterStop){h.restartAfterStop=false;prepareRestart(h);return;}
@@ -1136,6 +1140,7 @@ function renderDrawer() {
     sel.value = S.source;
     sel.onchange = () => { S.source = sel.value; ensureStrip(cur()); renderUI(); };
     $('#srcCell').append(sel);
+    const cameras=h_('div','card');cameras.append(h_('h3','','Capture cameras'));renderCameraRoles(cameras);body.prepend(cameras);
   } else if (S.tab === 'meet') {
     const last = S.files[S.files.length - 1], entries = HEATS.reduce((n, h) => n + h.athletes.length, 0);
     const kb = n => (n == null ? '' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' kB');
@@ -1346,7 +1351,8 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 // Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
-function overlayStyle(kind) { const saved=store.get(overlayKey(kind),{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true}), ...saved,positions:{...(saved.positions||{})},boundaries:{...(saved.boundaries||{})},sizes:{...(saved.sizes||{})} }; }
+function cameraOverlayKey(kind){return kind==='scan'?`${overlayKey(kind)}:${viewHeat().asset?.mainCameraId||'primary'}`:overlayKey(kind);}
+function overlayStyle(kind) { const camera=viewHeat().asset?.mainCameraId||'primary',saved=store.get(cameraOverlayKey(kind),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true}), ...saved,positions:{...(saved.positions||{})},boundaries:{...(saved.boundaries||{})},sizes:{...(saved.sizes||{})} }; }
 function frontLanePoint(o,lane) {
   if(o.positions[lane])return o.positions[lane];
   const a=o.positions[1]||{x:0.1,y:0.8},b=o.positions[o.laneCount]||{x:0.9,y:0.8};
@@ -1370,7 +1376,7 @@ function modelLaneGuides(h) {
   const rows=[...new Set(scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>Math.round(b.row)))];
   return {enabled:true,rows,color:o.lineColor,thickness:Math.max(1,Math.round(o.thickness))};
 }
-function saveOverlay(kind,value) { store.set(overlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);} updateFrontOverlay(); invalidate(); }
+function saveOverlay(kind,value) { store.set(cameraOverlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);} updateFrontOverlay(); invalidate(); }
 let overlayMenu=null;
 function showOverlaySettings(kind,anchor) {
   overlayMenu?.remove();
@@ -1441,6 +1447,9 @@ function updateFrontOverlay() {
 function renderTools() {
   invalidate();
   const h = viewHeat(), box = $('#tools'); box.innerHTML = '';
+  $('#scanCameraLabel').textContent=h.asset?.mainCameraLabel||'Main scan';
+  $('#scanCameraLabel').title='Main line-scan camera · choose cameras in Camera alignment';
+  const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} · comparison`:'Backup line-scan';
   const captured = h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0);
   const review = !S.cameraSetup && (h.state === 'review' || h.state === 'saved');
   const tool = (icon, label, title, on, dis, act) => {
@@ -1546,17 +1555,40 @@ async function openMeet(dir) {
 }
 // A rendered demo meet (TTP simulator): meet/lynx.* plus, per heat, the primary line-scan, backup line-scan and front-camera recording.
 function attachAsset(h, a) {
+  if(a)a=cameraAsset(a,store.get(cameraRoleKey(),{}));
   if (!a || !a.primary || !a.primaryMeta || !a.primarySize) return h;
   const m = a.primaryMeta;
   // the engine's camera streams from the gun: pre-roll columns from race time 0, then the rendered finish window
-  const nPre = Math.max(0, Math.round(m.first_column_race_time_s / P));
+  const nPre = Math.max(0, Math.round(m.first_column_race_time_s / m.column_period_s));
   h.asset = a; h.rows = m.rows || a.primarySize.height; h.nCols = nPre + a.primarySize.width;
-  h.tOpen = m.first_column_race_time_s - nPre * P; h.tClose = h.tOpen + h.nCols * P;
+  h.tOpen = m.first_column_race_time_s - nPre * m.column_period_s; h.tClose = h.tOpen + h.nCols * m.column_period_s;
   h.laneRows = Array.isArray(m.lane_rows) && m.lane_rows.length ? m.lane_rows.map(x => ({ lane: x.lane, top: x.top_row, bottom: x.bottom_row })) : null;
   h.athletes.forEach(at => { at.truth = null; });            // truth stays in the engine
   h.wind = null; h.img = null; h.frontRec = null;
+  h.backupImg=null;
   if (a.backup && a.backupMeta) { const im = new Image(); im.onload = invalidate; im.src = OM.fileUrl(a.backup); h.backupImg = im; }
   return h;
+}
+function cameraRoleKey(){return `camera-roles:${S.meet?.dir||'sample'}`;}
+function renderCameraRoles(container) {
+  const asset=cur().asset,scans=asset?.lineScans;if(!scans?.length)return;
+  const roles=store.get(cameraRoleKey(),{}),selected=cameraAsset(asset,roles),box=h_('div','camera-role-fields wide');
+  for(const [key,label,value]of[['main','Main line-scan',selected.mainCameraId],['comparison','Comparison',selected.comparisonCameraId]]) {
+    const row=h_('label'),select=h_('select');select.setAttribute('aria-label',label);
+    scans.filter(s=>key==='main'||s.id!==selected.mainCameraId).forEach(s=>{const option=h_('option','',s.label);option.value=s.id;select.append(option);});
+    select.value=value||'';select.disabled=cur().state==='running'||S.cameraSetup?.starting||S.cameraSetup?.stopping||select.options.length<2;
+    select.onchange=async()=>{
+      const next={main:selected.mainCameraId,comparison:selected.comparisonCameraId,[key]:select.value};
+      if(next.main===next.comparison)next.comparison=scans.find(s=>s.id!==next.main)?.id;
+      const preview=!!S.cameraSetup;if(preview){await stopCameraSetup(true);if(S.cameraSetup)return;}
+      store.set(cameraRoleKey(),next);
+      for(const h of HEATS)if(h.asset&&['loaded','armed'].includes(h.state))attachAsset(h,h.asset);
+      ensureStrip(cur());fitView();if(preview)await startCameraSetup();else renderUI();
+    };
+    row.append(h_('span','',label),select);box.append(row);
+  }
+  container.append(box);
+  if(['review','saved'].includes(cur().state))box.append(h_('p','dimtext','Camera roles apply to new captures; earlier attempts keep their recorded source.'));
 }
 async function openDemo(dir) {
   try {
@@ -1599,6 +1631,7 @@ const scanW = () => scanCv.clientWidth, scanH = () => scanCv.clientHeight - RULE
 const MIN_ZX = 0.6;
 function fitView() {
   const h = viewHeat(), v = S.view, W = scanW();
+  S.bview.linked=true;
   v.zx = Math.max(MIN_ZX, Math.min(1, W / h.nCols));
   v.c0 = Math.max(0, h.nCols - W / v.zx);
   v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
@@ -1659,6 +1692,25 @@ function hitScanBoundary(h,x,y) {
     return {...b,d:distance<=8?distance:label?8:Infinity};
   }).filter(b=>b.d<=8).sort((a,b)=>a.d-b.d)[0]||null;
 }
+function guideRenderData(h,o,W,Hi,g) {
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,o.behindRunners,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
+  if(h.guideRenderCache?.key===key)return h.guideRenderCache.lines;
+  const lines=scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
+    const y=(b.row-v.r0)*v.zy,path=new Path2D();
+    if(y>=0&&y<=Hi&&o.thickness>0) {
+      if(!o.behindRunners){path.moveTo(0,y);path.lineTo(W,y);}
+      else {const half=o.thickness/(2*v.zy);let start=null;for(let x=0;x<=W;x++){
+        const hidden=x>=W||guideOccluded(h,x,x+1,b.row-half,b.row+half);
+        if(!hidden&&start==null)start=x;
+        if(hidden&&start!=null){path.moveTo(start,y);path.lineTo(x,y);start=null;}
+      }}
+    }
+    const baseline=y+o.fontSize+3,width=b.below==null?0:g.measureText(String(b.below)).width;
+    const label=b.below!=null&&baseline>=0&&baseline<=Hi&&(!o.behindRunners||!guideOccluded(h,6,6+width,b.row+3/v.zy,b.row+(o.fontSize+3)/v.zy));
+    return {boundary:b,path,baseline,label};
+  });
+  h.guideRenderCache={key,lines};return lines;
+}
 
 function drawScan() {
   const [g, W, Hc] = fitCanvas(scanCv), Hi = Hc - RULER, h = viewHeat(), v = S.view;
@@ -1686,30 +1738,13 @@ function drawScan() {
   if (live) { g.fillStyle = TK.blue; g.fillRect(xOf(last) - 1, 0, 2, Hi); }
 
   // Decorative lane guides can be adjusted without changing the model's lane geometry.
-  const yRow = row => (row - v.r0) * v.zy;
   const o=overlayStyle('scan');
   if(o.enabled) {
     if(o.behindRunners)sampleForeground(h);
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
-    scanBoundaries(laneBands(h),o,rowsOf(h)).forEach(b=>{
-      const y=yRow(b.row);if(y < -o.fontSize-6 || y>Hi)return;
-      if(o.thickness>0&&y>=0) {
-        g.beginPath();
-        if(!o.behindRunners){g.moveTo(0,y);g.lineTo(W,y);}
-        else {
-          const half=o.thickness/(2*v.zy);let start=null;
-          for(let x=0;x<=W;x++) {
-            const hidden=x>=W||guideOccluded(h,x,x+1,b.row-half,b.row+half);
-            if(!hidden&&start==null)start=x;
-            if(hidden&&start!=null){g.moveTo(start,y);g.lineTo(x,y);start=null;}
-          }
-        }
-        g.stroke();
-      }
-      if(b.below!=null) {
-        const baseline=y+o.fontSize+3,width=g.measureText(String(b.below)).width;
-        if(baseline<=Hi&&(!o.behindRunners||!guideOccluded(h,6,6+width,b.row+3/v.zy,b.row+(o.fontSize+3)/v.zy))){g.fillStyle=o.textColor;g.fillText(String(b.below),6,baseline);}
-      }
+    guideRenderData(h,o,W,Hi,g).forEach(line=>{
+      if(o.thickness>0)g.stroke(line.path);
+      if(line.label){g.fillStyle=o.textColor;g.fillText(String(line.boundary.below),6,line.baseline);}
     });g.restore();
   }
 
@@ -1759,14 +1794,14 @@ function drawRuler(g, W, Hc, h, on) {
   g.fillStyle = TK.deep; g.fillRect(0, y0, W, RULER);
   g.fillStyle = TK.rule2; g.fillRect(0, y0, W, 1);
   if (!on) return;
-  const v = S.view, pxPerS = v.zx / P;
+  const v = S.view, period=periodOf(h), pxPerS = v.zx / period;
   const steps = [0.00125, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1];
   const step = steps.find(s => s * pxPerS >= 70) || 1;
   const dec = step < 0.01 ? 4 : step < 0.1 ? 2 : 1;
-  const t0 = h.tOpen + v.c0 * P, t1 = h.tOpen + (v.c0 + W / v.zx) * P;
+  const t0 = h.tOpen + v.c0 * period, t1 = h.tOpen + (v.c0 + W / v.zx) * period;
   g.font = '10px ' + TK.mono;
   for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
-    const x = Math.round(unflipX(((t - h.tOpen) / P - v.c0) * v.zx));
+    const x = Math.round(unflipX(((t - h.tOpen) / period - v.c0) * v.zx));
     g.fillStyle = TK.dim; g.fillRect(x, y0 + 1, 1, 6);
     g.fillStyle = TK.muted; g.textAlign = S.flip ? 'right' : 'left';
     g.fillText((t-(h.startCorrection||0)).toFixed(dec), x + (S.flip ? -3 : 3), y0 + 16);
@@ -1781,10 +1816,10 @@ function backupSource(h) {
     const bm = h.asset.backupMeta;
     return { img: h.backupImg, t: bm.first_column_race_time_s, p: bm.column_period_s, w: h.backupImg.naturalWidth, rows: h.backupImg.naturalHeight, own: true };
   }
-  return { img: h.img, t: h.tOpen, p: P, w: h.nCols, rows: rowsOf(h), own: false };
+  return { img: h.img, t: h.tOpen, p: periodOf(h), w: h.nCols, rows: rowsOf(h), own: false };
 }
 function backupRange(h) {
-  if (S.bview.linked) { const v = S.view; return { t0: h.tOpen + v.c0 * P, spp: P / v.zx, r0: 0, rv: 1 }; }
+  if (S.bview.linked) return linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period:periodOf(h),timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth});
   return S.bview;
 }
 const backupCv = document.getElementById('backup');
@@ -1801,7 +1836,7 @@ function drawBackup() {
     g.fillText('Backup capture follows the primary.', W / 2, Hh / 2); g.textAlign = 'left';
     return;
   }
-  const src = backupSource(h), r = backupRange(h), liveT = colTime(h, last) + P / 2;
+  const src = backupSource(h), r = backupRange(h), liveT = colTime(h, last) + periodOf(h) / 2;
   const tEnd = Math.min(liveT, r.t0 + W * r.spp), sy = r.r0 * src.rows, sh = r.rv * src.rows;
   const x = t => (t - r.t0) / r.spp;
   g.save();
@@ -1834,17 +1869,23 @@ function drawBackup() {
 
 // What moment the front camera shows: live while running; afterwards the hovered column, else the selected one.
 function frontTime(h) {
+  if(S.hoverCol!=null&&['running','review','saved'].includes(h.state))return colTime(h,S.hoverCol);
   if (h.state === 'running') return h.tNow;
   if (h.state !== 'review' && h.state !== 'saved') return null;
   const col = S.hoverCol != null ? S.hoverCol : S.selCol;
   return col == null ? null : colTime(h, col);
 }
-let vidEl = null, vidTag = null;
+let vidEl = null, vidTag = null, frontCache=null, frontCacheKey=null, lastFrontFrame=null, wantedVideoTime=null;
+function seekFrontVideo(v,target) {
+  wantedVideoTime=target;
+  if(!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-target)>0.002)v.currentTime=target;
+}
 function frontVideo() {
   if (!vidEl) {
     const pb = $('#front').parentNode;
     vidEl = h_('video', 'frontvid'); vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';
     vidEl.onloadedmetadata = invalidate;
+    vidEl.onseeked=()=>{if(wantedVideoTime!=null&&Math.abs(vidEl.currentTime-wantedVideoTime)>0.002)seekFrontVideo(vidEl,wantedVideoTime);invalidate();};
     vidTag = h_('div', 'frametag');
     pb.append(vidEl, vidTag);
     applyFrontView();
@@ -1852,35 +1893,49 @@ function frontVideo() {
   return vidEl;
 }
 // The front camera is a recording attached to the heat: frame-exact at 30 fps, scrubbed by hovering the line-scan.
-function syncFront(h) {
-  const rec = h.frontRec || (h.asset && h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta } : null);
+function syncFront(h,g,W,Hf) {
+  const rec = h.frontRec || (h.asset && h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta,frames:h.asset.frontFrames } : null);
   const v = frontVideo(), on = !!(OM && rec);
   v.style.display = on ? 'block' : 'none'; vidTag.style.display = 'none';
-  if (!on) { if (!v.paused) v.pause(); return false; }
+  if (!on) { if (!v.paused) v.pause();frontCache?.dispose();frontCache=null;frontCacheKey=null;lastFrontFrame=null;return false; }
   const url = OM.fileUrl(rec.path);
   if (v.dataset.src !== url) { v.dataset.src = url; v.src = url; }
   const fps = (rec.meta && rec.meta.fps) || 30, ff = (rec.meta && rec.meta.first_frame_race_time_s) || 0;
-  if (h.state === 'running') {
+  const cacheKey=rec.frames?.[0]||url;
+  if(frontCacheKey!==cacheKey){frontCache?.dispose();frontCache=null;lastFrontFrame=null;frontCacheKey=cacheKey;if(rec.frames?.length)frontCache=new FrontFrameCache({load:async index=>{const im=new Image();im.src=OM.fileUrl(rec.frames[index]);await im.decode();return createImageBitmap(im);},onReady:invalidate});}
+  if (h.state === 'running'&&S.hoverCol==null) {
+    wantedVideoTime=null;
     const want = h.tNow - ff;
     if (want < 0) { if (!v.paused) v.pause(); return true; }
+    if(frontCache)frontCache.request(Math.min(rec.frames.length-1,Math.floor(want*fps)),rec.frames.length);
     v.playbackRate = SPEED;
     if (v.paused) { v.currentTime = want; v.play().catch(() => {}); } else if (Math.abs(v.currentTime - want) > 0.25) v.currentTime = want;
     return true;
   }
   if (!v.paused) v.pause();
   const ft = frontTime(h), t = ft != null ? ft : h.state === 'review' || h.state === 'saved' ? h.tClose : ff;
-  const maxN = v.duration ? Math.floor(v.duration * fps) - 1 : Infinity;
+  const maxN = rec.frames?.length ? rec.frames.length-1 : v.duration ? Math.floor(v.duration * fps) - 1 : (rec.meta?.frame_count||1)-1;
   const frame = Math.max(0, Math.min(maxN, Math.floor((t - ff) * fps)));
   const target = (frame + 0.5) / fps;
-  if (v.readyState >= 1 && Math.abs(v.currentTime - target) > 0.5 / fps) v.currentTime = target;
-  if (ft != null) { vidTag.style.display = 'block'; vidTag.textContent = `${fmtT(ff + frame / fps)} s · frame ${frame + 1}`; }
+  $('#front').dataset.wantedFrame=frame;
+  if(frontCache&&!frontCache.failed.has(frame)) {
+    wantedVideoTime=null;frontCache.request(frame,rec.frames.length);
+    const decoded=frontCache.get(frame);if(decoded)lastFrontFrame={bitmap:decoded,index:frame};
+    if(lastFrontFrame&&!frontCache.frames.has(lastFrontFrame.index))lastFrontFrame=null;
+    v.style.display='none';g.fillStyle='#000';g.fillRect(0,0,W,Hf);
+    if(lastFrontFrame){const b=lastFrontFrame.bitmap,s=Math.min(W/b.width,Hf/b.height);g.drawImage(b,(W-b.width*s)/2,(Hf-b.height*s)/2,b.width*s,b.height*s);if($('#front').dataset.frame!==String(lastFrontFrame.index))$('#front').dataset.frame=lastFrontFrame.index;}
+    if(ft!=null){vidTag.style.display='block';vidTag.textContent=decoded?`${fmtT(ff+frame/fps)} s · frame ${frame+1}`:'Loading frame…';}
+    return true;
+  }
+  g.clearRect(0,0,W,Hf);seekFrontVideo(v,target);
+  if (ft != null) { vidTag.style.display = 'block'; vidTag.textContent = v.seeking||Math.abs(v.currentTime-target)>0.5/fps?'Loading frame…':`${fmtT(ff + frame / fps)} s · frame ${frame + 1}`; }
   return true;
 }
 function drawFront() {
   const cv = $('#front');
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hf] = fitCanvas(cv), h = viewHeat();
-  if (syncFront(h)) { g.clearRect(0, 0, W, Hf); return; }
+  if (syncFront(h,g,W,Hf)) return;
   const hy = Hf * 0.17, cx = W / 2;
   const grd = g.createLinearGradient(0, 0, 0, hy);
   grd.addColorStop(0, '#1b2740'); grd.addColorStop(1, '#2b3a55');
@@ -1925,6 +1980,7 @@ scanCv.addEventListener('wheel', e => {
   e.preventDefault();
   const v = S.view, rect = scanCv.getBoundingClientRect(), xa = unflipX(e.clientX - rect.left);
   if (e.ctrlKey || e.metaKey) {
+    S.bview.linked=true;
     const colAt = v.c0 + xa / v.zx;
     v.zx = Math.max(S.cameraSetup?scanW()/Math.min(h.nCols,STRIP_TILE*8):scanW() / h.nCols * 0.5, Math.min(16, v.zx * Math.exp(-e.deltaY * 0.0018)));
     v.c0 = colAt - xa / v.zx; v.zoomed = true;
@@ -1987,6 +2043,7 @@ window.addEventListener('mousemove', e => {
   if (d.mode === 'mark' && d.moved) {
     const h=viewHeat(), limit=h.state==='running'?h.liveCol:h.nCols-1;
     S.selCol=Math.max(0,Math.min(limit,colOf(d.x1)));
+    S.hoverCol=S.selCol;
     updateTs();
   }
   if (d.mode === 'pan' && d.moved) {
@@ -2009,6 +2066,7 @@ window.addEventListener('mouseup', () => {
     return;
   }
   if (d.moved && d.mode === 'crop') {
+    S.bview.linked=true;
     const w = Math.abs(d.x1 - d.x0), hh = Math.abs(d.y1 - d.y0);
     if (w < 8 || hh < 8) return;
     const ca = v.c0 + unflipX(d.x0) / v.zx, cb = v.c0 + unflipX(d.x1) / v.zx;
@@ -2057,6 +2115,7 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     const dir = (e.key === 'ArrowLeft' ? -1 : 1) * (S.flip ? -1 : 1);   // arrows move on screen, whichever way the image faces
     S.selCol = Math.max(0, Math.min(h.nCols - 1, S.selCol + dir * (e.shiftKey ? 10 : 1)));
+    S.hoverCol=null;
     centerOn(S.selCol); renderUI();
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault();
@@ -2086,7 +2145,7 @@ $('#drawerClose').onclick = () => { S.tab = 'run'; renderUI(); };
 window.addEventListener('resize', () => { renderTiles(); if (!S.view.zoomed && viewHeat().state !== 'running') fitView(); invalidate(); });
 
 // ---------------------------------------------------------------- backup line-scan input (its own view, shared time)
-const colAtTime = (h, t) => Math.max(0, Math.min(h.nCols - 1, Math.round((t - h.tOpen) / P - 0.5)));
+const colAtTime = (h, t) => Math.max(0, Math.min(h.nCols - 1, Math.round((t - h.tOpen) / periodOf(h) - 0.5)));
 const backupReady = h => h.img && (h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0));
 function unlinkBackup(h) {
   if (S.bview.linked) Object.assign(S.bview, backupRange(h), { linked: false });
@@ -2098,7 +2157,7 @@ backupCv.addEventListener('wheel', e => {
   const b = S.bview, rect = backupCv.getBoundingClientRect(), W = rect.width, mx = e.clientX - rect.left;
   if (e.ctrlKey || e.metaKey) {
     const tAt = bT(mx, b, W);
-    b.spp = Math.max(P / 16, Math.min((h.tClose - h.tOpen) / W, b.spp * Math.exp(e.deltaY * 0.0018)));
+    b.spp = Math.max(periodOf(h) / 16, Math.min((h.tClose - h.tOpen) / W, b.spp * Math.exp(e.deltaY * 0.0018)));
     b.t0 = tAt - (S.flip ? W - mx : mx) * b.spp;
   } else b.t0 += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * b.spp * (S.flip ? -1 : 1);
   invalidate();
@@ -2194,7 +2253,7 @@ function frame(now) {
     if(p.live){
       preview.tNow=preview.tOpen+(now-preview.startPerf)/1000*SPEED;
       if(!p.id&&p.sample){
-        const target=Math.floor((preview.tNow-preview.tOpen)/P),count=target-(preview.recvCols||0);
+        const target=Math.floor((preview.tNow-preview.tOpen)/periodOf(preview)),count=target-(preview.recvCols||0);
         if(count>0){const src=p.sample.getContext('2d').getImageData(0,0,1,rowsOf(preview)).data,data=new Uint8Array(count*rowsOf(preview)*3);for(let x=0;x<count;x++)for(let y=0;y<rowsOf(preview);y++){const d=(x*rowsOf(preview)+y)*3;data[d]=src[y*4];data[d+1]=src[y*4+1];data[d+2]=src[y*4+2];}ingestColumns(preview,preview.recvCols||0,count,data,3);}
       }
       preview.liveCol=(preview.recvCols||0)-1;if(!S.view.user&&preview.liveCol>=0)follow(preview);
@@ -2204,7 +2263,7 @@ function frame(now) {
   if (!S.cameraSetup && h.state === 'running') {
     h.tNow = (now - h.startPerf) / 1000 * SPEED;
     if(!h.asset && h.sampleStrip) {
-      const target=Math.max(0,Math.floor((h.tNow-h.tOpen)/P)),from=h.recvCols||0;
+      const target=Math.max(0,Math.floor((h.tNow-h.tOpen)/periodOf(h))),from=h.recvCols||0;
       for(let c=from;c<target;) {
         const index=Math.floor(c/STRIP_TILE),local=c%STRIP_TILE,n=Math.min(target-c,STRIP_TILE-local);
         if(!h.stripTiles[index]){const tile=document.createElement('canvas');tile.width=STRIP_TILE;tile.height=rowsOf(h);h.stripTiles[index]=tile;}
@@ -2213,7 +2272,7 @@ function frame(now) {
         if(inside<n)g.drawImage(im,im.width-1,0,1,im.height,local+inside,0,n-inside,im.height);
         c+=n;
       }
-      h.recvCols=target;h.nCols=Math.max(h.nCols,target);h.tClose=h.tOpen+target*P;
+      h.recvCols=target;h.nCols=Math.max(h.nCols,target);h.tClose=h.tOpen+target*periodOf(h);
     }
     const lc=(h.recvCols||0)-1;
     if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(h); }

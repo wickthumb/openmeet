@@ -158,7 +158,7 @@ const methods = {
     if (!dir) throw new Error('no folder given');
     emit('roots.add', [dir]);
     const meet = await readMeet(dir);
-    if (watcher) watcher.close();
+    if (typeof watcher==='function')await watcher();else if(watcher)await watcher.close();
     watcher = core?.watchMeetFolder
       ? core.watchMeetFolder(dir, async change => emit('meet.changed', { dir, ...change, files: (await readMeet(dir)).files }))
       : watchPlain(dir);
@@ -176,13 +176,14 @@ const methods = {
   },
   // Start the simulated camera on a rendered line-scan: {key, png, sidecar, speed, meetDir}.
   // Captures live in <meet folder>/openmeet/captures/, beside the meet manager's files and never mixed into them.
-  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null, preview = false }) {
+  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null, preview = false, cameraId, cameraLabel }) {
     if (!core) throw new Error('engine core missing from this build');
     if (active) throw new Error('a capture is already running');
     const replaySidecar=preview?{...(typeof sidecar==='string'?JSON.parse(await fsp.readFile(sidecar,'utf8')):sidecar),first_column_race_time_s:0}:sidecar;
     const id = `${String(key || 'heat').replace(/[^\w-]/g, '_')}-${Date.now()}`;
     const dir = preview ? null : path.join(meetDir ? path.join(meetDir, 'openmeet', 'captures') : path.join(userData, 'captures'), id);
     if(dir) await fsp.mkdir(dir, { recursive: true });
+    if(dir)await fsp.writeFile(path.join(dir,'source.json'),JSON.stringify({cameraId:cameraId||'sim-camera',label:cameraLabel||'Simulated line-scan',source:'sim-replay',image:png},null,2));
     if (!meetDir && dir) emit('roots.add', [dir]);
     // The front camera's recording belongs to the heat, beside its line-scan: <capture>/front.mp4 + front.json (frame timing).
     let frontRec = null;
@@ -190,7 +191,7 @@ const methods = {
       const vp = path.join(dir, 'front' + path.extname(front.path));
       await fsp.copyFile(front.path, vp);
       await fsp.writeFile(path.join(dir, 'front.json'), JSON.stringify({ ...(front.meta || {}), heat: key }, null, 2));
-      frontRec = { path: vp, meta: front.meta || null };
+      frontRec = { path: vp, meta: front.meta || null, frames: front.frames || null };
     }
     let previewColumns=0;
     const store = preview ? { append(msg){if(msg.type==='columns')previewColumns+=msg.count;},columnCount(){return previewColumns;},async close(){} } : core.openCaptureStore(dir);
@@ -258,11 +259,22 @@ const methods = {
       const hd = path.join(dir, name), files = await fsp.readdir(hd);
       const json = async f => (files.includes(f) ? JSON.parse(await fsp.readFile(path.join(hd, f), 'utf8')) : null);
       const primary = files.includes('primary.png') ? path.join(hd, 'primary.png') : null;
+      const lineScans=[];
+      for(const f of files.filter(f=>/^(primary|backup|scan-[\w-]+)\.png$/i.test(f)).sort((a,b)=>(a==='primary.png'?-1:b==='primary.png'?1:a==='backup.png'?-1:b==='backup.png'?1:a.localeCompare(b)))) {
+        const id=f.slice(0,-4),meta=await json(id+'.json');if(!meta)continue;
+        const png=path.join(hd,f);
+        lineScans.push({id,label:meta.camera_name||(id==='primary'?'Line-scan A':id==='backup'?'Line-scan B':id.replace(/^scan-/,'Line-scan ')),png,meta,size:await pngSize(png)});
+      }
+      let frontFrames=null;
+      if(files.includes('front')) {
+        const names=(await fsp.readdir(path.join(hd,'front'))).filter(n=>/^\d{4,}\.png$/.test(n)).sort();
+        if(names.length&&names.every((n,i)=>parseInt(n,10)===i))frontFrames=names.map(n=>path.join(hd,'front',n));
+      }
       heats.push({
-        name, dir: hd,
+        name, dir: hd, lineScans,
         primary, primarySize: primary ? await pngSize(primary) : null, primaryMeta: await json('primary.json'),
         backup: files.includes('backup.png') ? path.join(hd, 'backup.png') : null, backupMeta: await json('backup.json'),
-        front: files.includes('front.mp4') ? path.join(hd, 'front.mp4') : null, frontMeta: await json('front.json'),
+        front: files.includes('front.mp4') ? path.join(hd, 'front.mp4') : null, frontMeta: await json('front.json'), frontFrames,
       });
     }
     const meetDir = path.join(dir, 'meet');

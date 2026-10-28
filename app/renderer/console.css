@@ -337,3 +337,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .setup-modes button { flex:1; }
 .setup-help { padding:0 14px;color:var(--muted);font-size:12px;line-height:1.55; }
 .setup-summary h3 { margin-top:0; }
+.camera-role-fields { display:grid;gap:7px;margin-bottom:6px; }
+.camera-role-fields label { display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px; }
+.camera-role-fields select { min-width:0;max-width:165px;background:var(--panel);border:1px solid var(--rule);padding:4px; }
+.camera-role-fields p { font-size:11px;margin:0; }
+.scan-camera-label { color:var(--muted);font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }

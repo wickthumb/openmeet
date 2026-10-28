@@ -24,11 +24,15 @@ Select a reviewed finish in the sidebar to center and zoom its hairline, then ch
 
 Hover the primary or backup line-scan to inspect the corresponding front-camera frame. Each view can be zoomed and panned.
 
+Move rapidly between columns: available cached front-camera frames should paint without waiting on repeated video seeks. The displayed frame number follows the actual decoded frame; a pending cold load says **Loading frame…**. Hover during capture to inspect an earlier moment, then leave the scan to resume the live camera view.
+
 ## 4. Fit the display to the venue
 
 Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, choose the lane count and position the first and last labels. Intermediate positions and font sizes are interpolated with perspective; switch to individual mode to fine-tune. Alt + wheel adjusts an individual number’s size. Show or hide numbers, adjust font size and weight, colors, thickness and opacity, and enable dragging to position the guides. Appearance is remembered per meet/camera. By default these are decorative guides. The separate **Lane guides in model input** option makes a derived scan containing opaque horizontal boundaries, without labels or finish marks. Original pixels and timestamps remain unchanged, and a request ledger records the preprocessing. Whether this helps a private model needs evaluation.
 
 On the line-scan, enable **Edit boundary lines** and drag one line or its number. Only that shared edge moves, resizing the lanes above and below it. **Guides behind runners** hides guide segments where the image differs from the initial empty-track reference. Compare the toggle on and off; finish markers stay visible. This display feature is separate from the opaque lines optionally included in model-input copies.
+
+In Camera alignment, choose the main and comparison scan sources. A main zoom should show the same time window and vertical fraction in the comparison, including when image heights differ. Roles apply to new captures; saved attempts keep their original source. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
 
 ## 5. Correct an accidental start trigger
 
