@@ -462,6 +462,9 @@ function applyProposals(h, props, meta = {}) {
     if (p.decision === 'auto' && (!mk || mk.src === 'auto')) h.marks[p.lane] = { col: p.col, src: 'auto' };
     else if (p.decision === 'review' && mk && mk.src === 'auto') delete h.marks[p.lane];   // a live auto-accept the final pass flags goes back to review
   });
+  if(h.hideEmpty&&[...Object.values(h.marks),...h.proposals.filter(p=>!h.status[p.lane]&&!h.dismissed?.[p.lane])].some(m=>displayCoordinate(h.cropProjection,m.col+0.5)==null)){
+    h.hideEmpty=false;if(cur()===h){fitView();toast('New finish outside hidden spans. Full view shown.');}
+  }
   if (untouched && !h.saves) h.base = snap(h);                 // machine output on a fresh capture is part of "as captured"
   renderUI();
 }
@@ -1824,14 +1827,14 @@ let toolbarOverflow=[];
 async function toggleEmptyColumns() {
   const h=cur();if(h.cropBusy||!['review','saved'].includes(h.state))return;
   if(h.hideEmpty){h.hideEmpty=false;fitView();if(S.selCol!=null)focusFinish(S.selCol);renderUI();return;}
-  h.cropBusy=true;renderTools();
+  h.cropBusy=true;renderTools();toast('Finding empty spans…');
   try{
     if(!h.cropResult)h.cropResult=await OM.call('autocrop.run',{captureId:h.captureId});
     const ranges=validateCropResult(h.cropResult.result,h.nCols),projection=columnProjection(ranges,h.nCols);
     const finishes=[...Object.values(h.marks).map(m=>m.col),...(h.proposals||[]).filter(p=>!h.status[p.lane]&&!h.dismissed?.[p.lane]).map(p=>p.col)];
     if(!projection.length||projection.length===h.nCols){toast('No empty spans to hide.');return;}
     if(finishes.some(c=>displayCoordinate(projection,c+0.5)==null)){toast('A marked finish is outside the cropper ranges. Full view kept.',true);return;}
-    h.cropProjection=projection;h.hideEmpty=true;
+    h.cropProjection=projection;h.hideEmpty=true;toast('Empty spans hidden. Original recording retained.');
     if(cur()===h){S.hoverCol=null;fitView();if(S.selCol!=null&&displayCoordinate(projection,S.selCol+0.5)!=null)focusFinish(S.selCol);else S.selCol=null;renderUI();}
   }catch(err){toast('Could not hide empty spans: '+err.message,true);}finally{h.cropBusy=false;renderTools();}
 }
@@ -1948,7 +1951,7 @@ function renderTools() {
     const button=h_('button','tool'+(tool.on?' on':'')+(id==='mark'?' primary-tool':''));button.dataset.tool=id;button.title=tool.help;button.disabled=tool.disabled;
     button.innerHTML=tool.icon+tool.label+(['lanes','auto'].includes(id)?' ▾':'');
     if(['lanes','auto'].includes(id)){button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded',String(id==='lanes'?!!overlayMenu?.isConnected:toolbarPopover?.menu?.classList.contains('auto-timing-menu')||false));}
-    else if(['follow','zoom','flip'].includes(id))button.setAttribute('aria-pressed',String(!!tool.on));
+    else if(['follow','zoom','flip','hideEmpty'].includes(id))button.setAttribute('aria-pressed',String(!!tool.on));
     button.onclick=()=>{if(id==='auto'&&toolbarPopover?.menu.classList.contains('auto-timing-menu')){toolbarPopover.close();return;}toolbarPopover?.close(false);runScanTool(id,button);};pinned.append(button);
   }
   const more=h_('button','tool more-scan-tools','⋯');more.dataset.more='';more.title='More tools, customize toolbar, and help';more.setAttribute('aria-label','More line-scan tools');more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded',String(!!toolbarPopover&&!toolbarPopover.menu.classList.contains('auto-timing-menu')));
