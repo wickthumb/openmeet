@@ -31,9 +31,9 @@ const sigOf = (s) => `${s.size}:${s.mtimeMs}:${s.ino}`;
  * Watch `dir` and call `onChange` with the re-parsed files whenever any of
  * them changes. File names are matched case-insensitively (LYNX.EVT works).
  *
- * Mid-write safety: a new size/mtime must be seen unchanged on two scans
- * `settleMs` apart before the file is read; the stat is repeated after the
- * read; an empty file or a parse error keeps the last good data and is
+ * Mid-write safety: a new size/mtime/inode must hold still for `settleMs`
+ * (seen on a later scan) before the file is read; the stat is repeated after
+ * the read; an empty file or a parse error keeps the last good data and is
  * retried on the next scan. Nothing is emitted for those.
  *
  * @param {string} dir
@@ -53,9 +53,11 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
   const useFsWatch = opts.fsWatch ?? true;
   const onError = opts.onError ?? (() => {});
 
-  /** @type {Record<string, {sig: string|null, pendingSig: string|null, errSig: string|null, bytes: Buffer|null, data: unknown[]}>} */
+  /** @type {Record<string, {sig: string|null, pendingSig: string|null, pendingSince: number, errSig: string|null, bytes: Buffer|null, data: unknown[]}>} */
   const files = {};
-  for (const name of MEET_FILES) files[name] = { sig: null, pendingSig: null, errSig: null, bytes: null, data: [] };
+  for (const name of MEET_FILES) {
+    files[name] = { sig: null, pendingSig: null, pendingSince: 0, errSig: null, bytes: null, data: [] };
+  }
 
   let closed = false;
   /** @type {Promise<void> | null} */
@@ -85,12 +87,20 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
       });
   }
 
-  function scheduleSettle() {
+  /** @param {number} delay */
+  function scheduleSettle(delay) {
     if (closed || settleTimer) return;
     settleTimer = setTimeout(() => {
       settleTimer = null;
       requestScan();
-    }, settleMs);
+    }, Math.max(1, delay));
+  }
+
+  /** Remember a newly seen file version and when it was first seen. */
+  function sighting(/** @type {typeof files[string]} */ f, /** @type {string} */ sig) {
+    f.pendingSig = sig;
+    f.pendingSince = Date.now();
+    scheduleSettle(settleMs);
   }
 
   async function scan() {
@@ -105,7 +115,7 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
     const actual = new Map();
     for (const n of names) {
       const lower = n.toLowerCase();
-      if (lower in PARSERS && !actual.has(lower)) actual.set(lower, n);
+      if (Object.hasOwn(PARSERS, lower) && !actual.has(lower)) actual.set(lower, n);
     }
     /** @type {string[]} */
     const changed = [];
@@ -125,16 +135,19 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
         const sig = sigOf(s1);
         if (sig === f.sig) continue;
         if (sig !== f.pendingSig) {
-          f.pendingSig = sig; // first sighting: wait for it to hold still
-          scheduleSettle();
+          sighting(f, sig); // new version: wait for it to hold still
+          continue;
+        }
+        const waited = Date.now() - f.pendingSince;
+        if (waited < settleMs) {
+          scheduleSettle(settleMs - waited);
           continue;
         }
         if (s1.size === 0) continue; // being rewritten; retry next scan
         const bytes = await readFile(path);
         const s2 = await stat(path);
         if (sigOf(s2) !== sig || bytes.length !== s1.size) {
-          f.pendingSig = sigOf(s2);
-          scheduleSettle();
+          sighting(f, sigOf(s2));
           continue;
         }
         let data;
@@ -171,7 +184,7 @@ export function watchMeetFolder(dir, onChange, opts = {}) {
     try {
       watcher = watch(dir, { persistent: true }, (_type, filename) => {
         const lower = filename ? String(filename).toLowerCase() : null;
-        if (lower && !(lower in PARSERS)) return;
+        if (lower && !Object.hasOwn(PARSERS, lower)) return;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           debounceTimer = null;
