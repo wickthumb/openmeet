@@ -159,11 +159,15 @@ export function createFinishClient({ baseUrl, apiKey, timeoutMs = 8000, retries 
         redirect: 'error',
       });
       let parsed;
-      try { parsed = await response.json(); } catch {
-        if (controller.signal.aborted) throw new FinishApiError('timeout',
-          'Finish API request timed out.', { retryable: true });
-        if (response.ok) throw badResponse();
-        // HTTP status still controls retryability when an error body is broken.
+      try { parsed = await response.json(); } catch (error) {
+        if (response.ok) {
+          if (controller.signal.aborted) throw new FinishApiError('timeout',
+            'Finish API request timed out.', { retryable: true });
+          if (error instanceof SyntaxError) throw badResponse();
+          // A body stream can fail after headers arrive; that is a network error.
+          throw error;
+        }
+        // A known HTTP status controls retries even if its body stalls or breaks.
       }
       if (!response.ok) {
         const code = isObject(parsed?.error) && typeof parsed.error.code === 'string' &&
@@ -175,9 +179,9 @@ export function createFinishClient({ baseUrl, apiKey, timeoutMs = 8000, retries 
       }
       return parsed;
     } catch (error) {
+      if (error instanceof FinishApiError) throw error;
       if (controller.signal.aborted) throw new FinishApiError('timeout',
         'Finish API request timed out.', { retryable: true });
-      if (error instanceof FinishApiError) throw error;
       throw new FinishApiError('network_error', 'Finish API network request failed.', { retryable: true });
     } finally {
       clearTimeout(timer);

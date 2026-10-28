@@ -87,7 +87,7 @@ function validatePrediction(body) {
   if (strip.encoding === 'png') {
     if (Object.hasOwn(strip, 'uri') || typeof strip.data_base64 !== 'string' ||
         !strip.data_base64.length || strip.data_base64.length % 4 !== 0 ||
-        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(strip.data_base64)) {
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(strip.data_base64)) {
       throw invalid();
     }
     const bytes = Buffer.from(strip.data_base64, 'base64');
