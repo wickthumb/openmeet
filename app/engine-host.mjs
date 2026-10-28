@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const userData = process.argv[2] || here;
@@ -14,7 +14,7 @@ const emit = (event, data) => port.postMessage({ event, data });
 // The engine core library (engine/) lives beside the app; load it if this build includes it.
 let core = null;
 for (const p of [path.join(here, '..', 'engine', 'index.js'), path.join(here, 'engine', 'index.js')]) {
-  if (fs.existsSync(p)) { core = await import(p); break; }
+  if (fs.existsSync(p)) { core = await import(pathToFileURL(p).href); break; }
 }
 
 const decode = buf => new TextDecoder('windows-1252').decode(buf).replace(/^﻿/, '');
