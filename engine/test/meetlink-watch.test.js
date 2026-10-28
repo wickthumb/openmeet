@@ -79,9 +79,11 @@ test('files already present at start are emitted; names match case-insensitively
   const c = collector();
   const close = watchMeetFolder(dir, c.onChange, { debounceMs: 20, settleMs: 40, pollMs: 40 });
   try {
-    const s = await c.next(1);
-    assert.deepEqual(s.changed.sort(), ['lynx.evt', 'lynx.ppl']);
+    let s = await c.next(1);
+    if (s.changed.length < 2) s = await c.next(2); // files settle independently
+    assert.deepEqual(c.items.flatMap((i) => i.changed).sort(), ['lynx.evt', 'lynx.ppl']);
     assert.equal(s.people[0].affiliation, 'Club');
+    assert.equal(s.events[0].entries.length, 2);
   } finally {
     await close();
     rmSync(dir, { recursive: true, force: true });
