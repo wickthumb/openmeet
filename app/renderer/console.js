@@ -1436,13 +1436,16 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 });
 
 // Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
+const reviewHighlightDefaults = { pendingColor:'#ffd43b', pendingOpacity:0.32, pendingStyleVersion:2 };
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
 function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
 function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary') {
   const saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
+  const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
+  if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}
   const rows=kind==='scan'?rowsForCamera(camera):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
-  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,pendingColor:'#ffb020',pendingOpacity:0.12}),...saved,
+  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
     positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
     boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
 }
@@ -1485,7 +1488,7 @@ function showOverlaySettings(kind, anchor) {
   menu.setAttribute('role', 'dialog');
   menu.setAttribute('aria-modal', 'false');
   menu.setAttribute('aria-labelledby', `${id}-title`);
-  menu.setAttribute('aria-describedby', `${id}-autosave`);
+  menu.setAttribute('aria-description', 'Settings save automatically for this camera.');
   menu.tabIndex = -1;
   menu.innerHTML = `
     <div class="overlay-title">
@@ -1496,14 +1499,23 @@ function showOverlaySettings(kind, anchor) {
       <span>${isFront ? 'Show lane numbers' : 'Show lanes'}</span>
       <input data-key="enabled" type="checkbox" role="switch">
     </label>
-    <p class="overlay-autosave" id="${id}-autosave">Changes save automatically for this camera.</p>
 
-    <details class="overlay-group" data-settings-group="placement" open>
+    ${!isFront ? `
+      <div class="overlay-quick">
+        <label title="Highlight lanes without an accepted finish or race status.">
+          <span>Highlight unfinished lanes</span>
+          <input data-key="needsFinish" type="checkbox" role="switch">
+        </label>
+        <label><span>Overlays behind runners</span><input data-key="behindRunners" type="checkbox" role="switch"></label>
+      </div>
+    ` : ''}
+
+    <details class="overlay-group" data-settings-group="placement" ${isFront ? 'open' : ''}>
       <summary>Placement</summary>
       <div class="overlay-group-body">
         <label>
-          <span>${isFront ? 'Drag to position' : 'Drag dividers on image'}</span>
-          <input data-key="edit" type="checkbox" role="switch" aria-describedby="${id}-placement-help">
+          <span>${isFront ? 'Drag to position' : 'Drag on image'}</span>
+          <input data-key="edit" type="checkbox" role="switch" title="${isFront ? 'Drag lane numbers to position them.' : 'Left-column dividers are always draggable. This also enables dragging over the image.'}">
         </label>
         ${isFront ? `
           <label><span>Lane count</span><input data-lane-count type="number" min="2" max="24" step="1"></label>
@@ -1516,43 +1528,26 @@ function showOverlaySettings(kind, anchor) {
             <label><span>First lane size (px)</span><input data-end-size="first" type="number" min="8" max="160" step="1"></label>
             <label><span>Last lane size (px)</span><input data-end-size="last" type="number" min="8" max="160" step="1"></label>
           </fieldset>
-          <p class="overlay-hint" id="${id}-placement-help">Place the first and last numbers; the others follow their positions and sizes. Choose each lane individually to drag any number. Alt + wheel adjusts its size.</p>
-        ` : `
-          <p class="overlay-hint" id="${id}-placement-help">Drag dividers in the left lane column anytime. Enable this switch to also drag them over the image; neighbouring dividers stay put.</p>
-        `}
+          <p class="overlay-hint" id="${id}-placement-help">Place first + last, then fine-tune.</p>
+        ` : ''}
         <div class="overlay-actions"><button type="button" class="btn sm" data-reset>Reset positions</button></div>
       </div>
     </details>
 
-    ${!isFront ? `
-      <fieldset class="overlay-group overlay-static">
-        <legend>Race checks <span class="overlay-optional">Optional</span></legend>
-        <label>
-          <span>Highlight lanes awaiting a finish</span>
-          <input data-key="needsFinish" type="checkbox" role="switch" aria-describedby="${id}-race-help">
-        </label>
-        <p class="overlay-hint" id="${id}-race-help">A finish or DNS/DNF/DQ/FS resolves a lane. Highlighting can also flag a review proposal awaiting acceptance. No result is created automatically.</p>
-      </fieldset>
-      <fieldset class="overlay-group overlay-static">
-        <legend>Display effects</legend>
-        <label><span>Guides behind runners</span><input data-key="behindRunners" type="checkbox" role="switch"></label>
-      </fieldset>
-    ` : ''}
-
     <details class="overlay-group" data-settings-group="appearance">
       <summary>Appearance</summary>
       <div class="overlay-group-body">
-        <label><span>Font size (px)</span><input data-key="fontSize" type="number" min="8" max="96" step="1"></label>
-        <label><span>Font weight</span><select data-key="weight">${[400, 500, 600, 700, 800, 900].map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
-        <label><span>Line thickness (px)</span><input data-key="thickness" type="number" min="0" max="12" step="0.5"></label>
+        ${isFront ? '<label><span>Font size</span><input data-key="fontSize" type="number" min="8" max="96" step="1"></label>' : ''}
+        <label><span>Weight</span><select data-key="weight">${[400, 500, 600, 700, 800, 900].map(v => `<option value="${v}">${v}</option>`).join('')}</select></label>
+        <label><span>Line width</span><input data-key="thickness" type="number" min="0" max="12" step="0.5"></label>
         <label><span>Text color</span><input data-key="textColor" type="color"></label>
         <label><span>Line color</span><input data-key="lineColor" type="color"></label>
         <label><span>Opacity</span><span class="overlay-range"><input data-key="opacity" type="range" min="0.1" max="1" step="0.05"><output data-value-for="opacity" aria-hidden="true"></output></span></label>
         ${!isFront ? `
           <fieldset class="overlay-subgroup">
-            <legend>Awaiting-finish highlight</legend>
-            <label><span>Highlight color</span><input data-key="pendingColor" type="color"></label>
-            <label><span>Highlight opacity</span><span class="overlay-range"><input data-key="pendingOpacity" type="range" min="0.05" max="0.35" step="0.01"><output data-value-for="pendingOpacity" aria-hidden="true"></output></span></label>
+            <legend>Review highlight</legend>
+            <label><span>Color</span><input data-key="pendingColor" type="color"></label>
+            <label><span>Opacity</span><span class="overlay-range"><input data-key="pendingOpacity" type="range" min="0.05" max="0.6" step="0.01"><output data-value-for="pendingOpacity" aria-hidden="true"></output></span></label>
           </fieldset>
         ` : ''}
         <div class="overlay-actions"><button type="button" class="btn sm" data-defaults>Reset appearance</button></div>
@@ -1563,14 +1558,14 @@ function showOverlaySettings(kind, anchor) {
       <details class="overlay-group" data-settings-group="advanced">
         <summary>Advanced</summary>
         <div class="overlay-group-body">
-          <label><span>Lane guides in model input</span><input data-key="modelInput" type="checkbox" role="switch" aria-describedby="${id}-model-help ${id}-model-reason"></label>
-          <p class="overlay-hint" id="${id}-model-help" data-model-input-help>Renders opaque lane guides into a derived model image. Original pixels stay unchanged. Finish marks and text are excluded.</p>
+          <label title="Adds lane dividers to the image sent for auto-timing. Finish marks and text are excluded."><span>Use guides for auto-timing</span><input data-key="modelInput" type="checkbox" role="switch" aria-describedby="${id}-model-help ${id}-model-reason"></label>
+          <p class="overlay-hint" id="${id}-model-help" data-model-input-help>Original recording stays unchanged.</p>
           <p class="overlay-hint overlay-model-reason" id="${id}-model-reason" data-model-input-reason role="status" hidden></p>
         </div>
       </details>
     ` : ''}`;
 
-  const uiDefaults = { needsFinish: false, pendingColor: '#ffb020', pendingOpacity: 0.12 };
+  const uiDefaults = { needsFinish: false, ...reviewHighlightDefaults };
   const inputs = [...menu.querySelectorAll('[data-key]')];
   const endSizes = [...menu.querySelectorAll('[data-end-size]')];
   const syncRange = input => {
@@ -1600,7 +1595,7 @@ function showOverlaySettings(kind, anchor) {
     menu.querySelector('[data-key="modelInput"]').disabled = true;
     const reason = menu.querySelector('[data-model-input-reason]');
     reason.hidden = false;
-    reason.textContent = `Auto-timing uses the recorded ${cur().asset.mainCameraLabel}. Select that camera to edit its model-input guides.`;
+    reason.textContent = `Switch to ${cur().asset.mainCameraLabel} to change this.`;
   }
 
   inputs.forEach(input => {
@@ -1608,7 +1603,7 @@ function showOverlaySettings(kind, anchor) {
       if (input.disabled || (input.type === 'number' && input.value === '')) return;
       const key = input.dataset.key;
       let value = input.type === 'checkbox' ? input.checked : input.type === 'color' ? input.value : Number(input.value);
-      const limits = { fontSize: [8, 96], thickness: [0, 12], opacity: [0.1, 1], weight: [400, 900], pendingOpacity: [0.05, 0.35] };
+      const limits = { fontSize: [8, 96], thickness: [0, 12], opacity: [0.1, 1], weight: [400, 900], pendingOpacity: [0.05, 0.6] };
       if (limits[key]) {
         if (!Number.isFinite(value)) return;
         value = Math.max(limits[key][0], Math.min(limits[key][1], value));
@@ -1684,9 +1679,11 @@ function showOverlaySettings(kind, anchor) {
 
   const previousExpanded = anchor.getAttribute('aria-expanded');
   const previousControls = anchor.getAttribute('aria-controls');
+  const anchorRect = anchor.getBoundingClientRect();
+  const currentAnchor = () => anchor.isConnected ? anchor : isFront ? frontLaneButton : [...document.querySelectorAll('#tools button')].find(b => b.textContent.includes('Lanes'));
   anchor.setAttribute('aria-expanded', 'true');
   anchor.setAttribute('aria-controls', id);
-
+  let position = null;
   const placeMenu = () => {
     const viewport = window.visualViewport;
     const width = viewport ? viewport.width : window.innerWidth;
@@ -1695,16 +1692,23 @@ function showOverlaySettings(kind, anchor) {
     const top = viewport ? viewport.offsetTop : 0;
     const margin = 8;
     menu.style.maxWidth = `${Math.max(0, width - 2 * margin)}px`;
-    menu.style.maxHeight = `${Math.max(0, height - 2 * margin)}px`;
-    const rect = anchor.getBoundingClientRect();
-    menu.style.left = `${Math.max(left + margin, Math.min(left + width - menu.offsetWidth - margin, rect.left))}px`;
-    menu.style.top = `${Math.max(top + margin, Math.min(top + height - menu.offsetHeight - margin, rect.bottom + 5))}px`;
+    if (!position) {
+      menu.style.maxHeight = `${Math.max(0, height - 2 * margin)}px`;
+      const below = top + height - anchorRect.bottom - margin - 5;
+      const y = menu.offsetHeight <= below ? anchorRect.bottom + 5 : anchorRect.top - menu.offsetHeight - 5;
+      position = {x: anchorRect.left, y: Math.max(top + margin, y)};
+    }
+    position.x = Math.max(left + margin, Math.min(left + width - menu.offsetWidth - margin, position.x));
+    position.y = Math.max(top + margin, Math.min(top + height - 96, position.y));
+    menu.style.left = `${position.x}px`;
+    menu.style.top = `${position.y}px`;
+    menu.style.maxHeight = `${Math.max(0, top + height - position.y - margin)}px`;
   };
   const close = () => {
     menu.overlaySettingsCleanup();
     menu.remove();
     if (overlayMenu === menu) overlayMenu = null;
-    if (anchor.isConnected) anchor.focus({ preventScroll: true });
+    currentAnchor()?.focus({ preventScroll: true });
   };
   const onEscape = event => {
     if (event.key !== 'Escape') return;
@@ -1719,10 +1723,12 @@ function showOverlaySettings(kind, anchor) {
     window.visualViewport?.removeEventListener('resize', placeMenu);
     window.visualViewport?.removeEventListener('scroll', placeMenu);
     window.removeEventListener('keydown', onEscape, true);
-    if (previousExpanded === null) anchor.removeAttribute('aria-expanded');
-    else anchor.setAttribute('aria-expanded', previousExpanded);
-    if (previousControls === null) anchor.removeAttribute('aria-controls');
-    else anchor.setAttribute('aria-controls', previousControls);
+    const target = currentAnchor();
+    if (!target) return;
+    if (previousExpanded === null) target.removeAttribute('aria-expanded');
+    else target.setAttribute('aria-expanded', previousExpanded);
+    if (previousControls === null) target.removeAttribute('aria-controls');
+    else target.setAttribute('aria-controls', previousControls);
   };
   menu.querySelector('[data-close]').onclick = close;
   // Preserve native control keys while keeping race-entry shortcuts out of here.
@@ -1730,6 +1736,13 @@ function showOverlaySettings(kind, anchor) {
   document.body.append(menu);
   placeMenu();
   observer.observe(menu);
+  menu.querySelectorAll('details').forEach(group => group.addEventListener('toggle', () => {
+    if (!group.open || !menu.isConnected) return;
+    const panel = menu.getBoundingClientRect(), rect = group.getBoundingClientRect();
+    const header = menu.querySelector('.overlay-title').offsetHeight;
+    const bottom = Math.min(rect.bottom, rect.top + menu.clientHeight - header - 20);
+    if (bottom > panel.bottom - 12) menu.scrollTop += bottom - panel.bottom + 12;
+  }));
   window.addEventListener('resize', placeMenu);
   window.visualViewport?.addEventListener('resize', placeMenu);
   window.visualViewport?.addEventListener('scroll', placeMenu);
@@ -1945,7 +1958,7 @@ function pendingLaneIds(h,o) {
   return new Set(o.needsFinish&&!S.cameraSetup&&['running','review','saved'].includes(h.state)?h.athletes.filter(a=>!resolved(h,a)).map(a=>a.lane):[]);
 }
 function syncLaneGutter(o) {
-  const wrap=laneGutter.parentNode,width=Math.max(38,Math.ceil(o.fontSize*0.65*String(Math.max(...laneBands(viewHeat()).map(b=>b.lane))).length)+16),size=width+'px';
+  const wrap=laneGutter.parentNode,width=Math.max(40,Math.min(64,20+12*String(Math.max(...laneBands(viewHeat()).map(b=>b.lane))).length)),size=width+'px';
   if(laneGutter.hidden===!o.enabled&&wrap.style.getPropertyValue('--lane-gutter-width')===size)return;
   const oldWidth=scanW(),center=S.view.c0+oldWidth/(2*S.view.zx);
   laneGutter.hidden=!o.enabled;wrap.classList.toggle('with-lane-gutter',o.enabled);wrap.style.setProperty('--lane-gutter-width',size);
@@ -1960,8 +1973,8 @@ function renderLaneGutter(h) {
   for(let i=0;i<edges.length-1;i++){
     const lane=edges[i].below,top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);
     if(lane==null||bottom<=top)continue;
-    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(pending.has(lane)?' pending':''));row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.min(o.fontSize,Math.max(8,bottom-top-3))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
-    if(bottom-top>=10)row.textContent=lane;
+    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(pending.has(lane)?' pending':''));row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.max(6,Math.min(28,Math.floor((bottom-top)*0.7),(laneGutter.clientWidth-12)/(String(lane).length*0.65)))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
+    if(bottom-top>=8)row.textContent=lane;
     row.setAttribute('aria-label',`Lane ${lane}${pending.has(lane)?', awaiting a finish or status':''}`);row.setAttribute('aria-pressed',String(S.selLane===lane));
     row.onclick=()=>{if(S.cameraSetup){S.selLane=lane;renderUI();}else selectLane(lane);};laneGutter.append(row);
   }
@@ -2071,6 +2084,43 @@ function guideRenderData(h,o,W,Hi,g) {
   h.guideRenderCache={key,lines};return lines;
 }
 
+function foregroundColumns(h,x0,x1) {
+  const result=[],source=h.displaySource;
+  let a,b,limit;
+  if(source){a=(colTime(h,colOf(x0))-source.t)/source.p;b=(colTime(h,colOf(x1))-source.t)/source.p;limit=source.w-1;}
+  else {a=colOf(x0);b=colOf(x1);limit=h.state==='running'?h.liveCol:h.nCols-1;}
+  const first=Math.max(0,Math.floor(Math.min(a,b))-1),last=Math.min(limit,Math.ceil(Math.max(a,b))+1);
+  for(let c=first;c<=last;c++){
+    const mask=source?.mask||h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
+    if(mask)result.push({mask,column:source||h.sampleForeground?c:c%STRIP_TILE});
+  }
+  return result;
+}
+function reviewHighlightLayer(h,o,W,Hi,pending,edges) {
+  if(!pending.size||W<1||Hi<1)return null;
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.pendingColor,[...pending],edges]);
+  if(h.reviewHighlightCache?.key===key)return h.reviewHighlightCache.canvas;
+  const canvas=document.createElement('canvas');canvas.width=W;canvas.height=Hi;
+  const ctx=canvas.getContext('2d'),bands=[];ctx.fillStyle=o.pendingColor;
+  for(let i=0;i<edges.length-1;i++){
+    if(!pending.has(edges[i].below))continue;
+    const top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);
+    if(bottom>top){ctx.fillRect(0,top,W,bottom-top);bands.push({top:Math.floor(top),bottom:Math.ceil(bottom)});}
+  }
+  if(o.behindRunners&&bands.length){
+    const image=ctx.getImageData(0,0,W,Hi),rows=rowsOf(h);
+    for(let x=0;x<W;x++){
+      const columns=foregroundColumns(h,x,x+1);if(!columns.length)continue;
+      for(const band of bands)for(let y=band.top;y<band.bottom;y++){
+        const lo=Math.max(0,Math.floor(v.r0+y/v.zy)-2),hi=Math.min(rows-1,Math.ceil(v.r0+(y+1)/v.zy)+2);
+        if(columns.some(c=>foregroundInRows(c.mask,c.column,rows,lo,hi)))image.data[(y*W+x)*4+3]=0;
+      }
+    }
+    ctx.putImageData(image,0,0);
+  }
+  h.reviewHighlightCache={key,canvas};return canvas;
+}
+
 function drawLaneGuides(g,h,W,Hi) {
   const v=S.view;
   // Decorative lane guides can be adjusted without changing the model's lane geometry.
@@ -2078,13 +2128,35 @@ function drawLaneGuides(g,h,W,Hi) {
   const o=hasPixels?style:{...style,behindRunners:false};
   if(o.enabled) {
     const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
-    if(pending.size){g.save();g.fillStyle=o.pendingColor;g.globalAlpha=o.pendingOpacity;for(let i=0;i<edges.length-1;i++){if(!pending.has(edges[i].below))continue;const top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);if(bottom>top)g.fillRect(0,top,W,bottom-top);}g.restore();}
     if(o.behindRunners)sampleForeground(h);
+    const highlight=reviewHighlightLayer(h,o,W,Hi,pending,edges);
+    if(highlight){g.save();g.globalAlpha=o.pendingOpacity;g.drawImage(highlight,0,0);g.restore();}
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
     guideRenderData(h,o,W,Hi,g).forEach(line=>{
       if(o.thickness>0)g.stroke(line.path);
     });g.restore();
   }
+}
+
+function drawFinishMarkers(g,h,W,height,project) {
+  g.font='700 10px '+TK.mono;
+  const tags = [];
+  (h.proposals || []).forEach(p => {
+    if (h.marks[p.lane] || h.status[p.lane] || h.dismissed?.[p.lane]) return;
+    tags.push({ col: p.col, lane: p.lane, color: p.decision === 'auto' ? TK.blue : TK.amber, dashed: true });
+  });
+  Object.entries(h.marks).forEach(([lane, m]) => tags.push({ col: m.col, lane: +lane, color: h.status[lane] === 'DQ' ? TK.finish : TK.mint, dashed: false }));
+  tags.sort((a, b) => a.col - b.col).forEach((t, i) => {
+    const x = project(S.drag?.mode === 'mark' && S.drag.lane === t.lane && S.drag.moved ? S.selCol : t.col);
+    if (x < -20 || x > W + 20) return;
+    const sel = S.selLane === t.lane;
+    g.strokeStyle = t.color; g.lineWidth = sel ? 2 : 1; g.setLineDash(t.dashed ? [5, 4] : []);
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); g.setLineDash([]);
+    const ty = 3 + (i % 2) * 15;
+    g.fillStyle = t.color; g.fillRect(x - 8, ty, 16, 13);
+    if (sel) { g.strokeStyle = TK.paper; g.lineWidth = 1; g.strokeRect(x - 8.5, ty - 0.5, 17, 14); }
+    g.fillStyle = TK['on-accent']; g.textAlign = 'center'; g.fillText(String(t.lane), x, ty + 10); g.textAlign = 'left';
+  });
 }
 
 function drawScan() {
@@ -2122,25 +2194,7 @@ function drawScan() {
 
   drawLaneGuides(g,h,W,Hi);
 
-  // proposals not yet resolved (dashed), then marks (solid)
-  g.font='700 10px '+TK.mono;
-  const tags = [];
-  (h.proposals || []).forEach(p => {
-    if (h.marks[p.lane] || h.status[p.lane] || h.dismissed?.[p.lane]) return;
-    tags.push({ col: p.col, lane: p.lane, color: p.decision === 'auto' ? TK.blue : TK.amber, dashed: true });
-  });
-  Object.entries(h.marks).forEach(([lane, m]) => tags.push({ col: m.col, lane: +lane, color: h.status[lane] === 'DQ' ? TK.finish : TK.mint, dashed: false }));
-  tags.sort((a, b) => a.col - b.col).forEach((t, i) => {
-    const x = xOf(S.drag?.mode === 'mark' && S.drag.lane === t.lane && S.drag.moved ? S.selCol : t.col);
-    if (x < -20 || x > W + 20) return;
-    const sel = S.selLane === t.lane;
-    g.strokeStyle = t.color; g.lineWidth = sel ? 2 : 1; g.setLineDash(t.dashed ? [5, 4] : []);
-    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, Hi); g.stroke(); g.setLineDash([]);
-    const ty = 3 + (i % 2) * 15;
-    g.fillStyle = t.color; g.fillRect(x - 8, ty, 16, 13);
-    if (sel) { g.strokeStyle = TK.paper; g.lineWidth = 1; g.strokeRect(x - 8.5, ty - 0.5, 17, 14); }
-    g.fillStyle = TK['on-accent']; g.textAlign = 'center'; g.fillText(String(t.lane), x, ty + 10); g.textAlign = 'left';
-  });
+  drawFinishMarkers(g,h,W,Hi,xOf);
 
   if (S.hoverCol != null && S.hoverCol !== S.selCol && !(S.drag && S.drag.moved)) {
     g.strokeStyle = 'rgba(247,248,250,0.45)'; g.lineWidth = 1; g.setLineDash([3, 3]);
@@ -2243,7 +2297,7 @@ function drawBackup() {
   if (i1 > i0) { if(src.own) g.drawImage(src.img, i0, sy, i1 - i0, sh, x(src.t + i0 * src.p), 0, (i1 - i0) * src.p / r.spp, Hh); else drawStrip(g,h,i0,sy,i1-i0,sh,x(src.t+i0*src.p),0,(i1-i0)*src.p/r.spp,Hh); }
   g.restore();
   // marks, then the shared hover and selected hairlines
-  Object.values(h.marks).forEach(m => { g.fillStyle = TK.mint; g.fillRect(Math.round(bX(colTime(h, m.col), r, W)), 0, 1, Hh); });
+  drawFinishMarkers(g,h,W,Hh,col=>bX(colTime(h,col),r,W));
   if (S.hoverCol != null) { g.fillStyle = 'rgba(247,248,250,0.5)'; g.fillRect(Math.round(bX(colTime(h, S.hoverCol), r, W)), 0, 1, Hh); }
   if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bX(colTime(h, S.selCol), r, W)), 0, 1, Hh); }
   const d = S.bdrag;

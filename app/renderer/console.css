@@ -438,11 +438,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
   border-color: var(--mint);
 }
 
-.overlay-settings--grouped .overlay-autosave {
-  margin: 6px 0 12px;
-  color: var(--muted);
-  font-size: 11px;
-}
+
 
 .overlay-settings--grouped .overlay-group {
   min-width: 0;
@@ -472,23 +468,11 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
   padding: 0 2px 12px;
 }
 
-.overlay-settings--grouped .overlay-static {
-  margin-top: 10px;
-  padding: 0 2px 10px;
-}
 
-.overlay-settings--grouped .overlay-static > legend {
-  padding: 0 8px 0 0;
-  color: var(--blue);
-  font-weight: 700;
-}
 
-.overlay-settings--grouped .overlay-optional {
-  margin-left: 5px;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 400;
-}
+
+
+
 
 .overlay-settings--grouped .overlay-hint {
   margin: 6px 0 0;
@@ -635,3 +619,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 }
 
 .timing-source { color:var(--muted);font-size:10px;white-space:nowrap; }
+
+.overlay-settings--grouped .overlay-title { position:sticky;top:-12px;z-index:2;padding:6px 0;background:var(--panel); }
+.overlay-settings--grouped .overlay-quick { border-top:1px solid var(--rule);padding:6px 2px; }
+.overlay-settings--grouped .overlay-master { margin-bottom:10px; }
