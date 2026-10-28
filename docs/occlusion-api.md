@@ -1,6 +1,6 @@
 # Private learned occlusion adapter
 
-`app/private-occlusion.mjs` contains transport and validation for an optional private learned BODY mask preview on a **stopped line-scan capture**. **Simple remains the default and fallback.** Model code, weights, preprocessing and inference remain outside this repository and its installers. There is no persistent server, autostart or automatic retry.
+`app/private-occlusion.mjs` contains transport and validation for an optional private learned BODY mask preview on a **stopped line-scan capture**. **Learned is the saved display preference; Simple is the live/unavailable fallback.** Model code, weights, preprocessing and inference remain outside this repository and its installers. There is no persistent server, autostart or automatic retry.
 
 The engine supplies a **derived PNG Buffer**, with a unique request ID, from `stripPng` for a registered capture or a known registered alternate scan source. Only this derived image is sent to the configured worker. The adapter accepts no recording paths and writes no files. Original recordings, timing data and original pixels remain untouched. The worker must preserve the sent PNG's exact native width and height; the adapter checks both response metadata and decoded mask geometry. The caller owns cache invalidation and must discard a result when its source image or view changes. A white mask pixel means runner BODY: hide the overlay at that pixel. Black means leave the overlay visible, including shadows. Preserve the original image beneath the overlay.
 

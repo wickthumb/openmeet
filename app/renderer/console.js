@@ -3,6 +3,7 @@ import { FrontFrameCache, linkedCameraRange, cameraAsset, cameraLaneBody, contai
 import { SCAN_TOOLS, toolbarPreferences, moveToolbarTool } from './scan-toolbar.mjs';
 import { validateCropResult, columnProjection, displayCoordinate, originalCoordinate, visibleColumnPieces } from './column-map.mjs';
 import { FrontOverlayOcclusion } from './front-occlusion.mjs';
+import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './occlusion-state.mjs';
 
 (() => {
 'use strict';
@@ -178,6 +179,7 @@ const S = {
   fview: { s: 1, x: 0, y: 0 },                                               // front camera zoom/pan
 };
 const OM = window.openmeet || null;   // the Electron bridge; absent when this page runs as the static replica
+const occlusionAvailability=OM?new OcclusionAvailability(()=>OM.call('occlusion.info'),()=>{S.occlusionInfo=occlusionAvailability.info;updateModelMaskStatus();invalidate();}):null;
 const windStr = h => (h.wind == null ? '—' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1) + ' m/s');
 const cur = () => HEATS[S.idx];
 const runningHeat = () => HEATS.find(h=>h.state==='running')||null;
@@ -714,6 +716,7 @@ function endCapture(h) {
   h.tClose=h.tOpen+h.nCols*periodOf(h);
   h.state='review';h.stopping=false;h.liveCol=h.nCols-1;h.tNow=h.tClose;
   h.base=snap(h);if(h===cur())fitView();
+  occlusionAvailability?.refresh();
   if(h.restartAfterStop){h.restartAfterStop=false;prepareRestart(h);return;}
   if(S.autoMark&&h.nCols>0)requestProposals(h);else h.req='idle';
 }
@@ -1518,6 +1521,7 @@ function frontImageRect() {
 const frontFontScale=o=>frontImageRect().height/(o.sizeReferenceHeight||frontImageRect().height||1);
 function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nativeRows=null) {
   let saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
+  if(kind==='scan'){const next=scanMaskPreferences(saved);if(next!==saved){saved=next;store.set(cameraOverlayKey(kind,camera),saved);}}
   if(kind==='front'&&!saved.imageSpace){
     const rect=frontImageRect(),pb=$('#front').parentNode,h=viewHeat(),meta=h.frontRec?.meta||h.asset?.frontMeta;
     // Wait for the image's actual aspect ratio before converting an older tile profile.
@@ -1526,7 +1530,7 @@ function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nati
   const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
   if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}
   const rows=kind==='scan'?(nativeRows||rowsForCamera(camera)):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
-  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'simple',needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
+  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'learned',needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
     positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
     boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
 }
@@ -1562,6 +1566,7 @@ function showOverlaySettings(kind, anchor) {
   overlayMenu?.remove();
 
   const isFront = kind === 'front';
+  if(!isFront)occlusionAvailability?.refresh();
   const id = `overlay-settings-${kind}`;
   const menu = h_('div', 'overlay-settings overlay-settings--grouped');
   let o = overlayStyle(kind);
@@ -1643,7 +1648,7 @@ function showOverlaySettings(kind, anchor) {
           <label title="Adds lane dividers to the image sent for auto-timing. Finish marks and text are excluded."><span>Use guides for auto-timing</span><input data-key="modelInput" type="checkbox" role="switch" aria-describedby="${id}-model-help ${id}-model-reason"></label>
           <p class="overlay-hint" id="${id}-model-help" data-model-input-help>Original recording stays unchanged.</p>
           <p class="overlay-hint overlay-model-reason" id="${id}-model-reason" data-model-input-reason role="status" hidden></p>
-          <label><span>Runner mask</span><select data-occlusion><option value="simple">Simple</option><option value="learned" ${S.occlusionInfo?.configured?'':'disabled'}>Learned preview</option></select></label>
+          <label><span>Runner mask</span><select data-occlusion><option value="learned">Learned preview</option><option value="simple">Simple</option></select></label>
           <p class="overlay-hint" data-occlusion-status role="status"></p>
         </div>
       </details>
@@ -1677,7 +1682,7 @@ function showOverlaySettings(kind, anchor) {
   syncControls();
   if(!isFront){
     const method=menu.querySelector('[data-occlusion]');method.value=o.occlusionMethod;
-    method.onchange=()=>{o=overlayStyle(kind);o.occlusionMethod=method.value;const target=maskTarget(viewHeat());target.occlusionAttempt=null;target.occlusionError=null;saveOverlay(kind,o);updateModelMaskStatus();};updateModelMaskStatus();
+    method.onchange=()=>{o=overlayStyle(kind);o.occlusionMethod=method.value;const target=maskTarget(viewHeat());target.occlusionAttempt=null;target.occlusionError=null;saveOverlay(kind,o);if(method.value==='learned')occlusionAvailability?.refresh();updateModelMaskStatus();};updateModelMaskStatus();
   }
   if (!isFront && viewHeat().asset?.mainCameraId !== cur().asset?.mainCameraId) {
     menu.querySelector('[data-key="modelInput"]').disabled = true;
@@ -2305,19 +2310,20 @@ function sampleForeground(h) {
 }
 const maskTarget=h=>h.displaySource||h.recordingHeat||h;
 const maskRequestKey=h=>`${h.captureId}:${h.asset?.mainCameraId||'primary'}`;
+let occlusionJob=null;
 function learnedMask(h) {
   const mask=maskTarget(h).learnedForeground;return mask?.key===maskRequestKey(h)?mask:null;
 }
 function updateModelMaskStatus() {
   const label=overlayMenu?.querySelector('[data-occlusion-status]');if(!label)return;
   const h=viewHeat(),target=maskTarget(h),o=overlayStyle('scan');
-  label.textContent=o.occlusionMethod!=='learned'?'':learnedMask(h)?'Learned preview ready':target.occlusionBusy?'Generating mask…':target.occlusionError?'Simple fallback':!S.occlusionInfo?.configured?'Private service not configured':h.state==='running'?'Simple while recording':!h.captureId?'Record a capture first':'Private service unavailable';
-  label.title=target.occlusionError||'Experimental line-scan mask. Real-data verification is still pending.';
+  label.textContent=modelMaskStatus({method:o.occlusionMethod,enabled:o.enabled,behind:o.behindRunners,ready:!!learnedMask(h),busy:target.occlusionBusy,error:target.occlusionError,state:h.state,captureId:h.captureId,service:S.occlusionInfo,checking:occlusionAvailability?.checking,queued:!!occlusionJob});
+  label.title=target.occlusionError||S.occlusionInfo?.error||'Experimental line-scan mask. Real-data verification is still pending.';
 }
 async function maybeLearnedMask(h,o) {
-  if(!OM||S.cameraSetup||!o.enabled||!o.behindRunners||o.occlusionMethod!=='learned'||!['review','saved'].includes(h.state)||!h.captureId||!S.occlusionInfo?.ready)return;
-  const target=maskTarget(h),key=maskRequestKey(h);if(target.occlusionBusy||target.occlusionAttempt===key||learnedMask(h))return;
-  target.occlusionAttempt=key;target.occlusionBusy=true;target.occlusionError=null;updateModelMaskStatus();
+  if(!OM||S.cameraSetup||occlusionAvailability?.checking||!o.enabled||!o.behindRunners||o.occlusionMethod!=='learned'||!['review','saved'].includes(h.state)||!h.captureId||!S.occlusionInfo?.ready)return;
+  const target=maskTarget(h),key=maskRequestKey(h);if(occlusionJob||target.occlusionBusy||target.occlusionAttempt===key||learnedMask(h))return;
+  occlusionJob=key;target.occlusionAttempt=key;target.occlusionBusy=true;target.occlusionError=null;updateModelMaskStatus();
   try{
     const descriptor=h.displaySource&&(h.recordingHeat||h).asset.lineScans.find(s=>s.id===h.asset.mainCameraId);
     const response=await OM.call('occlusion.predict',{captureId:h.captureId,viewPng:descriptor?.png||null});
@@ -2330,7 +2336,7 @@ async function maybeLearnedMask(h,o) {
     for(let y=0;y<rows;y++)for(let x=0;x<width;x++)if(pixels[(y*width+x)*4]>127){const i=x*rows+y;bits[i>>3]|=1<<(i&7);}
     if(maskRequestKey(h)===key)target.learnedForeground={key,bits,width,rows,requestId:response.request_id,model:response.model};
   }catch(err){target.occlusionError=err.message;toast('Model mask unavailable; Simple kept.',true);}
-  finally{target.occlusionBusy=false;updateModelMaskStatus();invalidate();}
+  finally{occlusionJob=null;target.occlusionBusy=false;updateModelMaskStatus();invalidate();}
 }
 function guideOccluded(h, x0, x1, row0, row1) {
   const model=h.activeOcclusionMask;
@@ -3025,6 +3031,8 @@ frontPb.title = 'Wheel: zoom · Drag: pan · Double-click: reset';
 // ---------------------------------------------------------------- frame loop (canvases redraw only while running or after a change)
 let lastSec = -1, lastLiveRender = 0, lastSideStamp='';
 function frame(now) {
+  // A transient paint failure must not stop the operator clock and future redraws.
+  requestAnimationFrame(frame);
   const h = runningHeat()||cur();
   if(S.cameraSetup){
     const p=S.cameraSetup,preview=p.heat;
@@ -3063,7 +3071,6 @@ function frame(now) {
   const sec = Math.floor(Date.now() / 1000);
   if (sec !== lastSec) { lastSec = sec; tickTod(); }
   if (dirty || h.state === 'running' || S.cameraSetup?.live) { dirty = false; drawScan(); drawBackup(); drawFront(); }
-  requestAnimationFrame(frame);
 }
 
 document.documentElement.dataset.theme = store.get('theme', 'dark');
@@ -3096,7 +3103,7 @@ if (OM) {
   });
   OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
   OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
-  OM.call('occlusion.info').then(info=>{S.occlusionInfo=info;updateModelMaskStatus();invalidate();}).catch(()=>{});
+  occlusionAvailability.refresh();
   OM.call('autocrop.info').then(info=>{S.cropInfo=info;renderTools();}).catch(()=>{});
   OM.call('autotiming.info').then(i => { S.atInfo = i; }).catch(() => {});
   OM.call('settings.get').then(s => { if (s.demoDir) openDemo(s.demoDir); else if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});
