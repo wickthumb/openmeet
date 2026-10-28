@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 
@@ -286,7 +287,11 @@ async function startScoreboard(port = 0) {
 Object.assign(methods, {
   async 'scoreboard.start'({ port = 0 }) {
     const server = await startScoreboard(port);
-    return { url: server.url('classic'), port: server.port };
+    // addresses a TV or an OBS browser source on the same network can load
+    const lanUrls = Object.values(os.networkInterfaces()).flat()
+      .filter(a => a && a.family === 'IPv4' && !a.internal && !/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a.address))   // skip CGNAT/VPN overlay addresses
+      .map(a => `http://${a.address}:${server.port}/scoreboard/`);
+    return { url: server.url('classic'), port: server.port, lanUrls };
   },
   async 'scoreboard.publish'({ state }) { return (await startScoreboard()).publish(state); },
   async 'scoreboard.list'() {
@@ -304,11 +309,16 @@ Object.assign(methods, {
   async 'scoreboard.agent'({ name, request, preset = 'muse' }) {
     await ensureScoreboardLibrary();
     if (!Object.hasOwn(core.AGENT_PRESETS, preset)) throw new Error(`Unknown scoreboard agent preset: ${preset}`);
+    const agent = { ...core.AGENT_PRESETS[preset] };
+    // Apps launched from a desktop menu may not have ~/.local/bin on PATH (where Muse Code installs): fall back to it.
+    const onPath = (process.env.PATH || '').split(path.delimiter).some(d => d && fs.existsSync(path.join(d, agent.command)));
+    const local = path.join(os.homedir(), '.local', 'bin', agent.command);
+    if (!onPath && process.platform !== 'win32' && fs.existsSync(local)) agent.command = local;
     const controller = new AbortController();
     scoreboardAgents.add(controller);
     try {
       return await core.runScoreboardAgent({
-        root: scoreboardRoot, name, request, agent: core.AGENT_PRESETS[preset], signal: controller.signal,
+        root: scoreboardRoot, name, request, agent, signal: controller.signal,
         onOutput: output => emit('scoreboard.agentOutput', { name, ...output }),
       });
     } finally { scoreboardAgents.delete(controller); }

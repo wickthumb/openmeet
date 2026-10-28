@@ -267,3 +267,4 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .bagent textarea { width: 100%; resize: vertical; background: var(--panel2); border: 1px solid var(--rule); border-radius: var(--radius); padding: 6px; font: inherit; }
 .bagent .bctl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .bagent pre.file { flex: 1; max-height: none; min-height: 80px; white-space: pre-wrap; }
+#bNet .num { word-break: break-all; }

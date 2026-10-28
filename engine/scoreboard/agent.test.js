@@ -61,10 +61,9 @@ test('missing executable reports spawn failure and preserves undo snapshot', asy
   assert.equal(result.code, -1); assert.match(result.error, /ENOENT/); assert.ok(result.snapshotId);
 });
 
-test('presets match requested argv without extra bypass flags and Muse is unverified', () => {
-  assert.equal(AGENT_PRESETS.muse.unverified, true);
-  assert.deepEqual(AGENT_PRESETS.muse.args, ['exec', '{prompt}']);
+test('presets match requested argv without approval or sandbox bypass flags', () => {
+  assert.deepEqual(AGENT_PRESETS.muse.args, ['exec', '--workspace', '{dir}', '--disable-web-tools', '--user-input-auto-resolve', '{prompt}']);
   assert.deepEqual(AGENT_PRESETS.codex.args, ['exec', '--approve-for-me', '-C', '{dir}', '{prompt}']);
   assert.deepEqual(AGENT_PRESETS.grok.args, ['-p', '{prompt}', '--permission-mode', 'auto', '--cwd', '{dir}']);
-  for (const preset of Object.values(AGENT_PRESETS)) assert.doesNotMatch(preset.args.join(' '), /yolo|bypass|dangerously|skip-permissions/);
+  for (const preset of Object.values(AGENT_PRESETS)) assert.doesNotMatch(preset.args.join(' '), /yolo|bypass|dangerously|skip-permissions|disable-approval|disable-sandbox/);
 });

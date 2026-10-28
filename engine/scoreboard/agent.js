@@ -6,9 +6,12 @@ import { libraryRoot, containedPath, validateName } from './paths.js';
 import { snapshot, restore, templateMetadata } from './templates.js';
 import { SCOREBOARD_DATA_CONTRACT } from './state.js';
 
-/** Muse Code's exec flags are UNVERIFIED: it is not installed on the dev machine. */
+/**
+ * Muse Code (Meta) 1.4.14: `muse exec` is headless with tool approval and the OS sandbox ON by default, plus an
+ * LLM approval judge. Never add --yolo / --disable-approval / --disable-sandbox here.
+ */
 export const AGENT_PRESETS = Object.freeze({
-  muse: Object.freeze({ command: 'muse', args: Object.freeze(['exec', '{prompt}']), unverified: true }),
+  muse: Object.freeze({ command: 'muse', args: Object.freeze(['exec', '--workspace', '{dir}', '--disable-web-tools', '--user-input-auto-resolve', '{prompt}']) }),
   codex: Object.freeze({ command: 'codex', args: Object.freeze(['exec', '--approve-for-me', '-C', '{dir}', '{prompt}']) }),
   grok: Object.freeze({ command: 'grok', args: Object.freeze(['-p', '{prompt}', '--permission-mode', 'auto', '--cwd', '{dir}']) }),
 });

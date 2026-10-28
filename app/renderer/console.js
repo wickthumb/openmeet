@@ -947,7 +947,7 @@ function boardState() {
     status: h.status[a.lane] || null, time: timeOf(a), place: pl[a.lane] || null,
   }));
   return {
-    meet: { name: S.meet ? S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0] : 'OpenMeet Sample Meet', logo: null },
+    meet: { name: S.meet ? (S.meet.demo ? 'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet', logo: null },
     heat: { event: h.ev, round: h.rd, heat: h.ht, of: h.of, name: h.name, state: h.state },
     clock: {
       running: h.state === 'running', speed: SPEED,
