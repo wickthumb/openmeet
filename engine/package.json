@@ -1,0 +1,17 @@
+{
+  "name": "@openmeet/engine",
+  "version": "0.1.0",
+  "description": "OpenMeet engine core: meet-folder link, capture store, simulated camera, heat state machine.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "engines": {
+    "node": ">=22.2"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
