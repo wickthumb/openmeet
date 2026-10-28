@@ -31,6 +31,9 @@ jobs:
       - name: Test engine
         working-directory: engine
         run: npm test
+      - name: Test display geometry and foreground masks
+        working-directory: app
+        run: npm test
       - name: Build Windows NSIS and portable (x64)
         if: runner.os == 'Windows'
         working-directory: app

@@ -6,7 +6,7 @@ This walkthrough uses the current desktop prototype. Camera inputs are simulated
 
 Open **Meet Link** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied simulator demo meet. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
 
-Choose **Camera setup** to preview the simulated camera before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race**. Setup does not start a race, record start triggers or write a race capture.
+Choose the top **Camera alignment** tab to preview the simulated camera before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race** or select **Run**. Setup does not start a race, record start triggers or write a race capture.
 
 ## 2. Capture without losing control
 
@@ -27,6 +27,8 @@ Hover the primary or backup line-scan to inspect the corresponding front-camera 
 ## 4. Fit the display to the venue
 
 Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, choose the lane count and position the first and last labels. Intermediate positions and font sizes are interpolated with perspective; switch to individual mode to fine-tune. Alt + wheel adjusts an individual number’s size. Show or hide numbers, adjust font size and weight, colors, thickness and opacity, and enable dragging to position the guides. Appearance is remembered per meet/camera. By default these are decorative guides. The separate **Lane guides in model input** option makes a derived scan containing opaque horizontal boundaries, without labels or finish marks. Original pixels and timestamps remain unchanged, and a request ledger records the preprocessing. Whether this helps a private model needs evaluation.
+
+On the line-scan, enable **Edit boundary lines** and drag one line or its number. Only that shared edge moves, resizing the lanes above and below it. **Guides behind runners** hides guide segments where the image differs from the initial empty-track reference. Compare the toggle on and off; finish markers stay visible. This display feature is separate from the opaque lines optionally included in model-input copies.
 
 ## 5. Correct an accidental start trigger
 

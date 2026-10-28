@@ -106,13 +106,15 @@ svg.i { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-widt
 .hdr { height: 46px; display: flex; align-items: center; gap: 18px; padding: 0 14px; background: var(--deep); border-bottom: 1px solid var(--rule); }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand svg { display: block; }
-.tabs { display: flex; gap: 2px; height: 100%; }
+.tabs { display: flex; gap: 2px; height: 100%; min-width:0;overflow-x:auto;scrollbar-width:none; }
 .tab {
   background: none; border: 0; border-bottom: 2px solid transparent; padding: 0 12px;
   color: var(--muted); cursor: pointer; font: 700 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase;
 }
 .tab:hover { color: var(--paper); }
 .tab.on { color: var(--paper); border-bottom-color: var(--blue); }
+.tab { flex:none; }
+.tab:disabled { color:var(--dim);cursor:default; }
 .status { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .chip { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); white-space: nowrap; cursor: default; }
 .chip.alert { color: var(--amber); }

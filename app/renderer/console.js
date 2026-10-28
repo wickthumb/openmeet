@@ -1,3 +1,5 @@
+import { scanBoundaries, movedBoundaryRow, scanBackground, writeForegroundMask, foregroundInRows } from './scan-overlays.mjs';
+
 (() => {
 'use strict';
 
@@ -300,6 +302,7 @@ function ensureStrip(h) {
 const STRIP_TILE = 2048;
 function blankStrip(h) {
   h.stripTiles = [];
+  h.foregroundTiles = []; h.overlayBackground = null; h.sampleForeground = null;
   h.img = document.createElement('canvas'); h.img.width=1; h.img.height=rowsOf(h);
   h.imgSrc = 'engine'; h.recvCols = 0;
 }
@@ -316,6 +319,8 @@ function drawStrip(g,h,sx,sy,sw,sh,dx,dy,dw,dh) {
 // Keep long captures in small canvas tiles; the engine retains every original column on disk.
 function ingestColumns(h, first, count, data, channels) {
   const rows=rowsOf(h);
+  if(!h.overlayBackground)h.overlayBackground=scanBackground({data,width:count,height:rows,channels});
+  h.foregroundTiles ||= [];
   for(let c=0;c<count;) {
     const index=Math.floor((first+c)/STRIP_TILE),local=(first+c)%STRIP_TILE,n=Math.min(count-c,STRIP_TILE-local);
     if(!h.stripTiles[index]) {const tile=document.createElement('canvas');tile.width=STRIP_TILE;tile.height=rows;h.stripTiles[index]=tile;}
@@ -325,9 +330,11 @@ function ingestColumns(h, first, count, data, channels) {
       px[dst]=data[src];px[dst+1]=data[src+(channels>1?1:0)];px[dst+2]=data[src+(channels>1?2:0)];px[dst+3]=255;
     }
     g.putImageData(im,local,0);c+=n;
+    const mask=h.foregroundTiles[index] ||= new Uint8Array(Math.ceil(STRIP_TILE*rows/8));
+    writeForegroundMask(mask,local,{data:data.subarray((c-n)*rows*channels,c*rows*channels),width:n,height:rows,channels},h.overlayBackground);
   }
   h.recvCols=Math.max(h.recvCols||0,first+count);
-  if(h.preview){h.minCol=Math.max(0,h.recvCols-STRIP_TILE*8);const firstTile=Math.floor(h.minCol/STRIP_TILE);for(let i=h.firstTile||0;i<firstTile;i++)delete h.stripTiles[i];h.firstTile=firstTile;}
+  if(h.preview){h.minCol=Math.max(0,h.recvCols-STRIP_TILE*8);const firstTile=Math.floor(h.minCol/STRIP_TILE);for(let i=h.firstTile||0;i<firstTile;i++){delete h.stripTiles[i];delete h.foregroundTiles[i];}h.firstTile=firstTile;}
   h.nCols=Math.max(h.nCols,h.recvCols);h.tClose=h.tOpen+h.recvCols*P;
 }
 
@@ -436,9 +443,11 @@ async function startCameraSetup() {
   const source=cur();ensureStrip(source);
   if(!S.cameraSetup) S.cameraSetup={previousView:{...S.view},previousSelection:{lane:S.selLane,col:S.selCol},mode:'alignment'};
   const setup=S.cameraSetup;
+  S.tab='alignment';
   setup.heat={...source,preview:true,state:'running',marks:{},status:{},proposals:[],img:null,stripTiles:[],recvCols:0,liveCol:-1,nCols:1,
     tOpen:source.asset?.primaryMeta.first_column_race_time_s||0,tClose:0,tNow:0,startPerf:performance.now(),startTOD:null,startCorrection:0,frontRec:null};
   setup.sample=source.sampleStrip||source.img;setup.starting=true;setup.live=false;setup.id=null;setup.failed=false;
+  setup.heat.sampleStrip=setup.sample;
   S.selLane=null;S.selCol=null;S.hoverCol=null;S.view.user=false;S.view.followZoom=null;blankStrip(setup.heat);fitView();renderUI();
   try {
     if(OM&&source.asset){
@@ -457,13 +466,13 @@ async function stopCameraSetup(exit=false) {
     if(OM&&setup.id)await OM.call('preview.stop');
     setup.live=false;setup.heat.state='review';setup.heat.nCols=Math.max(1,setup.heat.recvCols||1);setup.heat.liveCol=(setup.heat.recvCols||0)-1;
     S.selCol=setup.heat.liveCol>=0?setup.heat.liveCol:null;S.hoverCol=null;
-    if(exit){S.cameraSetup=null;S.view={...setup.previousView};S.selLane=setup.previousSelection.lane;S.selCol=setup.previousSelection.col;}
+    if(exit){S.cameraSetup=null;if(S.tab==='alignment')S.tab='run';S.view={...setup.previousView};S.selLane=setup.previousSelection.lane;S.selCol=setup.previousSelection.col;}
   }catch(err){toast('Could not stop preview: '+err.message,true);}
   finally {setup.stopping=false;renderUI();}
 }
 function renderSetupSidebar() {
   const setup=S.cameraSetup;
-  $('#ev').innerHTML='<div class="ev-top"><span class="kicker">CAMERA SETUP</span><span class="tag sim">SIMULATOR</span></div><div class="ev-name">Align cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>';
+  $('#ev').innerHTML='<div class="ev-top"><span class="kicker">CAMERA ALIGNMENT</span><span class="tag sim">SIMULATOR</span></div><div class="ev-name">Align cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>';
   const ctl=$('#ctl');ctl.innerHTML='';
   const stop=h_('button','btn primary wide',setup.starting?'Starting preview…':setup.live?'Stop preview':'Start preview');stop.disabled=setup.starting||setup.stopping;stop.onclick=()=>setup.live?stopCameraSetup():startCameraSetup();ctl.append(stop);
   const modes=h_('div','setup-modes wide');
@@ -685,12 +694,18 @@ function warnings(h) {
 }
 
 // ---------------------------------------------------------------- header + sidebar
-const TABS = [['run', 'Run'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
+const TABS = [['run', 'Run'], ['alignment', 'Camera alignment'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
     const b = h_('button', 'tab' + (S.tab === k ? ' on' : ''), label);
-    b.onclick = () => { S.tab = k; renderUI(); };
+    b.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping)||(k==='alignment'&&cur().state==='running');
+    if(k==='alignment'&&cur().state==='running')b.title='Stop race capture before entering camera alignment';
+    b.onclick = async () => {
+      if(k==='alignment'){if(!S.cameraSetup)await startCameraSetup();else {S.tab=k;renderUI();}return;}
+      if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;}
+      S.tab=k;renderUI();
+    };
     n.append(b);
   });
 }
@@ -736,7 +751,6 @@ function renderSide() {
   const reset=btn(ICON.revert+(running?'Stop/reset':'Restart'),'warn race-reset',confirmRaceReset,h.stopping||h.saving);
   reset.id='raceReset';reset.title=running?'Stop or restart this race':'Restart this race';reset.setAttribute('aria-haspopup','dialog');
   ctl.append(actions);
-  if(!running){const setup=h_('button','btn sm wide','Camera setup');setup.onclick=startCameraSetup;ctl.append(setup);}
   const opts=h_('details','capture-options wide');opts.open=!!S.captureOptionsOpen;
   opts.innerHTML=`<summary>Capture options <span>${S.autoStop==='manual'?'Manual stop':S.autoStop==='timeout'?`Stop after ${S.stopAfter}s`:'Stop when complete'}</span></summary>
     <div class="capture-option-fields"><label><span>Auto-arm next heat</span><input id="autoArm" type="checkbox" ${S.autoArm?'checked':''}></label>
@@ -1088,8 +1102,8 @@ function renderStarts(body) {
 
 function renderDrawer() {
   const d = $('#drawer');
-  d.classList.toggle('open', S.tab !== 'run');
-  if (S.tab === 'run') return;
+  d.classList.toggle('open', S.tab !== 'run' && S.tab !== 'alignment');
+  if (S.tab === 'run' || S.tab === 'alignment') return;
   $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)[1];
   const body = $('#drawerBody');
   body.classList.toggle('boardbody', S.tab === 'board');
@@ -1332,7 +1346,7 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 // Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
-function overlayStyle(kind) { const saved=store.get(overlayKey(kind),{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes}), ...saved,positions:{...(saved.positions||{})},sizes:{...(saved.sizes||{})} }; }
+function overlayStyle(kind) { const saved=store.get(overlayKey(kind),{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true}), ...saved,positions:{...(saved.positions||{})},boundaries:{...(saved.boundaries||{})},sizes:{...(saved.sizes||{})} }; }
 function frontLanePoint(o,lane) {
   if(o.positions[lane])return o.positions[lane];
   const a=o.positions[1]||{x:0.1,y:0.8},b=o.positions[o.laneCount]||{x:0.9,y:0.8};
@@ -1353,7 +1367,7 @@ function spreadFrontLanes(o) {
 }
 function modelLaneGuides(h) {
   const o=overlayStyle('scan');if(!o.modelInput)return null;
-  const rows=[...new Set(laneBands(h).flatMap(b=>{const p=o.positions[b.lane]||b;return [Math.round(p.top),Math.round(p.bottom)];}))].filter(row=>row>=0&&row<rowsOf(h));
+  const rows=[...new Set(scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>Math.round(b.row)))];
   return {enabled:true,rows,color:o.lineColor,thickness:Math.max(1,Math.round(o.thickness))};
 }
 function saveOverlay(kind,value) { store.set(overlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);} updateFrontOverlay(); invalidate(); }
@@ -1363,13 +1377,13 @@ function showOverlaySettings(kind,anchor) {
   const o=overlayStyle(kind),menu=h_('div','overlay-settings');overlayMenu=menu;
   menu.innerHTML=`<div class="overlay-title">${kind==='front'?'Front camera':'Line-scan'} lanes<button class="btn sm" data-close>×</button></div>
     <label><span>Show overlay</span><input data-key="enabled" type="checkbox" ${o.enabled?'checked':''}></label>
-    <label><span>Drag to position</span><input data-key="edit" type="checkbox" ${o.edit?'checked':''}></label>
+    <label><span>${kind==='scan'?'Edit boundary lines':'Drag to position'}</span><input data-key="edit" type="checkbox" ${o.edit?'checked':''}></label>
     ${kind==='front'?`<label><span>Lane count</span><input data-lane-count type="number" min="2" max="24" value="${o.laneCount}"></label>
     <label><span>Positioning</span><select data-placement><option value="anchors">Set first + last</option><option value="individual">Fine-tune each lane</option></select></label>
     <label><span>First lane size</span><input data-end-size="first" type="number" min="8" max="160" value="${Math.round(o.fontSize*o.firstScale)}"></label>
     <label><span>Last lane size</span><input data-end-size="last" type="number" min="8" max="160" value="${Math.round(o.fontSize*o.lastScale)}"></label>
     <p class="dimtext overlay-hint">Place the first and last numbers; the rest follow their positions and sizes. In fine-tune mode, drag any number. Alt + wheel adjusts its size.</p>`:''}
-    ${kind==='scan'?`<label><span>Lane guides in model input</span><input data-key="modelInput" type="checkbox" ${o.modelInput?'checked':''}></label><p class="dimtext overlay-hint">Renders opaque guide lines into a derived image. Original pixels stay unchanged. No finish marks or text are included.</p>`:''}
+    ${kind==='scan'?`<p class="dimtext overlay-hint">Drag a line or its number. Each line is a shared lane boundary; neighbouring lines stay put.</p><label><span>Guides behind runners</span><input data-key="behindRunners" type="checkbox" ${o.behindRunners?'checked':''}></label><label><span>Lane guides in model input</span><input data-key="modelInput" type="checkbox" ${o.modelInput?'checked':''}></label><p class="dimtext overlay-hint">Renders opaque guide lines into a derived image. Original pixels stay unchanged. No finish marks or text are included.</p>`:''}
     <label><span>Font size</span><input data-key="fontSize" type="number" min="8" max="96" value="${o.fontSize}"></label>
     <label><span>Font weight</span><select data-key="weight">${[400,500,600,700,800,900].map(v=>`<option ${v===o.weight?'selected':''}>${v}</option>`).join('')}</select></label>
     <label><span>Line thickness</span><input data-key="thickness" type="number" min="0" max="12" step="0.5" value="${o.thickness}"></label>
@@ -1393,8 +1407,8 @@ function showOverlaySettings(kind,anchor) {
     placement.onchange=()=>{o.placement=placement.value;saveOverlay(kind,o);};
     menu.querySelectorAll('[data-end-size]').forEach(input=>{input.oninput=()=>{const size=Math.max(8,Math.min(160,Number(input.value)||8));o[input.dataset.endSize==='first'?'firstScale':'lastScale']=size/o.fontSize;o.sizes={};if(o.placement==='anchors')spreadFrontLanes(o);saveOverlay(kind,o);};});
   }
-  menu.querySelector('[data-reset]').onclick=()=>{o.positions={};saveOverlay(kind,o);};
-  menu.querySelector('[data-defaults]').onclick=()=>{saveOverlay(kind,{...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,laneCount:o.laneCount,placement:o.placement,firstScale:1,lastScale:0.55}:{}),enabled:o.enabled,positions:o.positions});showOverlaySettings(kind,anchor);};
+  menu.querySelector('[data-reset]').onclick=()=>{o.positions={};o.boundaries={};saveOverlay(kind,o);};
+  menu.querySelector('[data-defaults]').onclick=()=>{saveOverlay(kind,{...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,laneCount:o.laneCount,placement:o.placement,firstScale:1,lastScale:0.55}:{behindRunners:true,modelInput:o.modelInput}),enabled:o.enabled,positions:o.positions,boundaries:o.boundaries});showOverlaySettings(kind,anchor);};
   document.body.append(menu);const r=anchor.getBoundingClientRect();
   menu.style.left=Math.max(8,Math.min(innerWidth-270,r.left))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,r.bottom+5))+'px';
 }
@@ -1617,6 +1631,35 @@ const unflipX = x => (S.flip ? scanW() - x : x);
 const xOf = col => unflipX((col + 0.5 - S.view.c0) * S.view.zx);
 const colOf = x => Math.floor(S.view.c0 + unflipX(x) / S.view.zx);
 
+function sampleForeground(h) {
+  if(h.asset||h.preview||h.sampleForeground)return;
+  const source=h.sampleStrip||h.img;if(!source?.width)return;
+  const image={data:source.getContext('2d').getImageData(0,0,source.width,source.height).data,width:source.width,height:source.height,channels:4,layout:'rows'};
+  h.overlayBackground=scanBackground(image);
+  h.sampleForeground=new Uint8Array(Math.ceil(image.width*image.height/8));
+  writeForegroundMask(h.sampleForeground,0,image,h.overlayBackground);
+}
+function guideOccluded(h, x0, x1, row0, row1) {
+  const first=Math.max(0,Math.min(colOf(x0),colOf(x1))-1),last=Math.min((h.state==='running'?h.liveCol:h.nCols-1),Math.max(colOf(x0),colOf(x1))+1);
+  const rows=rowsOf(h),lo=Math.max(0,Math.floor(row0)-2),hi=Math.min(rows-1,Math.ceil(row1)+2);
+  for(let c=first;c<=last;c++) {
+    const mask=h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
+    const local=h.sampleForeground?c:c%STRIP_TILE;
+    if(foregroundInRows(mask,local,rows,lo,hi))return true;
+  }
+  return false;
+}
+function hitScanBoundary(h,x,y) {
+  const o=overlayStyle('scan'),captured=h.state==='review'||h.state==='saved'||(h.state==='running'&&h.liveCol>=0);
+  if(!captured||!o.enabled||!o.edit||S.cropTool||y<0||y>scanH())return null;
+  return scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
+    const lineY=(b.row-S.view.r0)*S.view.zy;
+    const label=b.below!=null&&x<Math.max(40,String(b.below).length*o.fontSize)&&y>=lineY+2&&y<=lineY+o.fontSize+6;
+    const distance=Math.abs(lineY-y);
+    return {...b,d:distance<=8?distance:label?8:Infinity};
+  }).filter(b=>b.d<=8).sort((a,b)=>a.d-b.d)[0]||null;
+}
+
 function drawScan() {
   const [g, W, Hc] = fitCanvas(scanCv), Hi = Hc - RULER, h = viewHeat(), v = S.view;
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hc);
@@ -1644,14 +1687,29 @@ function drawScan() {
 
   // Decorative lane guides can be adjusted without changing the model's lane geometry.
   const yRow = row => (row - v.r0) * v.zy;
-  const o=overlayStyle('scan'),bands=laneBands(h);
+  const o=overlayStyle('scan');
   if(o.enabled) {
+    if(o.behindRunners)sampleForeground(h);
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
-    bands.forEach(b=>{
-      const custom=o.positions[b.lane],top=custom?.top??b.top,bottom=custom?.bottom??b.bottom;
-      if(o.thickness>0)[top,bottom].forEach(row=>{const y=yRow(row);g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();});
-      const y=yRow((top+bottom)/2);if(y<0||y>Hi)return;
-      g.fillStyle=o.textColor;g.fillText(String(b.lane),6,y+o.fontSize*.35);
+    scanBoundaries(laneBands(h),o,rowsOf(h)).forEach(b=>{
+      const y=yRow(b.row);if(y < -o.fontSize-6 || y>Hi)return;
+      if(o.thickness>0&&y>=0) {
+        g.beginPath();
+        if(!o.behindRunners){g.moveTo(0,y);g.lineTo(W,y);}
+        else {
+          const half=o.thickness/(2*v.zy);let start=null;
+          for(let x=0;x<=W;x++) {
+            const hidden=x>=W||guideOccluded(h,x,x+1,b.row-half,b.row+half);
+            if(!hidden&&start==null)start=x;
+            if(hidden&&start!=null){g.moveTo(start,y);g.lineTo(x,y);start=null;}
+          }
+        }
+        g.stroke();
+      }
+      if(b.below!=null) {
+        const baseline=y+o.fontSize+3,width=g.measureText(String(b.below)).width;
+        if(baseline<=Hi&&(!o.behindRunners||!guideOccluded(h,6,6+width,b.row+3/v.zy,b.row+(o.fontSize+3)/v.zy))){g.fillStyle=o.textColor;g.fillText(String(b.below),6,baseline);}
+      }
     });g.restore();
   }
 
@@ -1897,7 +1955,7 @@ scanCv.addEventListener('mousemove', e => {
   if (!(h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0))) return;
   const r = scanCv.getBoundingClientRect();
   const col = Math.max(0, Math.min(live ? h.liveCol : h.nCols - 1, colOf(e.clientX - r.left)));
-  scanCv.style.cursor = !S.cropTool && hitFinish(h, e.clientX-r.left) ? 'ew-resize' : '';
+  scanCv.style.cursor = hitScanBoundary(h,e.clientX-r.left,e.clientY-r.top) ? 'ns-resize' : !S.cropTool && hitFinish(h, e.clientX-r.left) ? 'ew-resize' : '';
   if (col !== S.hoverCol) { S.hoverCol = col; invalidate(); updateTs(); }
 });
 scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
@@ -1905,14 +1963,10 @@ scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   S.entryNumber = ''; updateEntryNumber();
   const r = scanCv.getBoundingClientRect();
-  const h = viewHeat(),overlay=overlayStyle('scan');
-  if(overlay.enabled&&overlay.edit&&!e.shiftKey) {
-    const y=(e.clientY-r.top)/S.view.zy+S.view.r0;
-    const candidates=laneBands(h).map(b=>{const pos=overlay.positions[b.lane]||b;return {...b,top:pos.top,bottom:pos.bottom,d:Math.abs((pos.top+pos.bottom)/2-y)};}).sort((a,b)=>a.d-b.d);
-    if(candidates[0] && (e.clientX-r.left<65 || candidates[0].d*S.view.zy<8)) {
-      const b=candidates[0],offset=y-(b.top+b.bottom)/2;
-      S.drag={mode:'lane-overlay',lane:b.lane,band:b,offset,moved:false,x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top};return;
-    }
+  const h = viewHeat(),boundary=!e.shiftKey&&hitScanBoundary(h,e.clientX-r.left,e.clientY-r.top);
+  if(boundary) {
+    const offset=(e.clientY-r.top)/S.view.zy+S.view.r0-boundary.row;
+    S.drag={mode:'lane-boundary',key:boundary.key,offset,moved:false,x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top};return;
   }
   const hit = !S.cropTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
   if(hit) { S.selLane=hit.lane; S.selCol=hit.col; }
@@ -1926,9 +1980,9 @@ window.addEventListener('mousemove', e => {
   d.y1 = Math.max(0, Math.min(r.height - RULER, e.clientY - r.top));
   if (Math.hypot(d.x1 - d.x0, d.y1 - d.y0) > 5) d.moved = true;
   invalidate();
-  if(d.mode==='lane-overlay'&&d.moved) {
-    const o=overlayStyle('scan'),b=d.band,centre=d.y1/S.view.zy+S.view.r0-d.offset,half=(b.bottom-b.top)/2;
-    o.positions[d.lane]={top:centre-half,bottom:centre+half};saveOverlay('scan',o);
+  if(d.mode==='lane-boundary'&&d.moved) {
+    const h=viewHeat(),o=overlayStyle('scan'),boundaries=scanBoundaries(laneBands(h),o,rowsOf(h)),i=boundaries.findIndex(b=>b.key===d.key);
+    if(i>=0){o.boundaries=Object.fromEntries(boundaries.map(b=>[b.key,b.row]));o.boundaries[d.key]=movedBoundaryRow(boundaries,i,d.y1/S.view.zy+S.view.r0-d.offset,rowsOf(h));o.positions={};saveOverlay('scan',o);}
   }
   if (d.mode === 'mark' && d.moved) {
     const h=viewHeat(), limit=h.state==='running'?h.liveCol:h.nCols-1;
@@ -1949,7 +2003,7 @@ window.addEventListener('mouseup', () => {
   if (!d) return;
   const h = viewHeat(), v = S.view;
   if (!['review', 'saved', 'running'].includes(h.state) || (h.state === 'running' && h.liveCol < 0)) return;
-  if(d.mode==='lane-overlay'){invalidate();return;}
+  if(d.mode==='lane-boundary'){invalidate();return;}
   if(d.mode === 'mark') {
     if(d.moved) setMark(d.lane,S.selCol); else renderUI();
     return;
