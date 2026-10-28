@@ -123,7 +123,7 @@ function buildHeat(s) {
   const teams = [...TEAMS];
   for (let i = teams.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [teams[i], teams[j]] = [teams[j], teams[i]]; }
   const athletes = s.entries
-    ? s.entries.map(x => ({ lane: x.lane, id: x.id, first: x.first, last: x.last, team: teamFor(x.affiliation), skin: pick(SKIN), truth: null, pre: x.status || null }))
+    ? s.entries.map(x => ({ ...x, lane: x.lane, id: x.id, first: x.first, last: x.last, team: teamFor(x.affiliation), skin: pick(SKIN), truth: null, pre: x.status || null }))
     : s.lanes.map((lane, li) => {
       let id;
       do { id = 100 + Math.floor(r() * 600); } while (bibs.has(id));
@@ -158,7 +158,7 @@ function buildHeat(s) {
 let HEATS = SPECS.map(buildHeat);
 
 const S = {
-  idx: 0, tab: 'run', selLane: null, selCol: null, source: 'replay', apiOnline: true,
+  idx: 0, tab: 'run', selLane: null, selCol: null, entryNumber: '', source: 'replay', apiOnline: true,
   autoArm: store.get('autoArm', true), autoMark: store.get('autoMark', true),
   flip: store.get('flip', false), lanes: store.get('lanes', false), cropTool: false,
   files: [], view: { c0: 0, zx: 1, r0: 0, zy: 1, user: false, zoomed: false }, drag: null,
@@ -407,7 +407,7 @@ function requestProposals(h) {
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
 function go(i) {
   if (cur().state === 'running' || i < 0 || i >= HEATS.length) return;
-  S.idx = i; S.selLane = null; S.selCol = null; S.hoverCol = null;
+  S.idx = i; S.selLane = null; S.selCol = null; S.entryNumber = ''; S.hoverCol = null;
   S.bview.linked = true; Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView();
   const h = cur();
   ensureStrip(h);
@@ -655,6 +655,7 @@ function renderSide() {
   });
 }
 function selectLane(lane) {
+  S.entryNumber = '';
   S.selLane = lane;
   const h = cur();
   if (lane != null) {
@@ -1214,7 +1215,12 @@ function renderUI() {
   updateTs();
 }
 // The timestamp follows the mouse over the line-scan, and falls back to the selected column.
+function updateEntryNumber() {
+  const el = document.getElementById('entryNumber');
+  if (el) { el.hidden = !S.entryNumber; el.textContent = `${cur().unlaned ? 'Hip / bib' : 'Lane'} ${S.entryNumber} ↵`; }
+}
 function updateTs() {
+  updateEntryNumber();
   const ts = $('#ts'), h = cur(), col = S.hoverCol != null ? S.hoverCol : S.selCol;
   if (col != null && h.img) { ts.textContent = fmtT(raceTime(h, col)) + ' s'; ts.classList.remove('none'); }
   else { ts.textContent = '--.---'; ts.classList.add('none'); }
@@ -1641,6 +1647,7 @@ scanCv.addEventListener('mousemove', e => {
 scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
 scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
+  S.entryNumber = ''; updateEntryNumber();
   const r = scanCv.getBoundingClientRect();
   const h = cur(), hit = !S.cropTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
   if(hit) { S.selLane=hit.lane; S.selCol=hit.col; }
@@ -1704,8 +1711,19 @@ scanCv.addEventListener('dblclick', e => {
   setMark(S.selLane, S.selCol);
 });
 window.addEventListener('keydown', e => {
-  if (e.target instanceof Element && e.target.closest('input, select, textarea')) return;
+  if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable=true]')) return;
+  if (S.tab !== 'run' || e.ctrlKey || e.metaKey || e.altKey) return;
   const h = cur(), lanes = h.athletes.map(a => a.lane).sort((a, b) => a - b);
+  if (/^[0-9]$/.test(e.key)) {
+    e.preventDefault();
+    if (S.selCol == null) { toast('Select a finish column first.'); return; }
+    S.entryNumber = (S.entryNumber + e.key).slice(0, 8);
+    updateEntryNumber();
+    return;
+  }
+  if (e.key === 'Backspace' && S.entryNumber) {
+    e.preventDefault(); S.entryNumber = S.entryNumber.slice(0,-1); updateEntryNumber(); return;
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (S.selLane != null) { e.preventDefault(); deleteSelectedFinish(); }
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -1719,11 +1737,19 @@ window.addEventListener('keydown', e => {
     const i = lanes.indexOf(S.selLane);
     const n = i < 0 ? 0 : Math.max(0, Math.min(lanes.length - 1, i + (e.key === 'ArrowUp' ? -1 : 1)));
     selectLane(lanes[n]);
-  } else if (/^[1-9]$/.test(e.key) && lanes.includes(+e.key)) {
-    selectLane(+e.key);
   } else if (e.key === 'Enter') {
-    if (S.selLane != null && S.selCol != null) { e.preventDefault(); setMark(S.selLane, S.selCol); }
+    if (S.entryNumber) {
+      e.preventDefault();
+      const number = Number(S.entryNumber);
+      let matches = h.athletes.filter(a => Number(h.unlaned ? (a.hipNumber ?? a.hip ?? a.bib ?? a.id) : a.lane) === number);
+      if (h.unlaned && !matches.length) matches = h.athletes.filter(a=>Number(a.id)===number);
+      if (matches.length !== 1) { toast(matches.length ? 'That number matches more than one athlete.' : `No ${h.unlaned ? 'hip or bib' : 'lane'} ${S.entryNumber} in this heat.`, true); return; }
+      S.selLane = matches[0].lane;
+      S.entryNumber = '';
+      setMark(S.selLane, S.selCol);
+    } else if (S.selLane != null && S.selCol != null) { e.preventDefault(); setMark(S.selLane, S.selCol); }
   } else if (e.key === 'Escape') {
+    if (S.entryNumber) { e.preventDefault(); S.entryNumber = ''; updateEntryNumber(); return; }
     if (S.cropTool) { S.cropTool = false; syncCursor(); }
     else if (S.view.zoomed) fitView();
     else { S.selLane = null; S.selCol = null; }
@@ -1753,6 +1779,7 @@ backupCv.addEventListener('wheel', e => {
 }, { passive: false });
 backupCv.addEventListener('mousedown', e => {
   if (e.button !== 0 || !backupReady(cur())) return;
+  S.entryNumber = ''; updateEntryNumber();
   const r = backupCv.getBoundingClientRect();
   S.bdrag = { mode: e.shiftKey ? 'crop' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, moved: false, start: { ...backupRange(cur()) } };
 });

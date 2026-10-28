@@ -270,3 +270,5 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 #bNet .num { word-break: break-all; }
 .blist .bbtns { display: flex; gap: 4px; }
 .blist .bdel { padding: 3px 6px; }
+
+.entry-number { font: 700 12px var(--mono); color: var(--mint); white-space: nowrap; padding: 3px 6px; border: 1px solid var(--mint); }
