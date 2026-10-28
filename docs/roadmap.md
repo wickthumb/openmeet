@@ -41,7 +41,13 @@ Expand toward a complete open-source photo-finish and meet-operations applicatio
 
 ## Continuous line-scan compression research
 
-Research only; no continuous-recording format or compression implementation is committed yet. Investigate whether an eight-hour capture can fit within a 10 GB storage budget, comparing lossless and controlled-lossy methods against representative camera noise, lighting changes and crowded finishes. Exact timestamp preservation, random access, crash recovery and finish-edge fidelity matter alongside size and throughput. Repeated simulator background columns alone cannot establish real-camera performance or a universal size guarantee.
+Research only; no continuous-recording format or archive-quality settings are implemented yet. Storage targets are operator choices, not a fixed 10 GB requirement. Compare native lossless, near-lossless, saved spatial crop, vertical resizing, and runner/guide derivatives with a separate native per-race archive. An exact correction layer can preserve original bytes independently of mask accuracy, but must be measured for total storage cost.
+
+Account for each camera’s native height (including 1000/2000+ rows), columns per second, channel depth/packing and clock, rather than transferring a demo compression ratio to higher-end modes. Spatial options must keep the original time columns and timestamps, with explicit source-row origin, scale, filter and recipe version. Display Frame height/Zoom stays separate from saved archive settings.
+
+Before applying or exporting a quality recipe, show synchronized original and decoded previews, pixel-level inspection, excluded rows, measured sample bytes and conditional size estimates. Native per-race recording is independently controlled by arming/start triggers and operator stop, with explicit pre/post coverage; runner detection must not decide whether source evidence exists. Overlapping races/restarts can reference shared native chunks. A smaller derivative alone cannot restore omitted runner pixels or lane paint.
+
+Qualification still needs representative real camera noise, lighting changes, crowded finishes, sustained throughput, source gap accounting, exact clocks, random access and crash recovery. Short simulated codec tests and perfect finite mask tests cannot establish real-camera full-day capacity or a never-missed-runner guarantee.
 
 Explore one logical meet recording with an indexed start-trigger journal and race views referencing its columns, so a heat can use a different start without rewriting the original evidence. Keep proprietary models separate. Any storage or timing claim needs measured results and a real-camera validation plan.
 

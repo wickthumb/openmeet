@@ -1511,6 +1511,7 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 
 // Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
 const reviewHighlightDefaults = { pendingColor:'#ffd43b', pendingOpacity:0.32, pendingStyleVersion:2 };
+const inactiveLaneDefaults = { shadeInactive:true, inactiveColor:'#98a0ab', inactiveOpacity:0.35 };
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
 function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
@@ -1530,7 +1531,7 @@ function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nati
   const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
   if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}
   const rows=kind==='scan'?(nativeRows||rowsForCamera(camera)):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
-  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'learned',needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
+  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'learned',needsFinish:false,...reviewHighlightDefaults,...inactiveLaneDefaults}),...saved,...highlight,
     positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
     boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
 }
@@ -1636,6 +1637,12 @@ function showOverlaySettings(kind, anchor) {
             <label><span>Color</span><input data-key="pendingColor" type="color"></label>
             <label><span>Opacity</span><span class="overlay-range"><input data-key="pendingOpacity" type="range" min="0.05" max="0.6" step="0.01"><output data-value-for="pendingOpacity" aria-hidden="true"></output></span></label>
           </fieldset>
+          <fieldset class="overlay-subgroup">
+            <legend>Inactive lanes</legend>
+            <label title="Shade DNS, false-start and unentered lanes."><span>Show shading</span><input data-key="shadeInactive" type="checkbox" role="switch"></label>
+            <label><span>Color</span><input data-key="inactiveColor" type="color"></label>
+            <label><span>Opacity</span><span class="overlay-range"><input data-key="inactiveOpacity" type="range" min="0.05" max="0.8" step="0.01"><output data-value-for="inactiveOpacity" aria-hidden="true"></output></span></label>
+          </fieldset>
         ` : ''}
         <div class="overlay-actions"><button type="button" class="btn sm" data-defaults>Reset appearance</button></div>
       </div>
@@ -1654,7 +1661,7 @@ function showOverlaySettings(kind, anchor) {
       </details>
     ` : ''}`;
 
-  const uiDefaults = { needsFinish: false, ...reviewHighlightDefaults };
+  const uiDefaults = { needsFinish: false, ...reviewHighlightDefaults, ...inactiveLaneDefaults };
   const inputs = [...menu.querySelectorAll('[data-key]')];
   const endSizes = [...menu.querySelectorAll('[data-end-size]')];
   const syncRange = input => {
@@ -1696,7 +1703,7 @@ function showOverlaySettings(kind, anchor) {
       if (input.disabled || (input.type === 'number' && input.value === '')) return;
       const key = input.dataset.key;
       let value = input.type === 'checkbox' ? input.checked : input.type === 'color' ? input.value : Number(input.value);
-      const limits = { fontSize: [8, 96], thickness: [0, 12], opacity: [0.1, 1], weight: [400, 900], pendingOpacity: [0.05, 0.6] };
+      const limits = { fontSize: [8, 96], thickness: [0, 12], opacity: [0.1, 1], weight: [400, 900], pendingOpacity: [0.05, 0.6], inactiveOpacity:[0.05,0.8] };
       if (limits[key]) {
         if (!Number.isFinite(value)) return;
         value = Math.max(limits[key][0], Math.min(limits[key][1], value));
@@ -1772,7 +1779,7 @@ function showOverlaySettings(kind, anchor) {
       textColor: overlayDefaults.textColor,
       lineColor: overlayDefaults.lineColor,
       opacity: isFront ? 0.5 : overlayDefaults.opacity,
-      ...(!isFront ? { pendingColor: uiDefaults.pendingColor, pendingOpacity: uiDefaults.pendingOpacity } : {})
+      ...(!isFront ? { pendingColor: uiDefaults.pendingColor, pendingOpacity: uiDefaults.pendingOpacity, inactiveColor:uiDefaults.inactiveColor,inactiveOpacity:uiDefaults.inactiveOpacity } : {})
     });
     saveOverlay(kind, o);
     syncControls();
@@ -2424,9 +2431,9 @@ function drawLaneGuides(g,h,W,Hi) {
   if(o.enabled) {
     const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
     if(o.behindRunners)sampleForeground(h);
-    const emptyLanes=new Set(!S.cameraSetup?laneBands(h).filter(b=>!h.athletes.some(a=>a.lane===b.lane)||['DNS','FS'].includes(h.status[b.lane])).map(b=>b.lane):[]);
-    const emptyLayer=reviewHighlightLayer(h,{...o,pendingColor:'#8d9ab0'},W,Hi,emptyLanes,edges,'statusHighlightCache');
-    if(emptyLayer){g.save();g.globalAlpha=0.18;g.drawImage(emptyLayer,0,0);g.restore();}
+    const emptyLanes=new Set(o.shadeInactive&&!S.cameraSetup?laneBands(h).filter(b=>!h.athletes.some(a=>a.lane===b.lane)||['DNS','FS'].includes(h.status[b.lane])).map(b=>b.lane):[]);
+    const emptyLayer=reviewHighlightLayer(h,{...o,pendingColor:o.inactiveColor},W,Hi,emptyLanes,edges,'statusHighlightCache');
+    if(emptyLayer){g.save();g.globalAlpha=o.inactiveOpacity;g.drawImage(emptyLayer,0,0);g.restore();}
     const highlight=reviewHighlightLayer(h,o,W,Hi,pending,edges);
     if(highlight){g.save();g.globalAlpha=o.pendingOpacity;g.drawImage(highlight,0,0);g.restore();}
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
