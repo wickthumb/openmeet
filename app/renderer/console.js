@@ -428,7 +428,7 @@ const resolved = (h, a) => !!(h.marks[a.lane] || h.status[a.lane]);
 function lifRequest(h) {
   const d = h.startTOD, tod = d ? d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000 : null;
   return {
-    dir: S.meet.dir,
+    dir: S.meet.resultsDir || S.meet.dir,
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
     results: h.athletes.map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
@@ -841,7 +841,10 @@ function renderDrawer() {
         <p><button class="btn sm primary" id="openMeet">Open meet folder…</button> <button class="btn sm" id="openDemo">Open demo meet…</button> ${S.meet ? '<button class="btn sm" id="closeMeet">Use the sample meet</button>' : ''}</p>
         ${S.meet && S.meet.demo ? `<p class="dimtext">Cameras: rendered by the TTP simulator from <span class="num">${esc(S.meet.demo)}</span></p>` : ''}
         ${S.meet ? `<table class="tbl"><tr><th>Input (meet manager writes)</th><th>Size</th><th>Modified</th><th>State</th></tr>${['lynx.evt', 'lynx.ppl', 'lynx.sch'].map(fileRow).join('')}</table>
-        <p>${HEATS.length} laned heats, ${entries} entries. Results are written to this same folder.</p>
+        <p>${HEATS.length} laned heats, ${entries} entries.</p>
+        <p>Results folder: <span class="num">${esc(S.meet.resultsDir || S.meet.dir)}</span>${S.meet.resultsDir ? '' : ' <span class="dimtext">(same as the meet folder)</span>'}
+          <button class="btn sm" id="pickResults">Change…</button>${S.meet.resultsDir ? ' <button class="btn sm" id="sameResults">Use the meet folder</button>' : ''}</p>
+        <p class="dimtext">AthleticLOCAL: its Start Lists folder is the meet folder; its Results folder is the results folder.</p>
         <pre class="file">${esc((S.meet.files['lynx.evt'] || {}).text || '')}</pre>` : ''}
       </div>`;
     body.innerHTML = folderCard ? folderCard + resultsCard(last) : `
@@ -857,6 +860,14 @@ function renderDrawer() {
     if (OM) {
       $('#openMeet').onclick = async () => { const dir = await OM.pickFolder('Open meet folder'); if (dir) openMeet(dir); };
       if ($('#closeMeet')) $('#closeMeet').onclick = closeMeet;
+      const setResults = async dir => {
+        S.meet.resultsDir = dir;
+        const s = await OM.call('settings.get').catch(() => ({}));
+        OM.call('settings.set', { patch: { resultsFor: { ...(s.resultsFor || {}), [S.meet.dir]: dir } } }).catch(() => {});
+        renderUI();
+      };
+      if ($('#pickResults')) $('#pickResults').onclick = async () => { const dir = await OM.pickFolder('Results folder (the meet manager reads LIF files here)'); if (dir) setResults(dir); };
+      if ($('#sameResults')) $('#sameResults').onclick = () => setResults(null);
       $('#openDemo').onclick = async () => { const dir = await OM.pickFolder('Open demo meet (rendered heats)'); if (dir) openDemo(dir); };
     }
   } else if (S.tab === 'api') {
@@ -980,7 +991,8 @@ async function openMeet(dir) {
   try {
     const r = await OM.call('meet.open', { dir });
     if (!r.parsed || !r.parsed.events.some(e => e.entries.some(x => x.lane))) { toast(`No laned heats found in ${dir} (lynx.evt missing or empty).`, true); return; }
-    S.meet = { dir, files: r.files };
+    const s = await OM.call('settings.get').catch(() => ({}));
+    S.meet = { dir, files: r.files, resultsDir: s.resultsFor && s.resultsFor[dir] ? s.resultsFor[dir] : null };
     applyMeet(r.parsed, true);
     OM.call('settings.set', { patch: { meetDir: dir } }).catch(() => {});
     toast(`Opened ${dir}: ${HEATS.length} heats.`);
