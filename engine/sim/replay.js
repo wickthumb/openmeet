@@ -54,6 +54,22 @@ export function loadSimTruth(sidecar) {
 }
 
 /**
+ * The empty scene as one column-major column: per-row median of the image's first columns
+ * (the field is still far from the line there).
+ * @param {DecodedImage} img
+ * @returns {Uint8Array}
+ */
+export function backgroundColumn(img, sample = 24) {
+  const k = Math.max(1, Math.min(sample, img.width)), ch = img.channels, out = new Uint8Array(img.height * ch), vals = new Array(k);
+  for (let y = 0; y < img.height; y++) for (let c = 0; c < ch; c++) {
+    for (let x = 0; x < k; x++) vals[x] = img.data[(y * img.width + x) * ch + c];
+    vals.sort((a, b) => a - b);
+    out[y * ch + c] = vals[k >> 1];
+  }
+  return out;
+}
+
+/**
  * Copy columns [x0, x0+n) of a row-major image into column-major bytes.
  * @param {DecodedImage} img
  * @param {number} x0
@@ -89,9 +105,11 @@ export function columnsOf(img, x0, n) {
  * @param {number} [o.speed=1]           Realtime speed-up factor.
  * @param {number} [o.chunkColumns=64]
  * @param {string} [o.model='sim-replay']
+ * @param {number} [o.preRollFrom]   Race time to start streaming from (e.g. 0 = the gun). Columns before the image
+ *                                     repeat the empty scene (per-row median of the image's first columns).
  * @returns {AsyncGenerator<CameraMsg>}
  */
-export async function* simReplay({ png, sidecar, realtime = false, speed = 1, chunkColumns = SIM_CHUNK_COLUMNS, model = 'sim-replay' }) {
+export async function* simReplay({ png, sidecar, realtime = false, speed = 1, chunkColumns = SIM_CHUNK_COLUMNS, model = 'sim-replay', preRollFrom }) {
   const sc = readSidecar(sidecar);
   /** @type {DecodedImage} */
   let img;
@@ -103,22 +121,34 @@ export async function* simReplay({ png, sidecar, realtime = false, speed = 1, ch
 
   const period = sc.column_period_s;
   const firstRace = sc.first_column_race_time_s;
+  // A real camera runs from the gun: pre-roll columns of the empty scene up to the image's first column.
+  const nPre = preRollFrom == null ? 0 : Math.max(0, Math.round((firstRace - preRollFrom) / period));
+  const bg = nPre ? backgroundColumn(img) : null;
+  const total = nPre + img.width;
   yield { type: 'hello', model, rows: img.height, channels: img.channels, columnPeriod: period };
   const t0 = performance.now();
   yield { type: 'start_pulse', hwTime: SIM_START_HW_TIME };
-  for (let x0 = 0; x0 < img.width; x0 += chunkColumns) {
-    const n = Math.min(chunkColumns, img.width - x0);
+  for (let x0 = 0; x0 < total; x0 += chunkColumns) {
+    const n = Math.min(chunkColumns, total - x0);
     if (realtime) {
-      const dueMs = ((firstRace + (x0 + n) * period) / speed) * 1000;
+      const dueMs = ((firstRace + (x0 - nPre + n) * period) / speed) * 1000;
       const wait = t0 + dueMs - performance.now();
       if (wait > 0) await sleep(wait);
     }
+    let data;
+    if (x0 >= nPre) data = columnsOf(img, x0 - nPre, n);
+    else {
+      const colBytes = img.height * img.channels, pre = Math.min(n, nPre - x0);
+      data = new Uint8Array(n * colBytes);
+      for (let i = 0; i < pre; i++) data.set(bg, i * colBytes);
+      if (pre < n) data.set(columnsOf(img, 0, n - pre), pre * colBytes);
+    }
     yield {
       type: 'columns',
-      firstHwTime: SIM_START_HW_TIME + firstRace + x0 * period,
+      firstHwTime: SIM_START_HW_TIME + firstRace + (x0 - nPre) * period,
       period,
       count: n,
-      data: columnsOf(img, x0, n),
+      data,
     };
   }
   yield { type: 'end' };

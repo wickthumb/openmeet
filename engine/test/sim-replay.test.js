@@ -126,3 +126,18 @@ test('replay into the capture store: race time of column i = first_column_race_t
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('preRollFrom: the camera streams from the gun, empty-scene columns first, then the image, times continuous', async () => {
+  const img = testImage(40, 6, 3, 7);
+  const sc = { column_period_s: 0.01, first_column_race_time_s: 1.0 };
+  const msgs = await collect(simReplay({ png: encodePng(img), sidecar: sc, preRollFrom: 0, chunkColumns: 32 }));
+  const cols = msgs.filter((m) => m.type === 'columns');
+  const total = cols.reduce((n, c) => n + c.count, 0);
+  assert.equal(total, 100 + 40, '100 pre-roll columns (1.0 s at 10 ms) + the image');
+  assert.ok(Math.abs(cols[0].firstHwTime - (SIM_START_HW_TIME + 0)) < 1e-9, 'first column at race time 0');
+  cols.forEach((c, k) => { if (k) assert.ok(Math.abs(c.firstHwTime - (cols[k - 1].firstHwTime + cols[k - 1].count * 0.01)) < 1e-9); validateMessage(c, msgs[0]); });
+  const all = Buffer.concat(cols.map((c) => Buffer.from(c.data)));
+  const colBytes = 6 * 3;
+  assert.deepEqual(all.subarray(0, colBytes), all.subarray(99 * colBytes, 100 * colBytes), 'pre-roll columns are identical');
+  assert.deepEqual(all.subarray(100 * colBytes), Buffer.from(columnsOf(img, 0, 40)), 'then the image, unchanged');
+});

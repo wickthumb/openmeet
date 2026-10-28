@@ -167,7 +167,8 @@ const methods = {
     const store = core.openCaptureStore(dir);
     captures.set(id, { dir, sidecar });
     active = { id, stop: false };
-    runCapture(id, store, core.simReplay({ png, sidecar, realtime: true, speed, model: 'sim-render' }));
+    // The camera runs from the gun (race time 0), like a real line-scan, not just around the finish.
+    runCapture(id, store, core.simReplay({ png, sidecar, realtime: true, speed, model: 'sim-render', preRollFrom: 0 }));
     return { id, dir, front: frontRec };
   },
   async 'capture.stop'() { if (active) active.stop = true; return { ok: true }; },

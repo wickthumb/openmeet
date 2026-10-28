@@ -144,7 +144,7 @@ function buildHeat(s) {
   (s.dnf || []).forEach(l => { const a = athletes.find(x => x.lane === l); a.dnfAt = 57; a.truth = null; });
   const fin = athletes.filter(a => a.truth != null).map(a => a.truth);
   if (!fin.length) fin.push(s.base || 12);
-  const tOpen = Math.min(...fin) - 0.55, tClose = Math.max(...fin) + 0.8;
+  const tOpen = 0, tClose = Math.max(...fin) + 0.8;          // the camera captures the whole race, from the gun
   const heat = {
     ...s, athletes, tOpen, tClose, nCols: Math.ceil((tClose - tOpen) / P),
     state: 'loaded', marks: {}, status: {}, proposals: null, req: 'idle', img: null, imgSrc: null,
@@ -623,6 +623,24 @@ function tickClock() {
   c.style.color = h.state === 'running' || win ? 'var(--paper)' : 'var(--dim)';
   if (sub) sub.textContent = win ? `Winner: lane ${win.lane}, ${win.first} ${win.last}` : h.state === 'running' ? 'Running time' : h.state === 'armed' ? 'Waiting for the start' : done ? 'No finishes marked yet' : 'Not armed';
 }
+// The whole meet in run order: each event's heats, their state and, once saved, the winner and results file.
+function renderSchedule() {
+  const box = $('#schedule');
+  if (!box) return;
+  const label = { loaded: 'LOADED', armed: 'ARMED', running: 'RUNNING', review: 'REVIEW', saved: 'SAVED' };
+  let html = '', lastKey = null;
+  HEATS.forEach((h, i) => {
+    const key = `${h.ev}|${h.rd}|${h.name}`;
+    if (key !== lastKey) { html += `<div class="sch-ev"><span class="num">E${esc(h.ev)}</span> ${esc(h.name)} <span class="dimtext">· R${h.rd}</span></div>`; lastKey = key; }
+    const win = h.state === 'saved' || h.state === 'review' ? places(h).fin[0] : null;
+    const done = h.athletes.filter(a => resolved(h, a)).length;
+    const detail = h.state === 'saved' ? `<span class="num">${win ? official(colTime(h, h.marks[win.lane].col)) : '—'}</span> · <span class="num">${h.lifName}</span>`
+      : h.state === 'review' ? `${done} / ${h.athletes.length} resolved` : `${h.athletes.length} athletes`;
+    html += `<div class="sch-row${i === S.idx ? ' cur' : ''}" data-i="${i}"><span class="num">H${h.ht}</span><span class="sch-d">${detail}</span><span class="state ${h.state}">${label[h.state]}</span></div>`;
+  });
+  box.innerHTML = html;
+  box.querySelectorAll('.sch-row').forEach(r => { r.onclick = () => go(+r.dataset.i); });
+}
 function renderAcc() {
   const h = cur();
   const start = { loaded: 'idle', armed: 'armed', running: 'fired', review: 'fired', saved: 'fired' }[h.state];
@@ -676,8 +694,8 @@ function renderProps() {
 
 // ---------------------------------------------------------------- tiling workspace (dwindle-style split tree)
 // A leaf is a panel id; a split is {d: 'row' | 'col', r: ratio, a, b}. 'row' places a and b side by side.
-const PANELS = { race: 'Race', front: 'Front camera', backup: 'Backup line-scan', acc: 'Accessories', props: 'Auto-timing' };
-const DEFAULT_LAYOUT = { d: 'col', r: 0.56, a: { d: 'row', r: 0.28, a: 'race', b: { d: 'row', r: 0.48, a: 'front', b: 'backup' } }, b: { d: 'row', r: 0.3, a: 'acc', b: 'props' } };
+const PANELS = { race: 'Race', front: 'Front camera', backup: 'Backup line-scan', schedule: 'Schedule', acc: 'Accessories', props: 'Auto-timing' };
+const DEFAULT_LAYOUT = { d: 'col', r: 0.56, a: { d: 'row', r: 0.28, a: 'race', b: { d: 'row', r: 0.48, a: 'front', b: 'backup' } }, b: { d: 'row', r: 0.3, a: 'schedule', b: { d: 'row', r: 0.64, a: 'props', b: 'acc' } } };
 const GAP = 8;
 const leaves = n => (!n ? [] : typeof n === 'string' ? [n] : [...leaves(n.a), ...leaves(n.b)]);
 const removeLeaf = (n, id) => {
@@ -693,7 +711,7 @@ function validLayout(n) {
   return ls.every(l => PANELS[l]) && new Set(ls).size === ls.length;
 }
 const panelEl = id => document.querySelector(`.pnl[data-p="${id}"]`);
-function saveLayout() { store.set('layout', S.layout); }
+function saveLayout() { store.set('layout2', S.layout); }
 function renderTiles() {
   const host = $('#tiles'), W = host.clientWidth, H = host.clientHeight;
   host.querySelectorAll('.gut').forEach(g => g.remove());
@@ -751,7 +769,7 @@ function renderAddMenu() {
   m.append(rb);
 }
 function initTiles() {
-  const saved = store.get('layout', null);
+  const saved = store.get('layout2', null);
   S.layout = saved !== null && validLayout(saved) ? saved : JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
   document.querySelectorAll('.pnl[data-p]').forEach(el => {
     const id = el.dataset.p, ph = el.querySelector('.ph');
@@ -941,10 +959,15 @@ function syncCursor() { scanCv.classList.toggle('crop', S.cropTool); }
 
 function renderUI() {
   invalidate();
-  renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderDrawer(); renderTools();
-  const ts = $('#ts'), h = cur();
-  if (S.selCol != null && h.img) { ts.textContent = fmtT(colTime(h, S.selCol)) + ' s'; ts.classList.remove('none'); }
+  renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderSchedule(); renderDrawer(); renderTools();
+  updateTs();
+}
+// The timestamp follows the mouse over the line-scan, and falls back to the selected column.
+function updateTs() {
+  const ts = $('#ts'), h = cur(), col = S.hoverCol != null ? S.hoverCol : S.selCol;
+  if (col != null && h.img) { ts.textContent = fmtT(colTime(h, col)) + ' s'; ts.classList.remove('none'); }
   else { ts.textContent = '--.---'; ts.classList.add('none'); }
+  ts.classList.toggle('hover', S.hoverCol != null && S.hoverCol !== S.selCol);
 }
 let toastTimer;
 function toast(t, bad = false) {
@@ -1002,8 +1025,10 @@ async function openMeet(dir) {
 function attachAsset(h, a) {
   if (!a || !a.primary || !a.primaryMeta || !a.primarySize) return h;
   const m = a.primaryMeta;
-  h.asset = a; h.rows = m.rows || a.primarySize.height; h.nCols = a.primarySize.width;
-  h.tOpen = m.first_column_race_time_s; h.tClose = h.tOpen + h.nCols * P;
+  // the engine's camera streams from the gun: pre-roll columns from race time 0, then the rendered finish window
+  const nPre = Math.max(0, Math.round(m.first_column_race_time_s / P));
+  h.asset = a; h.rows = m.rows || a.primarySize.height; h.nCols = nPre + a.primarySize.width;
+  h.tOpen = m.first_column_race_time_s - nPre * P; h.tClose = h.tOpen + h.nCols * P;
   h.laneRows = Array.isArray(m.lane_rows) && m.lane_rows.length ? m.lane_rows.map(x => ({ lane: x.lane, top: x.top_row, bottom: x.bottom_row })) : null;
   h.athletes.forEach(at => { at.truth = null; });            // truth stays in the engine
   h.wind = null; h.img = null; h.frontRec = null;
@@ -1058,10 +1083,12 @@ function centerOn(col) {
   const v = S.view, vis = scanW() / v.zx;
   if (col < v.c0 + vis * 0.1 || col > v.c0 + vis * 0.9) { v.c0 = col - vis / 2; clampView(); }
 }
+// While running, show the entire scan so far: it streams in at 1:1, then compresses to keep the whole race in view.
+// (An auto-crop model will pick the region later.)
 function follow(h) {
   const v = S.view;
-  v.zx = 0.9; v.zy = scanH() / rowsOf(h); v.r0 = 0;
-  v.c0 = Math.max(0, h.liveCol - (scanW() * 0.85) / v.zx);
+  v.zy = scanH() / rowsOf(h); v.r0 = 0; v.c0 = 0;
+  v.zx = Math.min(1, scanW() / Math.max(1, h.liveCol + 1));
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)
 const unflipX = x => (S.flip ? scanW() - x : x);
@@ -1188,8 +1215,12 @@ function drawBackup() {
   g.filter = 'grayscale(1) contrast(1.1)';
   if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
     // the backup camera's own image, clipped to the same race time as the primary's live edge
-    const bm = h.asset.backupMeta, bLast = Math.min(h.backupImg.naturalWidth, Math.round((colTime(h, last) - bm.first_column_race_time_s) / bm.column_period_s));
-    if (bLast > 0) g.drawImage(h.backupImg, 0, 0, bLast, h.backupImg.naturalHeight, 0, 0, bLast * (W / h.backupImg.naturalWidth), Hh);
+    // on the same whole-race time axis as the primary: the empty scene from the gun, then the backup camera's frames
+    const bm = h.asset.backupMeta, im = h.backupImg, sx = bm.column_period_s / P * zx;
+    const x0 = (bm.first_column_race_time_s - h.tOpen) / P * zx, liveX = (last + 1) * zx;
+    const bLast = Math.min(im.naturalWidth, Math.round((colTime(h, last) - bm.first_column_race_time_s) / bm.column_period_s));
+    g.drawImage(im, 0, 0, 1, im.naturalHeight, 0, 0, Math.min(x0, liveX), Hh);
+    if (bLast > 0) g.drawImage(im, 0, 0, bLast, im.naturalHeight, x0, 0, bLast * sx, Hh);
   } else g.drawImage(h.img, 0, 0, last + 1, rowsOf(h), 0, 0, (last + 1) * zx, Hh);
   g.restore();
   if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bx((S.selCol + 0.5) * zx)), 0, 1, Hh); }
@@ -1301,13 +1332,13 @@ scanCv.addEventListener('wheel', e => {
 // Hover scrubs the heat's front-camera recording to the frame at that column.
 scanCv.addEventListener('mousemove', e => {
   if (S.drag && S.drag.moved) return;
-  const h = cur();
-  if (h.state !== 'review' && h.state !== 'saved') return;
+  const h = cur(), live = h.state === 'running';
+  if (!(h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0))) return;
   const r = scanCv.getBoundingClientRect();
-  const col = Math.max(0, Math.min(h.nCols - 1, colOf(e.clientX - r.left)));
-  if (col !== S.hoverCol) { S.hoverCol = col; invalidate(); }
+  const col = Math.max(0, Math.min(live ? h.liveCol : h.nCols - 1, colOf(e.clientX - r.left)));
+  if (col !== S.hoverCol) { S.hoverCol = col; invalidate(); updateTs(); }
 });
-scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); } });
+scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
 scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const r = scanCv.getBoundingClientRect();
