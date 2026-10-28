@@ -10,6 +10,7 @@ export { watchMeetFolder, diffHeat, MEET_FILES } from './meetlink/watch.js';
 export { validateMessage, columnBytes, chunkColumnTime, MSG_TYPES } from './capture/protocol.js';
 export { openCaptureStore } from './capture/store.js';
 export { decodePng } from './sim/png.js';
+export { encodePng } from './sim/png-encode.js';
 export { simReplay, loadSimTruth, columnsOf, SIM_START_HW_TIME, SIM_CHUNK_COLUMNS } from './sim/replay.js';
 export {
   reduce, apply, places, missingResults, lifInput, HeatError,

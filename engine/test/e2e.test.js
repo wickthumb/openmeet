@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as engine from '../index.js';
-import { encodePng, testImage } from '../testing/png-encode.js';
+import { encodePng, testImage } from '../sim/png-encode.js';
 
 test('public API exports', () => {
   for (const name of ['parseEvt', 'parsePpl', 'parseSch', 'buildLif', 'writeLifAtomic', 'lifName', 'watchMeetFolder', 'diffHeat',

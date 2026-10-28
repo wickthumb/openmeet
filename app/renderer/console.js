@@ -215,6 +215,9 @@ function lifText(h) {
 const laneTop = j => 168 + 302 * Math.pow(j / 8, 0.92);            // lane boundary rows (perspective: far lanes thinner)
 const laneFeet = k => (laneTop(k - 1) + laneTop(k)) / 2;
 const laneHt = k => 95 + (k - 1) * 7.5;                             // runner height in rows
+const rowsOf = h => h.rows || IMG_H;
+// Lane geometry at the finish plane, in image rows: from the camera calibration when the source has it.
+const laneBands = h => h.laneRows || ALL8.map(k => ({ lane: k, top: laneTop(k - 1), bottom: laneTop(k) }));
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16);
   let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
@@ -276,7 +279,29 @@ function renderStrip(h) {
   [...h.athletes].sort((a, b) => a.lane - b.lane).forEach(a => { if (a.truth != null) drawRunner(g, h, a); });
   h.img = c; h.imgSrc = S.source;
 }
-function ensureStrip(h) { if (!h.img || (h.imgSrc !== S.source && (h.state === 'loaded' || h.state === 'armed'))) renderStrip(h); }
+function ensureStrip(h) {
+  if (h.asset) { if (!h.img) blankStrip(h); return; }
+  if (!h.img || (h.imgSrc !== S.source && (h.state === 'loaded' || h.state === 'armed'))) renderStrip(h);
+}
+// A heat whose camera is the engine's: the strip starts black and fills as the engine's columns arrive.
+function blankStrip(h) {
+  const c = document.createElement('canvas');
+  c.width = h.nCols; c.height = rowsOf(h);
+  const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+  h.img = c; h.imgSrc = 'engine'; h.recvCols = 0;
+}
+// Column-major camera bytes (count x rows x channels) into the strip at column `first`.
+function ingestColumns(h, first, count, data, channels) {
+  const rows = rowsOf(h), g = h.img.getContext('2d'), im = g.createImageData(count, rows), px = im.data;
+  for (let c = 0; c < count; c++) {
+    for (let r = 0; r < rows; r++) {
+      const s = (c * rows + r) * channels, d = (r * count + c) * 4;
+      px[d] = data[s]; px[d + 1] = data[s + (channels > 1 ? 1 : 0)]; px[d + 2] = data[s + (channels > 1 ? 2 : 0)]; px[d + 3] = 255;
+    }
+  }
+  g.putImageData(im, first, 0);
+  h.recvCols = Math.max(h.recvCols || 0, first + count);
+}
 
 // ---------------------------------------------------------------- simulated auto-timing service
 function makeProposals(h) {
@@ -295,17 +320,31 @@ function makeProposals(h) {
   return props;
 }
 const snap = h => JSON.stringify({ marks: h.marks, status: h.status });
+function applyProposals(h, props, meta = {}) {
+  const untouched = h.base === snap(h);
+  h.proposals = props; h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;
+  h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
+  h.proposals.forEach(p => { if (p.decision === 'auto' && !h.marks[p.lane] && !h.status[p.lane]) h.marks[p.lane] = { col: p.col, src: 'auto' }; });
+  if (untouched && !h.saves) h.base = snap(h);                 // machine output on a fresh capture is part of "as captured"
+  renderUI();
+}
 function requestProposals(h) {
   if (!S.apiOnline) { h.req = 'offline'; renderUI(); return; }
   h.req = 'pending'; h.reqStart = performance.now(); renderUI();
+  if (h.asset && OM && h.captureId) {
+    // Engine-fed heat: the engine reads the strip from the capture store and calls the finish service.
+    OM.call('autotiming.predict', {
+      captureId: h.captureId,
+      heat: { event: h.ev, round: h.rd, heat: h.ht },
+      startList: h.athletes.filter(a => !['DNS', 'SC'].includes(h.status[a.lane])).map(a => ({ lane: a.lane, id: String(a.id) })),
+      laneRows: h.laneRows ? h.laneRows.map(b => ({ lane: b.lane, top_row: Math.round(b.top), bottom_row: Math.round(b.bottom) })) : null,
+    }).then(res => applyProposals(h, res.predictions.map(p => ({ lane: p.lane, col: p.column, decision: p.decision, reason: p.reason || '', conf: p.confidence ?? 0 })).sort((a, b) => a.col - b.col), res))
+      .catch(err => { h.req = 'error'; h.reqErr = err.message; renderUI(); });
+    return;
+  }
   setTimeout(() => {
     if (!S.apiOnline) { h.req = 'offline'; renderUI(); return; }
-    const untouched = h.base === snap(h);
-    h.proposals = makeProposals(h);
-    h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
-    h.proposals.forEach(p => { if (p.decision === 'auto' && !h.marks[p.lane] && !h.status[p.lane]) h.marks[p.lane] = { col: p.col, src: 'auto' }; });
-    if (untouched && !h.saves) h.base = snap(h);                 // machine output on a fresh capture is part of "as captured"
-    renderUI();
+    applyProposals(h, makeProposals(h), { model: 'sim-0', stub: true });
   }, Math.max(250, 900 / SPEED));
 }
 
@@ -325,12 +364,23 @@ function fire() {
   const h = cur();
   if (h.state !== 'armed') return;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
-  S.view.user = false; S.selCol = null; renderUI();
+  S.view.user = false; S.selCol = null;
+  if (h.asset && OM) {
+    blankStrip(h); h.captureId = null; S.pendingCapture = h;
+    OM.call('capture.start', {
+      key: `${h.ev}-${h.rd}-${h.ht}`, png: h.asset.primary, sidecar: h.asset.primaryMeta, speed: SPEED, meetDir: S.meet && S.meet.dir,
+      front: h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta } : null,
+    })
+      .then(r => { h.captureId = r.id; h.captureDir = r.dir; if (r.front) h.frontRec = r.front; })
+      .catch(err => { S.pendingCapture = null; h.state = 'armed'; toast('The camera did not start: ' + err.message, true); renderUI(); });
+  }
+  renderUI();
 }
 function recall() {
   const h = cur();
   if (h.state !== 'running') return;
   h.state = 'armed'; h.liveCol = -1; h.startTOD = null; h.tNow = 0;
+  if (h.asset && OM) { OM.call('capture.stop').catch(() => {}); h.captureId = null; S.pendingCapture = null; blankStrip(h); }
   toast('Recall: false start. Heat re-armed. Set FS on the athlete from their row.');
   renderUI();
 }
@@ -420,6 +470,7 @@ function warnings(h) {
   if (h.state === 'loaded') return [{ k: 'info', t: 'Heat loaded from lynx.evt. Arm when the starter is ready.' }];
   if (h.state === 'armed') return [{ k: 'info', t: 'Armed. Waiting for the start signal.' }];
   if (h.req === 'offline') w.push({ k: 'warn', t: 'Auto-timing is offline. Mark finishes by hand; capture is unaffected.' });
+  if (h.req === 'error') w.push({ k: 'warn', t: `Auto-timing failed (${h.reqErr}). Mark finishes by hand, or press Auto-mark to retry.` });
   if (h.req === 'pending') w.push({ k: 'info', t: 'Auto-timing is reading the capture.' });
   if (h.req === 'idle' && !h.proposals && h.state === 'review') w.push({ k: 'info', t: 'Capture closed. Mark finishes, or press Auto-mark.' });
   const rev = (h.proposals || []).filter(p => p.decision === 'review' && !h.marks[p.lane] && !h.status[p.lane]);
@@ -590,10 +641,11 @@ function renderProps() {
   const h = cur();
   $('#apiState').innerHTML = !S.apiOnline ? '<span class="dot warn"></span>offline' :
     h.req === 'pending' ? '<span class="dot warn"></span>reading' :
-    h.req === 'done' ? `<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
+    h.req === 'error' ? '<span class="dot warn"></span>failed' :
+    h.req === 'done' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
   const box = $('#props');
-  if (h.req === 'offline') {
-    box.innerHTML = '<div class="empty">The auto-timing service could not be reached. Every lane can still be marked by hand.</div>';
+  if (h.req === 'offline' || h.req === 'error') {
+    box.innerHTML = `<div class="empty">${h.req === 'error' ? 'Auto-timing failed: ' + esc(h.reqErr || '') + '.' : 'The auto-timing service could not be reached.'} Every lane can still be marked by hand.</div>`;
     return;
   }
   if (!h.proposals) {
@@ -786,7 +838,8 @@ function renderDrawer() {
     const folderCard = !OM ? null : `
       <div class="card"><h3>Meet folder</h3>
         ${S.meet ? `<p class="num">${esc(S.meet.dir)}</p>` : '<p>No meet folder is open, so the built-in sample meet is loaded. Point this at the folder your meet manager (RunMeet through AthleticLOCAL, Hy-Tek, ...) writes lynx.evt to.</p>'}
-        <p><button class="btn sm primary" id="openMeet">Open meet folder…</button> ${S.meet ? '<button class="btn sm" id="closeMeet">Use the sample meet</button>' : ''}</p>
+        <p><button class="btn sm primary" id="openMeet">Open meet folder…</button> <button class="btn sm" id="openDemo">Open demo meet…</button> ${S.meet ? '<button class="btn sm" id="closeMeet">Use the sample meet</button>' : ''}</p>
+        ${S.meet && S.meet.demo ? `<p class="dimtext">Cameras: rendered by the TTP simulator from <span class="num">${esc(S.meet.demo)}</span></p>` : ''}
         ${S.meet ? `<table class="tbl"><tr><th>Input (meet manager writes)</th><th>Size</th><th>Modified</th><th>State</th></tr>${['lynx.evt', 'lynx.ppl', 'lynx.sch'].map(fileRow).join('')}</table>
         <p>${HEATS.length} laned heats, ${entries} entries. Results are written to this same folder.</p>
         <pre class="file">${esc((S.meet.files['lynx.evt'] || {}).text || '')}</pre>` : ''}
@@ -804,6 +857,7 @@ function renderDrawer() {
     if (OM) {
       $('#openMeet').onclick = async () => { const dir = await OM.pickFolder('Open meet folder'); if (dir) openMeet(dir); };
       if ($('#closeMeet')) $('#closeMeet').onclick = closeMeet;
+      $('#openDemo').onclick = async () => { const dir = await OM.pickFolder('Open demo meet (rendered heats)'); if (dir) openDemo(dir); };
     }
   } else if (S.tab === 'api') {
     body.innerHTML = `
@@ -913,7 +967,9 @@ function applyMeet(parsed, fresh) {
     const h = HEATS[i];
     if (JSON.stringify(h.entries) === JSON.stringify(spec.entries)) return;
     if (h.state === 'loaded' || h.state === 'armed') {
-      const nh = buildHeat(spec); nh.state = h.state; ensureStrip(nh); HEATS[i] = nh;
+      const nh = buildHeat(spec); nh.state = h.state;
+      if (h.asset) attachAsset(nh, h.asset);
+      ensureStrip(nh); HEATS[i] = nh;
       notes.push(`${spec.name} heat ${e.heat} re-seeded`);
     } else notes.push(`${spec.name} heat ${e.heat} changed after it ran: check it against the meet manager`);
   });
@@ -930,9 +986,34 @@ async function openMeet(dir) {
     toast(`Opened ${dir}: ${HEATS.length} heats.`);
   } catch (err) { toast('Could not open the meet folder: ' + err.message, true); }
 }
+// A rendered demo meet (TTP simulator): meet/lynx.* plus, per heat, the primary line-scan, backup line-scan and front-camera recording.
+function attachAsset(h, a) {
+  if (!a || !a.primary || !a.primaryMeta || !a.primarySize) return h;
+  const m = a.primaryMeta;
+  h.asset = a; h.rows = m.rows || a.primarySize.height; h.nCols = a.primarySize.width;
+  h.tOpen = m.first_column_race_time_s; h.tClose = h.tOpen + h.nCols * P;
+  h.laneRows = Array.isArray(m.lane_rows) && m.lane_rows.length ? m.lane_rows.map(x => ({ lane: x.lane, top: x.top_row, bottom: x.bottom_row })) : null;
+  h.athletes.forEach(at => { at.truth = null; });            // truth stays in the engine
+  h.wind = null; h.img = null; h.frontRec = null;
+  if (a.backup && a.backupMeta) { const im = new Image(); im.onload = invalidate; im.src = OM.fileUrl(a.backup); h.backupImg = im; }
+  return h;
+}
+async function openDemo(dir) {
+  try {
+    const r = await OM.call('assets.open', { dir });
+    if (!r.meet || !r.meet.files['lynx.evt']) { toast(`No meet/lynx.evt in ${dir}.`, true); return; }
+    await openMeet(r.meet.dir);
+    if (!S.meet) return;
+    HEATS.forEach((h, i) => attachAsset(h, r.heats[i]));
+    S.meet.demo = dir;
+    const h = cur(); h.img = null; ensureStrip(h); fitView(); renderUI();
+    OM.call('settings.set', { patch: { demoDir: dir } }).catch(() => {});
+    toast(`Demo meet: ${r.heats.length} simulated heats with primary, backup and front cameras.`);
+  } catch (err) { toast('Could not open the demo meet: ' + err.message, true); }
+}
 function closeMeet() {
   S.meet = null; HEATS = SPECS.map(buildHeat); S.idx = 0; S.files = [];
-  OM.call('settings.set', { patch: { meetDir: null } }).catch(() => {});
+  OM.call('settings.set', { patch: { meetDir: null, demoDir: null } }).catch(() => {});
   const h = cur(); ensureStrip(h); if (S.autoArm) h.state = 'armed';
   fitView(); renderUI();
 }
@@ -954,12 +1035,12 @@ const scanCv = $('#scan');
 const scanW = () => scanCv.clientWidth, scanH = () => scanCv.clientHeight - RULER;
 function fitView() {
   const h = cur(), v = S.view;
-  v.zx = scanW() / h.nCols; v.c0 = 0; v.zy = scanH() / IMG_H; v.r0 = 0; v.zoomed = false;
+  v.zx = scanW() / h.nCols; v.c0 = 0; v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
 }
 function clampView() {
   const h = cur(), v = S.view, vis = scanW() / v.zx;
   v.c0 = Math.max(-vis * 0.05, Math.min(h.nCols - vis * 0.95, v.c0));
-  v.r0 = Math.max(0, Math.min(IMG_H - scanH() / v.zy, v.r0));
+  v.r0 = Math.max(0, Math.min(rowsOf(h) - scanH() / v.zy, v.r0));
 }
 function centerOn(col) {
   const v = S.view, vis = scanW() / v.zx;
@@ -967,7 +1048,7 @@ function centerOn(col) {
 }
 function follow(h) {
   const v = S.view;
-  v.zx = 0.9; v.zy = scanH() / IMG_H; v.r0 = 0;
+  v.zx = 0.9; v.zy = scanH() / rowsOf(h); v.r0 = 0;
   v.c0 = Math.max(0, h.liveCol - (scanW() * 0.85) / v.zx);
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)
@@ -1002,20 +1083,21 @@ function drawScan() {
 
   // lane overlay: boundary lines at the finish plane, from the camera's lane geometry
   const yRow = row => (row - v.r0) * v.zy;
+  const bands = laneBands(h);
   if (S.lanes) {
     g.strokeStyle = 'rgba(107,165,231,0.75)'; g.lineWidth = 1;
-    for (let j = 0; j <= 8; j++) {
-      const y = Math.round(yRow(laneTop(j))) + 0.5;
-      if (y < 0 || y > Hi) continue;
+    [...new Set(bands.flatMap(b => [Math.round(b.top), Math.round(b.bottom)]))].forEach(row => {
+      const y = Math.round(yRow(row)) + 0.5;
+      if (y < 0 || y > Hi) return;
       g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
-    }
+    });
   }
   g.font = '700 10px ' + TK.mono;
-  ALL8.forEach(k => {
-    const y = yRow(S.lanes ? (laneTop(k - 1) + laneTop(k)) / 2 + 5 : laneFeet(k) - 4);
+  bands.forEach(b => {
+    const y = yRow((b.top + b.bottom) / 2 + (S.lanes ? 5 : -4));
     if (y < 8 || y > Hi - 2) return;
     g.fillStyle = 'rgba(8,16,34,0.72)'; g.fillRect(0, y - 11, 18, 13);
-    g.fillStyle = '#f7f8fa'; g.fillText(String(k), 6, y - 1);
+    g.fillStyle = '#f7f8fa'; g.fillText(String(b.lane), 6, y - 1);
   });
 
   // proposals not yet resolved (dashed), then marks (solid)
@@ -1037,6 +1119,11 @@ function drawScan() {
     g.fillStyle = TK['on-accent']; g.textAlign = 'center'; g.fillText(String(t.lane), x, ty + 10); g.textAlign = 'left';
   });
 
+  if (S.hoverCol != null && S.hoverCol !== S.selCol && !(S.drag && S.drag.moved)) {
+    g.strokeStyle = 'rgba(247,248,250,0.45)'; g.lineWidth = 1; g.setLineDash([3, 3]);
+    const x = Math.round(xOf(S.hoverCol)) + 0.5;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, Hi); g.stroke(); g.setLineDash([]);
+  }
   if (S.selCol != null) {
     const x = xOf(S.selCol);
     g.fillStyle = TK.finish; g.fillRect(Math.round(x), 0, 1, Hi);
@@ -1085,7 +1172,11 @@ function drawBackup() {
   g.save();
   if (S.flip) { g.translate(W, 0); g.scale(-1, 1); }
   g.filter = 'grayscale(1) contrast(1.1)';
-  g.drawImage(h.img, 0, 0, last + 1, IMG_H, 0, 0, (last + 1) * zx, Hh);
+  if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
+    // the backup camera's own image, clipped to the same race time as the primary's live edge
+    const bm = h.asset.backupMeta, bLast = Math.min(h.backupImg.naturalWidth, Math.round((colTime(h, last) - bm.first_column_race_time_s) / bm.column_period_s));
+    if (bLast > 0) g.drawImage(h.backupImg, 0, 0, bLast, h.backupImg.naturalHeight, 0, 0, bLast * (W / h.backupImg.naturalWidth), Hh);
+  } else g.drawImage(h.img, 0, 0, last + 1, rowsOf(h), 0, 0, (last + 1) * zx, Hh);
   g.restore();
   if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bx((S.selCol + 0.5) * zx)), 0, 1, Hh); }
   const v = S.view, vw = Math.min(W, (scanW() / v.zx) * zx), vx = Math.max(0, v.c0 * zx);
@@ -1093,10 +1184,54 @@ function drawBackup() {
   g.strokeRect((S.flip ? W - vx - vw : vx) + 0.5, 0.5, vw - 1, Hh - 1);
 }
 
+// What moment the front camera shows: live while running; afterwards the hovered column, else the selected one.
+function frontTime(h) {
+  if (h.state === 'running') return h.tNow;
+  if (h.state !== 'review' && h.state !== 'saved') return null;
+  const col = S.hoverCol != null ? S.hoverCol : S.selCol;
+  return col == null ? null : colTime(h, col);
+}
+let vidEl = null, vidTag = null;
+function frontVideo() {
+  if (!vidEl) {
+    const pb = $('#front').parentNode;
+    vidEl = h_('video', 'frontvid'); vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';
+    vidEl.onloadedmetadata = invalidate;
+    vidTag = h_('div', 'frametag');
+    pb.append(vidEl, vidTag);
+  }
+  return vidEl;
+}
+// The front camera is a recording attached to the heat: frame-exact at 30 fps, scrubbed by hovering the line-scan.
+function syncFront(h) {
+  const rec = h.frontRec || (h.asset && h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta } : null);
+  const v = frontVideo(), on = !!(OM && rec);
+  v.style.display = on ? 'block' : 'none'; vidTag.style.display = 'none';
+  if (!on) { if (!v.paused) v.pause(); return false; }
+  const url = OM.fileUrl(rec.path);
+  if (v.dataset.src !== url) { v.dataset.src = url; v.src = url; }
+  const fps = (rec.meta && rec.meta.fps) || 30, ff = (rec.meta && rec.meta.first_frame_race_time_s) || 0;
+  if (h.state === 'running') {
+    const want = h.tNow - ff;
+    if (want < 0) { if (!v.paused) v.pause(); return true; }
+    v.playbackRate = SPEED;
+    if (v.paused) { v.currentTime = want; v.play().catch(() => {}); } else if (Math.abs(v.currentTime - want) > 0.25) v.currentTime = want;
+    return true;
+  }
+  if (!v.paused) v.pause();
+  const ft = frontTime(h), t = ft != null ? ft : h.state === 'review' || h.state === 'saved' ? h.tClose : ff;
+  const maxN = v.duration ? Math.floor(v.duration * fps) - 1 : Infinity;
+  const frame = Math.max(0, Math.min(maxN, Math.floor((t - ff) * fps)));
+  const target = (frame + 0.5) / fps;
+  if (v.readyState >= 1 && Math.abs(v.currentTime - target) > 0.5 / fps) v.currentTime = target;
+  if (ft != null) { vidTag.style.display = 'block'; vidTag.textContent = `${fmtT(ff + frame / fps)} s · frame ${frame + 1}`; }
+  return true;
+}
 function drawFront() {
   const cv = $('#front');
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hf] = fitCanvas(cv), h = cur();
+  if (syncFront(h)) { g.clearRect(0, 0, W, Hf); return; }
   const hy = Hf * 0.17, cx = W / 2;
   const grd = g.createLinearGradient(0, 0, 0, hy);
   grd.addColorStop(0, '#1b2740'); grd.addColorStop(1, '#2b3a55');
@@ -1112,9 +1247,9 @@ function drawFront() {
   const yFin = yAt(6);
   g.strokeStyle = '#ffffff'; g.lineWidth = 2;
   g.beginPath(); g.moveTo(cx - 4 * sp(yFin), yFin); g.lineTo(cx + 4 * sp(yFin), yFin); g.stroke();
-  const t = h.state === 'running' ? h.tNow : 0;
+  const ft = frontTime(h), t = ft == null ? 0 : ft;
   const banner = txt => { g.fillStyle = 'rgba(8,16,34,0.55)'; g.fillRect(0, 0, W, 22); g.fillStyle = '#d8dee9'; g.font = '11px ' + TK.sans; g.fillText(txt, 8, 15); };
-  if (h.state === 'review' || h.state === 'saved') { banner('Heat finished'); return; }
+  if ((h.state === 'review' || h.state === 'saved') && ft == null) { banner('Hover the line-scan to see this camera at that moment'); return; }
   const rs = h.athletes.filter(a => !a.pre).map(a => {
     let d;
     if (t <= 0.16) d = 0;
@@ -1130,7 +1265,8 @@ function drawFront() {
     g.fillStyle = '#f1f1ec'; g.fillRect(x - bw * 0.3, y - ph * 0.72, bw * 0.6, ph * 0.12);
     g.fillStyle = a.skin; g.beginPath(); g.arc(x, y - ph * 0.9, Math.max(1, ph * 0.08), 0, Math.PI * 2); g.fill();
   });
-  if (h.state !== 'running') banner(h.state === 'armed' ? 'In the blocks' : 'Waiting for the heat');
+  if (h.state === 'loaded' || h.state === 'armed') banner(h.state === 'armed' ? 'In the blocks' : 'Waiting for the heat');
+  else if (ft != null && h.state !== 'running') banner(`${fmtT(t)} s`);
 }
 
 // ---------------------------------------------------------------- line-scan input
@@ -1148,6 +1284,16 @@ scanCv.addEventListener('wheel', e => {
   }
   v.user = true; clampView(); renderTools(); invalidate();
 }, { passive: false });
+// Hover scrubs the heat's front-camera recording to the frame at that column.
+scanCv.addEventListener('mousemove', e => {
+  if (S.drag && S.drag.moved) return;
+  const h = cur();
+  if (h.state !== 'review' && h.state !== 'saved') return;
+  const r = scanCv.getBoundingClientRect();
+  const col = Math.max(0, Math.min(h.nCols - 1, colOf(e.clientX - r.left)));
+  if (col !== S.hoverCol) { S.hoverCol = col; invalidate(); }
+});
+scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); } });
 scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const r = scanCv.getBoundingClientRect();
@@ -1235,10 +1381,10 @@ function frame(now) {
   const h = cur();
   if (h.state === 'running') {
     h.tNow = (now - h.startPerf) / 1000 * SPEED;
-    const lc = Math.min(h.nCols - 1, Math.floor((h.tNow - h.tOpen) / P));
+    const lc = h.asset ? (h.recvCols || 0) - 1 : Math.min(h.nCols - 1, Math.floor((h.tNow - h.tOpen) / P));
     if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(h); }
     if (now - lastLiveRender > 250) { lastLiveRender = now; renderAcc(); renderSide(); renderTools(); }
-    if (h.tNow >= h.tClose) { endCapture(h); renderUI(); }
+    if (!h.asset && h.tNow >= h.tClose) { endCapture(h); renderUI(); }   // engine-fed heats close on the camera's end message
     tickClock();
   }
   const sec = Math.floor(Date.now() / 1000);
@@ -1261,6 +1407,18 @@ if (OM) {
     applyMeet({ events: snap.events, people: snap.people || [], schedule: snap.schedule || [] }, false);
   });
   OM.on('engine.exit', () => toast('The engine process restarted. Capture and files are handled by the engine; re-open the meet folder if needed.', true));
-  OM.call('settings.get').then(s => { if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});
+  // The engine's camera: columns land in the capture store first, then arrive here to draw.
+  const capHeat = id => HEATS.find(x => x.captureId === id) || (S.pendingCapture && !S.pendingCapture.captureId ? S.pendingCapture : null);
+  OM.on('capture.hello', d => { const h = capHeat(d.id); if (h) { h.captureId = d.id; S.pendingCapture = null; } });
+  OM.on('capture.pulse', d => { const h = capHeat(d.id); if (h && h.state === 'running') h.startPerf = performance.now(); });
+  OM.on('capture.columns', d => {
+    const h = capHeat(d.id);
+    if (!h || h.state !== 'running' || !h.img) return;
+    ingestColumns(h, d.first, d.count, d.data, d.data.length / (d.count * rowsOf(h)));
+    invalidate();
+  });
+  OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
+  OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
+  OM.call('settings.get').then(s => { if (s.demoDir) openDemo(s.demoDir); else if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});
 }
 })();

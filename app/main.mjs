@@ -1,8 +1,12 @@
 // OpenMeet main process: one window (the console) and one utility process (the engine).
 // The engine owns files and timing; a renderer crash or reload never touches it.
-import { app, BrowserWindow, ipcMain, dialog, protocol, net, utilityProcess } from 'electron';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { app, BrowserWindow, ipcMain, dialog, protocol, utilityProcess } from 'electron';
+import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
+import fs from 'node:fs';
 import path from 'node:path';
+
+const MIME = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json' };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
@@ -71,11 +75,26 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  protocol.handle('omfile', req => {
+  // omfile:// serves files under opened folders, with byte ranges so recordings seek frame-exact.
+  protocol.handle('omfile', async req => {
     const abs = path.resolve(decodeURIComponent(new URL(req.url).pathname.slice(1)));
     const ok = [...roots].some(r => abs === r || abs.startsWith(r + path.sep));
     if (!ok) return new Response('forbidden', { status: 403 });
-    return net.fetch(pathToFileURL(abs).toString());
+    let st;
+    try { st = await fs.promises.stat(abs); } catch { return new Response('not found', { status: 404 }); }
+    const type = MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream';
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get('range') || '');
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? +m[1] : Math.max(0, st.size - +m[2]);
+      let end = m[1] && m[2] ? +m[2] : st.size - 1;
+      end = Math.min(end, st.size - 1);
+      if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${st.size}` } });
+      return new Response(Readable.toWeb(fs.createReadStream(abs, { start, end })), {
+        status: 206,
+        headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Accept-Ranges': 'bytes' },
+      });
+    }
+    return new Response(Readable.toWeb(fs.createReadStream(abs)), { headers: { 'Content-Type': type, 'Content-Length': String(st.size), 'Accept-Ranges': 'bytes' } });
   });
   ipcMain.handle('om:call', (_e, method, params) => callEngine(method, params));
   ipcMain.handle('om:pickFolder', async (_e, title) => {
