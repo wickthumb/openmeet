@@ -302,6 +302,11 @@ Object.assign(methods, {
     await ensureScoreboardLibrary();
     return core.createTemplate(scoreboardRoot, name, { from });
   },
+  async 'scoreboard.delete'({ name }) {
+    await ensureScoreboardLibrary();
+    await core.deleteTemplate(scoreboardRoot, name);
+    return core.listTemplates(scoreboardRoot);
+  },
   async 'scoreboard.addAsset'({ name, path: source }) {
     await ensureScoreboardLibrary();
     return core.addAsset(scoreboardRoot, name, source);

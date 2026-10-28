@@ -36,6 +36,7 @@ const ICON = {
   auto: svg('<circle cx="6" cy="6" r="2.2"/><path d="M6 1v2M6 9v2M1 6h2M9 6h2"/>'),
   clear: svg('<path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/>'),
   revert: svg('<path d="M2.8 5A3.8 3.8 0 1 1 2.6 7.6"/><path d="M2 1.8V5h3.2"/>'),
+  trash: svg('<path d="M2 3.2h8M4.8 3.2V2h2.4v1.2M3 3.2l.6 7h4.8l.6-7"/>'),
 };
 
 function rng(seed) {
@@ -1011,7 +1012,23 @@ function renderBoard(body) {
     row.innerHTML = `<span class="num">${esc(name)}</span>`;
     const open = h_('button', 'btn sm', 'Open window');
     open.onclick = e => { e.stopPropagation(); OM.openBoard(boardUrl(name), 'OpenMeet Scoreboard: ' + name); };
-    row.append(open);
+    // delete asks twice: it removes the board's folder, including its undo history
+    const del = h_('button', 'btn sm ' + (B.confirmDel === name ? 'warn' : 'bdel'));
+    del.innerHTML = B.confirmDel === name ? 'Delete?' : ICON.trash;
+    del.title = 'Delete this board';
+    del.onclick = async e => {
+      e.stopPropagation();
+      if (B.confirmDel !== name) { B.confirmDel = name; renderDrawer(); setTimeout(() => { if (B.confirmDel === name) { B.confirmDel = null; renderDrawer(); } }, 4000); return; }
+      B.confirmDel = null;
+      try {
+        B.list = await OM.call('scoreboard.delete', { name });
+        if (B.sel === name) { B.sel = (B.list[0] && (B.list[0].name || B.list[0])) || 'classic'; reloadPreview(); }
+        toast(`Deleted the board "${name}".`);
+      } catch (err) { toast('Could not delete the board: ' + err.message, true); }
+      renderDrawer();
+    };
+    const btns = h_('span', 'bbtns'); btns.append(open, del);
+    row.append(btns);
     row.onclick = () => { B.sel = name; reloadPreview(); renderDrawer(); };
     list.append(row);
   });
