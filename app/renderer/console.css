@@ -289,6 +289,15 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .heat-nav { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px; }
 .heat-nav button { min-width:32px; }
 .heat-nav button .i { margin:0; }
+.race-actions { display:flex;gap:7px;align-items:stretch;min-width:0; }
+.race-actions > :first-child { flex:1;min-width:0;white-space:normal; }
+.race-actions .race-reset { flex:none;padding:4px 7px;font-size:11px; }
+.race-reset-dialog { width:min(440px,calc(100vw - 32px));padding:22px;background:var(--panel);color:var(--paper);border:1px solid var(--rule);border-radius:4px;box-shadow:0 16px 64px #0008; }
+.race-reset-dialog::backdrop { background:#030711b8; }
+.race-reset-dialog h2 { margin:0 0 12px;font-size:18px; }
+.race-reset-dialog p { color:var(--muted);line-height:1.55; }
+.race-reset-actions { display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:22px; }
+.race-reset-dialog button:focus-visible { outline:2px solid var(--blue);outline-offset:3px; }
 .capture-options { color:var(--muted);font-size:11px; }
 .capture-options summary { cursor:pointer;padding:5px 0; }
 .capture-options summary span { float:right;color:var(--dim); }
@@ -321,3 +330,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .roster-order button { border:0;background:none;color:var(--dim);padding:2px 6px;font:inherit;border-radius:2px;cursor:pointer; }
 .roster-order button[aria-pressed=true] { color:var(--paper);background:var(--panel2); }
 .roster-order button:focus-visible { outline:1px solid var(--blue); }
+
+.setup-modes { display:flex;gap:6px; }
+.setup-modes button { flex:1; }
+.setup-help { padding:0 14px;color:var(--muted);font-size:12px;line-height:1.55; }
+.setup-summary h3 { margin-top:0; }

@@ -6,6 +6,8 @@ This walkthrough uses the current desktop prototype. Camera inputs are simulated
 
 Open **Meet Link** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied simulator demo meet. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
 
+Choose **Camera setup** to preview the simulated camera before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race**. Setup does not start a race, record start triggers or write a race capture.
+
 ## 2. Capture without losing control
 
 Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
@@ -30,7 +32,7 @@ Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, c
 
 The **Starts** tab retains meet-wide start triggers and assignment history. Record another simulated trigger, then assign the correct trigger to the heat. All elapsed times update while the captured finish columns stay fixed. Re-save to update exported results.
 
-**Capture options → Restart race** preserves the prior attempt and arms a fresh one. Use the Race panel’s attempt selector to inspect earlier attempts during this session. Original capture files and start-trigger history are retained on disk; saved LIF snapshots are also copied into each capture folder.
+The small red **Restart** button beside the main action opens a confirmation dialog before arming a fresh attempt. While recording, **Stop/reset** offers **Stop capture** or **Stop & restart**. Cancel leaves the race running. Use the Race panel’s attempt selector to inspect earlier attempts during this session. Original capture files and start-trigger history are retained on disk; saved LIF snapshots are also copied into each capture folder.
 
 Physical start-sensor integration is still pending; the journal and assignment interface are implemented.
 

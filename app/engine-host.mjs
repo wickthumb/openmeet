@@ -59,24 +59,25 @@ async function pngSize(p) {
 // One camera capture at a time: the simulated camera streams protocol messages into an append-only store,
 // and every chunk is forwarded to the console as it lands. The store, not the console, is the record.
 let active = null;
-async function runCapture(id, store, gen) {
+async function runCapture(id, store, gen, preview=false) {
+  const prefix=preview?'preview':'capture';
   try {
     for await (const msg of gen) {
       if (!active || active.id !== id || active.stop) break;
       store.append(msg);
-      if (msg.type === 'hello') emit('capture.hello', { id, rows: msg.rows, channels: msg.channels, columnPeriod: msg.columnPeriod, model: msg.model });
-      else if (msg.type === 'start_pulse') emit('capture.pulse', { id, hwTime: msg.hwTime });
-      else if (msg.type === 'columns') emit('capture.columns', { id, first: store.columnCount() - msg.count, count: msg.count, period: msg.period, data: msg.data });
+      if (msg.type === 'hello') emit(`${prefix}.hello`, { id, rows: msg.rows, channels: msg.channels, columnPeriod: msg.columnPeriod, model: msg.model });
+      else if (msg.type === 'start_pulse' && !preview) emit('capture.pulse', { id, hwTime: msg.hwTime });
+      else if (msg.type === 'columns') emit(`${prefix}.columns`, { id, first: store.columnCount() - msg.count, count: msg.count, period: msg.period, data: msg.data });
       // Completion is reported only after the capture store has been closed below.
     }
   } catch (err) {
-    if (err.name !== 'AbortError') emit('capture.error', { id, message: err.message || String(err) });
+    if (err.name !== 'AbortError') emit(`${prefix}.error`, { id, message: err.message || String(err) });
   } finally {
     const columns = store.columnCount();
     if (active?.id === id && active.timer) clearTimeout(active.timer);
     try { await store.close(); } catch { /* already closed */ }
     if (active && active.id === id) active = null;
-    emit('capture.end', { id, columns });
+    emit(`${prefix}.end`, { id, columns });
   }
 }
 
@@ -175,32 +176,39 @@ const methods = {
   },
   // Start the simulated camera on a rendered line-scan: {key, png, sidecar, speed, meetDir}.
   // Captures live in <meet folder>/openmeet/captures/, beside the meet manager's files and never mixed into them.
-  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null }) {
+  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null, preview = false }) {
     if (!core) throw new Error('engine core missing from this build');
     if (active) throw new Error('a capture is already running');
+    const replaySidecar=preview?{...(typeof sidecar==='string'?JSON.parse(await fsp.readFile(sidecar,'utf8')):sidecar),first_column_race_time_s:0}:sidecar;
     const id = `${String(key || 'heat').replace(/[^\w-]/g, '_')}-${Date.now()}`;
-    const dir = path.join(meetDir ? path.join(meetDir, 'openmeet', 'captures') : path.join(userData, 'captures'), id);
-    await fsp.mkdir(dir, { recursive: true });
-    if (!meetDir) emit('roots.add', [dir]);
+    const dir = preview ? null : path.join(meetDir ? path.join(meetDir, 'openmeet', 'captures') : path.join(userData, 'captures'), id);
+    if(dir) await fsp.mkdir(dir, { recursive: true });
+    if (!meetDir && dir) emit('roots.add', [dir]);
     // The front camera's recording belongs to the heat, beside its line-scan: <capture>/front.mp4 + front.json (frame timing).
     let frontRec = null;
-    if (front && front.path) {
+    if (front && front.path && !preview) {
       const vp = path.join(dir, 'front' + path.extname(front.path));
       await fsp.copyFile(front.path, vp);
       await fsp.writeFile(path.join(dir, 'front.json'), JSON.stringify({ ...(front.meta || {}), heat: key }, null, 2));
       frontRec = { path: vp, meta: front.meta || null };
     }
-    const store = core.openCaptureStore(dir);
+    let previewColumns=0;
+    const store = preview ? { append(msg){if(msg.type==='columns')previewColumns+=msg.count;},columnCount(){return previewColumns;},async close(){} } : core.openCaptureStore(dir);
     const pulseMs = Date.now();
-    const trigger = meetDir ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
+    const trigger = meetDir && !preview ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
     if (trigger) (await startJournal(meetDir)).assign({ heatKey: key, triggerId: trigger.id, referenceTriggerId: trigger.id });
-    captures.set(id, { dir, sidecar, trigger });
+    if(!preview) captures.set(id, { dir, sidecar, trigger });
     const controller = new AbortController();
-    active = { id, stop: false, controller };
+    active = { id, stop: false, controller, preview };
     if(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) active.timer=setTimeout(()=>{ if(active?.id===id) controller.abort(); },timeoutSeconds/speed*1000);
     // The camera runs from the gun (race time 0), like a real line-scan, not just around the finish.
-    runCapture(id, store, core.simReplay({ png, sidecar, realtime: true, speed, model: 'sim-render', preRollFrom: 0, holdOpen: true, signal: controller.signal }));
+    active.done=runCapture(id, store, core.simReplay({ png, sidecar:replaySidecar, realtime:true, speed, model:preview?'sim-preview':'sim-render', preRollFrom:preview?undefined:0, holdOpen:true, signal:controller.signal }),preview);
     return { id, dir, front: frontRec, trigger };
+  },
+  async 'preview.start'(params) {return methods['capture.start']({...params,key:'camera-setup',preview:true,timeoutSeconds:null});},
+  async 'preview.stop'() {
+    const current=active;if(current?.preview){current.stop=true;current.controller.abort();await current.done;}
+    return {ok:true};
   },
   async 'capture.stop'() { if (active) { active.stop = true; active.controller.abort(); } return { ok: true }; },
   // Ask the finish model about a finished capture: {captureId, heat: {event, round, heat}, startList: [{lane, id}], laneRows?}.
