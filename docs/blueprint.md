@@ -82,6 +82,8 @@ The layouts above were checked against FinishLynx's database-file manual and aga
 
 The timing work and the screen are split, so a UI crash, a browser tab, or a slow laptop can never cost capture data.
 
+The engine is Node in an Electron utility process (decision, Oct 28: see section 7). It is a library with no UI and no Electron imports, so it also runs headless. Real camera drivers that need native speed come later, as Node native add-ons or a small sidecar binary behind the same camera protocol.
+
 ```
 ┌──────────────── OpenMeet Engine (one local process) ────────────────┐
 │ Camera drivers ─▶ Capture store (append-only, per heat)              │
@@ -130,6 +132,15 @@ end
 | **sim-replay** | A real photo-finish image from the web. It is turned to native orientation (time increasing to the right). The time axis comes from its printed scale, or is inferred from the finishers' official times, and it is streamed at that rate. | Official results from the same meet |
 | **sim-render** | A race from the TTP simulator (render-g): configurable lanes, speeds, lean and occlusion | Exact, from the simulator |
 
+**The demo meet uses sim-render.** render-g renders four heats from one set of 3D runners:
+
+- the primary line-scan, with the camera outside lane 8;
+- a backup line-scan from the infield side;
+- a front camera placed past the finish, looking back up the straight;
+- the lane-line rows at the finish plane, which the lane overlay draws.
+
+The backgrounds are synthetic, so no real meet imagery appears in a public video. The meet's `lynx.evt/.ppl/.sch` files come with the renders.
+
 The truth file goes only to an evaluation harness and is never shown in the console. With it we can measure the two numbers that matter, automatically, per heat:
 
 - times delivered correctly (to the hundredth, after round-up), with the right athlete;
@@ -159,8 +170,11 @@ The replica is in `docs/mockup/`.
 └──────────────┴───────────────────────────────────────────────────────────┘
 ```
 
+**Labels.** Labels that only repeat what the screen already shows are removed: the "Selected column" caption, the per-panel SIM and IP tags (they live in Network), the list header row, and duplicate state text.
+
 **Header.**
 
+- System status is quiet: a dot and a word per system, with detail on hover. Only a problem gets colour and words.
 - OpenMeet settings open as a panel over the workspace. They never cover the line-scan or the sidebar, because the operator must not lose the race view mid-heat.
 - **Network** has two separate networks:
   - the closed-loop camera LAN (static IPs; camera and accessory devices);
@@ -172,21 +186,40 @@ The replica is in `docs/mockup/`.
 **Sidebar** (≈330 px):
 
 - current event, round and heat, with its place in the schedule;
-- controls: previous/next heat, arm, save;
+- controls: previous/next heat, arm or disarm, start (simulated start system), save, and an **Auto-arm** switch that arms each heat as soon as it loads, which includes the automatic move to the next heat after a save;
 - one warning slot, for the most important problem;
 - athletes by lane, with bib, name, school and status (pending, time, DNS, DNF, DQ). Statuses are set from the row.
 
-**Workspace** (top half): a running clock and race info, accessory camera streams (a front-facing camera), a backup line-scan, and a list of accessories with their status. Panel arrangement can be made configurable later.
+**Workspace** (top half): a running clock and race info, accessory camera streams (a front-facing camera), a backup line-scan, a list of accessories with their status, and the auto-timing proposals.
+
+The workspace is a **tiling layout, like Hyprland**: a split tree, so panels never overlap.
+
+- Drag a panel's header onto another panel: the centre swaps them, and an edge splits that side.
+- Drag the gaps between panels to resize.
+- Close a panel with its ×, and bring it back from the + control in the corner, which also resets the layout.
+- Double-click a header to maximise that panel.
+- The layout is saved per computer.
 
 **Line-scan** (bottom half, full width minus the sidebar).
 
-- The top bar shows **only the selected column's timestamp** for now. Other options will be added after we discuss them.
+- The top bar shows the selected column's timestamp, with no caption, and the line-scan tools.
+
+| Tool | What it does |
+|---|---|
+| Crop | Drag a box to zoom to it (one use, then it switches off; Shift+drag works any time) |
+| Unzoom | Fit the whole capture (Esc) |
+| Flip | Mirror the image, so the winner is on the left or the right, whichever the operator prefers. The choice is remembered. |
+| Lanes | Overlay lane lines, drawn from the camera's lane geometry |
+| Auto-mark, with an Auto switch | Ask the auto-timing service for proposals now. With Auto on, it runs when each capture closes. |
+| Clear | Remove every mark in the heat. Statuses stay. |
+| Revert | Back to the last saved results, or, before the first save, to the capture as it closed |
 
 | Action | Input |
 |---|---|
 | Scroll | Mouse wheel / trackpad |
 | Zoom in time | Ctrl + wheel |
-| Crop (zoom to box) | Drag a box. Esc fits the image again. |
+| Pan | Drag |
+| Crop (zoom to box) | Shift + drag, or the Crop tool. Esc fits the image again. |
 | Select a column | Click |
 | Nudge the column | ← / → (Shift = 10 columns) |
 | Mark the selected athlete at that column | Enter, or double-click |
@@ -251,13 +284,14 @@ The camera network is a closed loop; the internet comes from a second connection
 | Capture for minutes without dropping a column | Background tabs are throttled; a tab crash loses state | Engine process separate from the UI |
 | Run with no internet | Possible | Yes |
 
-**Recommendation.**
+**Decision (Oct 28): Electron.**
 
-- **OpenMeet Engine** in Rust, one binary per OS.
-- **OpenMeet Console** in TypeScript + React (the TTP web stack). It draws the line-scan with WebGL2 tiles.
-- Both ship together as a **Tauri 2** app with native Windows (.msi), macOS (.dmg) and Linux (AppImage / .deb) installers.
-- The engine also serves the same console to any browser on the camera LAN. That gives a second review station, or a tablet for the clerk, for free. **That** is where a PWA fits: as an extra client, not as the timing core.
-- **Risk:** Tauri uses each OS's own web view; the weakest is WebKitGTK on Linux. Because the engine is separate, the shell can be swapped for Electron without rewriting anything if a renderer problem shows up.
+- Electron ships the same Chromium on Windows, macOS and Linux, so the line-scan renders identically everywhere. Tauri's weakest point, WebKitGTK on Linux, disappears.
+- Node in the main and utility processes provides file watching, atomic renames and UDP/TCP sockets. One language, JavaScript, runs from camera driver to screen, which is what a sprint needs.
+- The cost is a ~150 MB install and more memory. That does not matter on a timing laptop.
+- The **engine** runs in its own utility process, so a renderer crash never loses capture data. The **console** is the web UI from the replica.
+- Installers: electron-builder (.exe/.msi, .dmg, AppImage/.deb).
+- The engine also serves the console to any browser on the camera LAN. That gives a second review station, or a tablet for the clerk. **That** is where a PWA fits: as an extra client, not as the timing core.
 - **Windows first** for testing, since that is where AthleticLOCAL and most timers already are. The cheapest real setup is OpenMeet and AthleticLOCAL on the same laptop, with a local folder.
 
 ## 8. Meta hackathon slot
@@ -281,15 +315,16 @@ OpenMeet is the Meta Global AI Developer Hackathon entry.
 | 5 | sim-render + eval harness | Per-heat delivered accuracy and operator time, measured against truth. |
 | 6 | Meta module | To be defined. |
 
-## 10. Open questions
+Scope: all milestones, built in parallel. It's a sprint.
 
-1. **Line-scan orientation.**
-   - The replica shows time increasing to the right: the winner is on the left, runners face left, and live capture grows to the right.
-   - Printed FinishLynx photos are mirrored (the winner on the right).
-   - Which should the operator see?
-2. **Tauri vs Electron:** Tauri is recommended above. Is there any reason to prefer Electron (Chromium everywhere, a ~150 MB install)?
-3. **Hackathon scope by Nov 4:** milestones 1–4 plus the Meta module, or fewer?
-4. **Repo hosting:** this repo is public. The model service stays in a private repo, as the README already says.
+## 10. Decisions log
+
+- **Oct 28.** The operator chooses the line-scan direction with Flip. The default is native, with time increasing to the right.
+- **Oct 28.** Electron, with the engine in its own process.
+- **Oct 28.** No scope cut for Nov 4.
+- **Oct 28.** Tiling workspace, auto-arm, the line-scan tools, the lane overlay, a quieter header, and no redundant labels.
+- **Oct 28.** The demo meet is rendered by the TTP simulator, with the front camera placed properly.
+- **Open:** this repo is public; the model service stays private, as the README says.
 
 Sources:
 
