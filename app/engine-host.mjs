@@ -249,3 +249,82 @@ port.on('message', async e => {
   catch (err) { port.postMessage({ id, error: err.message || String(err) }); }
 });
 emit('engine.ready', { core: !!core });
+
+// ==================== SCOREBOARD V1 (engine-owned service) ====================
+const scoreboardRoot = path.join(userData, 'scoreboards');
+let scoreboardServer = null;
+let scoreboardStarting = null;
+let scoreboardLibraryReady = null;
+const scoreboardAgents = new Set();
+
+async function ensureScoreboardLibrary() {
+  if (!core?.createScoreboardServer) throw new Error('scoreboard engine missing from this build');
+  if (!scoreboardLibraryReady) {
+    scoreboardLibraryReady = (async () => {
+      const templates = await core.listTemplates(scoreboardRoot);
+      if (!templates.some(template => template.name === 'classic')) {
+        await core.createTemplate(scoreboardRoot, 'classic', { from: 'builtin:classic' });
+      }
+    })().catch(err => { scoreboardLibraryReady = null; throw err; });
+  }
+  return scoreboardLibraryReady;
+}
+
+async function startScoreboard(port = 0) {
+  if (scoreboardStarting) return scoreboardStarting;
+  scoreboardStarting = (async () => {
+    await ensureScoreboardLibrary();
+    const server = core.createScoreboardServer({ root: scoreboardRoot, host: '0.0.0.0', port });
+    try { await server.listen(); }
+    catch (err) { await server.close(); throw err; }
+    scoreboardServer = server;
+    return server;
+  })().catch(err => { scoreboardStarting = null; throw err; });
+  return scoreboardStarting;
+}
+
+Object.assign(methods, {
+  async 'scoreboard.start'({ port = 0 }) {
+    const server = await startScoreboard(port);
+    return { url: server.url('classic'), port: server.port };
+  },
+  async 'scoreboard.publish'({ state }) { return (await startScoreboard()).publish(state); },
+  async 'scoreboard.list'() {
+    await ensureScoreboardLibrary();
+    return core.listTemplates(scoreboardRoot);
+  },
+  async 'scoreboard.create'({ name, from }) {
+    await ensureScoreboardLibrary();
+    return core.createTemplate(scoreboardRoot, name, { from });
+  },
+  async 'scoreboard.addAsset'({ name, path: source }) {
+    await ensureScoreboardLibrary();
+    return core.addAsset(scoreboardRoot, name, source);
+  },
+  async 'scoreboard.agent'({ name, request, preset = 'muse' }) {
+    await ensureScoreboardLibrary();
+    if (!Object.hasOwn(core.AGENT_PRESETS, preset)) throw new Error(`Unknown scoreboard agent preset: ${preset}`);
+    const controller = new AbortController();
+    scoreboardAgents.add(controller);
+    try {
+      return await core.runScoreboardAgent({
+        root: scoreboardRoot, name, request, agent: core.AGENT_PRESETS[preset], signal: controller.signal,
+        onOutput: output => emit('scoreboard.agentOutput', { name, ...output }),
+      });
+    } finally { scoreboardAgents.delete(controller); }
+  },
+  async 'scoreboard.restore'({ name, snapshotId }) {
+    await ensureScoreboardLibrary();
+    return core.restore(scoreboardRoot, name, snapshotId);
+  },
+});
+
+async function closeScoreboards() {
+  for (const controller of scoreboardAgents) controller.abort();
+  try { await scoreboardStarting; } catch { /* startup already reported its error */ }
+  await scoreboardServer?.close();
+}
+port.on('close', () => { closeScoreboards().catch(() => {}); });
+process.once('disconnect', () => { closeScoreboards().catch(() => {}); });
+process.once('exit', () => { for (const controller of scoreboardAgents) controller.abort(); });
+// ========================== END SCOREBOARD V1 ================================
