@@ -1,0 +1,9 @@
+{
+  "name": "@openmeet/finish-api-stub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}
