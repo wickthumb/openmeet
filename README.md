@@ -26,6 +26,7 @@ The Meta agent and the custom finish model have different roles: the custom mode
 
 ## Project documents
 
+- [v1 design blueprint: running the meet](docs/blueprint.md) and its [clickable layout replica](docs/mockup/index.html)
 - [Architecture and authority boundaries](docs/architecture.md)
 - [Draft finish-model API contract](docs/finish-model-api.md)
 - [First prototype roadmap](docs/roadmap.md)
