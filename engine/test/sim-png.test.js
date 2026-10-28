@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { decodePng } from '../sim/png.js';
-import { encodePng, pngChunk, testImage } from './helpers/png-encode.js';
+import { encodePng, pngChunk, testImage } from '../testing/png-encode.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 

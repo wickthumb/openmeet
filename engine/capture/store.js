@@ -271,17 +271,20 @@ export function openCaptureStore(dir, opts = {}) {
     },
 
     timeOf(col) {
+      assertOpen();
       checkCol(col);
       return times[col];
     },
 
     raceTimeOf(col) {
+      assertOpen();
       checkCol(col);
       if (startHw === null) throw new Error('no start pulse recorded');
       return times[col] - startHw;
     },
 
     timesOf(from, to) {
+      assertOpen();
       checkRange(from, to);
       return times.slice(from, to);
     },

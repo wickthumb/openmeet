@@ -208,27 +208,34 @@ test('SIGKILL mid-capture: every column the writer reported is readable after re
       s.append({ type: 'hello', model: 'kill-test', rows: ROWS, channels: CH, columnPeriod: 0.001 });
       s.append({ type: 'start_pulse', hwTime: 1000 });
       let col = 0;
-      for (;;) {
+      // Write until killed (capped so a missed kill cannot fill the disk).
+      while (col < 300000) {
         const n = 1 + (col % 13);
         const b = Buffer.alloc(n * ROWS * CH);
         for (let c = 0; c < n; c++) for (let r = 0; r < ROWS; r++) for (let k = 0; k < CH; k++)
           b[(c * ROWS + r) * CH + k] = ((col + c) * 7 + r * 3 + k) & 0xff;
         s.append({ type: 'columns', firstHwTime: 1000 + col * 0.001, period: 0.001, count: n, data: b });
         col += n;
-        process.stdout.write(col + '\\n');
+        process.stdout.write(col + '\\n'); // only after append() returned
       }
     `;
-    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'inherit'], env });
     let reported = 0;
-    await new Promise((resolve, reject) => {
+    let pending = '';
+    const exit = await new Promise((resolve, reject) => {
       child.stdout.on('data', (d) => {
-        const lines = String(d).trim().split('\n');
-        reported = Number(lines.at(-1));
+        pending += d;
+        const lines = pending.split('\n');
+        pending = lines.pop() ?? ''; // keep a partial line for the next chunk
+        for (const l of lines) reported = Math.max(reported, Number(l));
         if (reported > 5000 && !child.killed) child.kill('SIGKILL');
       });
-      child.on('exit', resolve);
+      child.on('exit', (code, signal) => resolve({ code, signal }));
       child.on('error', reject);
     });
+    assert.equal(exit.signal, 'SIGKILL', `writer exited ${JSON.stringify(exit)}`);
     assert.ok(reported > 5000);
     const r = openCaptureStore(dir);
     const n = r.columnCount();

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { simReplay, loadSimTruth, columnsOf, SIM_START_HW_TIME } from '../sim/replay.js';
 import { openCaptureStore } from '../capture/store.js';
 import { validateMessage } from '../capture/protocol.js';
-import { encodePng, testImage } from './helpers/png-encode.js';
+import { encodePng, testImage } from '../testing/png-encode.js';
 
 const sidecar = {
   column_period_s: 0.001,
