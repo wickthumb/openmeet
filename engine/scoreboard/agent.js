@@ -12,7 +12,7 @@ import { SCOREBOARD_DATA_CONTRACT } from './state.js';
  */
 export const AGENT_PRESETS = Object.freeze({
   muse: Object.freeze({ command: 'muse', args: Object.freeze(['exec', '--workspace', '{dir}', '--disable-web-tools', '--user-input-auto-resolve', '{prompt}']) }),
-  codex: Object.freeze({ command: 'codex', args: Object.freeze(['exec', '--approve-for-me', '-C', '{dir}', '{prompt}']) }),
+  codex: Object.freeze({ command: 'codex', args: Object.freeze(['exec', '--approve-for-me', '--skip-git-repo-check', '-C', '{dir}', '{prompt}']) }),
   grok: Object.freeze({ command: 'grok', args: Object.freeze(['-p', '{prompt}', '--permission-mode', 'auto', '--cwd', '{dir}']) }),
 });
 
