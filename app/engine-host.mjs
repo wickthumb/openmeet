@@ -88,7 +88,7 @@ async function finishService() {
   const clientPath = locate('engine/autotiming/client.js');
   if (!clientPath) throw new Error('auto-timing client missing from this build');
   const { createFinishClient } = await import(pathToFileURL(clientPath).href);
-  const timeoutMs = at.timeoutMs || 60000;   // the real model's full stack can take longer than a few seconds on CPU
+  const timeoutMs = at.timeoutMs || 300000;  // the real model's full stack has taken ~200 s per heat on CPU; the console stays usable meanwhile
   if (at.baseUrl) return (finish = { client: createFinishClient({ baseUrl: at.baseUrl, apiKey: at.apiKey, timeoutMs }), stub: false, model: null });
   const stubPath = locate('services/finish-api-stub/server.js');
   if (!stubPath) throw new Error('no auto-timing service configured');

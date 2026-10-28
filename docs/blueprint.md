@@ -245,7 +245,13 @@ The workspace is a **tiling layout, like Hyprland**: a split tree, so panels nev
 
 ## 6. Auto-timing API (the signature feature)
 
-OpenMeet is open source; the finish model is TTP's service behind a public contract (see [finish-model-api.md](finish-model-api.md)). v1 adds the operational rules.
+OpenMeet is open source; the finish model is TTP's service behind a public contract (see [finish-model-api-v1.md](finish-model-api-v1.md)). v1 adds the operational rules.
+
+**Framing: AI-suggested finish times for operator review, not automatic timing.**
+
+- On the first unseen-meet test, wrong auto-accepts were 1.5–2.2% of finishers, against a 0.5% target.
+- So the model now marks a finish `auto` only when two independent lane-geometry sources agree. Expect nearly everything to come back `review`, with its time filled in.
+- The full model can take minutes per heat on a CPU, so the call is asynchronous. The console shows "Timing…" and stays usable. Suggestions fill only lanes the operator hasn't already marked.
 
 **Request:** `POST /v1/finish-predictions`
 

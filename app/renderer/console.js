@@ -474,7 +474,7 @@ function warnings(h) {
   if (h.state === 'armed') return [{ k: 'info', t: 'Armed. Waiting for the start signal.' }];
   if (h.req === 'offline') w.push({ k: 'warn', t: 'Auto-timing is offline. Mark finishes by hand; capture is unaffected.' });
   if (h.req === 'error') w.push({ k: 'warn', t: `Auto-timing failed (${h.reqErr}). Mark finishes by hand, or press Auto-mark to retry.` });
-  if (h.req === 'pending') w.push({ k: 'info', t: 'Auto-timing is reading the capture.' });
+  if (h.req === 'pending') w.push({ k: 'info', t: 'Timing: AI suggestions are on the way. You can mark by hand meanwhile.' });
   if (h.req === 'idle' && !h.proposals && h.state === 'review') w.push({ k: 'info', t: 'Capture closed. Mark finishes, or press Auto-mark.' });
   const rev = (h.proposals || []).filter(p => p.decision === 'review' && !h.marks[p.lane] && !h.status[p.lane]);
   if (rev.length) {
@@ -661,7 +661,7 @@ function renderAcc() {
 function renderProps() {
   const h = cur();
   $('#apiState').innerHTML = !S.apiOnline ? '<span class="dot warn"></span>offline' :
-    h.req === 'pending' ? '<span class="dot warn"></span>reading' :
+    h.req === 'pending' ? '<span class="dot warn"></span>timing…' :
     h.req === 'error' ? '<span class="dot warn"></span>failed' :
     h.req === 'done' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
   const box = $('#props');
@@ -670,7 +670,7 @@ function renderProps() {
     return;
   }
   if (!h.proposals) {
-    box.innerHTML = `<div class="empty">${h.req === 'pending' ? 'Reading the capture…' : S.autoMark ? 'Proposals arrive when the capture closes. AUTO is accepted on arrival; REVIEW waits for you. Finishes within 0.02 s of a neighbour are always REVIEW.' : 'Auto-mark is off. Press Auto-mark on the line-scan bar to request proposals.'}</div>`;
+    box.innerHTML = `<div class="empty">${h.req === 'pending' ? `Timing… ${Math.round((performance.now() - h.reqStart) / 1000)} s. Mark finishes by hand meanwhile; suggestions only fill lanes you have not marked.` : S.autoMark ? 'AI-suggested finish times arrive after the capture closes, for your review. Finishes within 0.02 s of a neighbour always need a check.' : 'Auto-mark is off. Press Auto-mark on the line-scan bar to ask for suggested times.'}</div>`;
     return;
   }
   const tb = h_('table', 'props');
@@ -894,20 +894,21 @@ function renderDrawer() {
   } else if (S.tab === 'api') {
     body.innerHTML = `
       <div class="card"><h3>Auto-timing service</h3>
+        <p>AI-suggested finish times for operator review. The operator approves every result.</p>
         <table class="tbl">
-          <tr><td>Service</td><td>TTP finish model (simulated in this replica)</td></tr>
-          <tr><td>Model</td><td class="num">sim-0</td></tr>
+          <tr><td>Service</td><td>${OM ? 'Stand-in on this computer: echoes simulator truth, not a model' : 'TTP finish model (simulated in this replica)'}</td></tr>
+          <tr><td>Model</td><td class="num">${esc(cur().model || (OM ? 'stub-truth-0' : 'sim-0'))}</td></tr>
           <tr><td>Contract</td><td class="num">POST /v1/finish-predictions</td></tr>
           <tr><td>State</td><td><span class="dot ${S.apiOnline ? 'ok' : 'warn'}"></span> ${S.apiOnline ? 'reachable' : 'offline'}</td></tr>
         </table>
-        <p><label class="chk"><input type="checkbox" id="apiOff" ${S.apiOnline ? '' : 'checked'}> Simulate the service being unreachable <span class="tag sim">REPLICA ONLY</span></label></p>
+        <p><label class="chk"><input type="checkbox" id="apiOff" ${S.apiOnline ? '' : 'checked'}> Simulate the service being unreachable</label></p>
       </div>
-      <div class="card"><h3>Policy</h3>
-        <p>AUTO proposals are accepted on arrival and tagged AUTO. REVIEW proposals wait for the operator.</p>
+      <div class="card"><h3>How suggestions are used</h3>
+        <p>Each finisher gets a suggested time. REVIEW suggestions wait for the operator; nothing is delivered until the heat is saved.</p>
+        <p>AUTO is reserved for suggestions the model is confident in. Today almost everything comes back REVIEW: on unseen meets the auto rule is not yet reliable.</p>
         <p>Finishes within 0.02 s of a neighbour are always REVIEW.</p>
-        <p>The operator can override anything; the original proposal stays in the heat's log.</p>
-        <p>Goal: 99.5% of delivered results correct, while auto-accepting as many as possible.</p>
-        <p>Capture never waits on the service. If it is unreachable, heats are timed by hand.</p>
+        <p>The operator can override anything; the original suggestion stays in the heat's log.</p>
+        <p>Suggestions can take a while on a laptop; the heat stays fully usable and they fill in when ready. Capture never waits on the service, and without it heats are timed by hand.</p>
       </div>`;
     $('#apiOff').onchange = e => { S.apiOnline = !e.target.checked; renderUI(); };
   } else {
@@ -948,7 +949,7 @@ function renderTools() {
   tool(ICON.flip, 'Flip', 'Mirror the image: winner on the left or on the right', S.flip, false, () => { S.flip = !S.flip; store.set('flip', S.flip); renderTools(); });
   tool(ICON.lanes, 'Lanes', 'Overlay lane lines on the image', S.lanes, false, () => { S.lanes = !S.lanes; store.set('lanes', S.lanes); renderTools(); });
   sep();
-  tool(ICON.auto, 'Auto-mark', 'Ask the auto-timing service for proposals now', false, !review || !S.apiOnline || h.req === 'pending', () => requestProposals(h));
+  tool(ICON.auto, 'Auto-mark', 'Ask the finish model for suggested times now (for your review)', false, !review || !S.apiOnline || h.req === 'pending', () => requestProposals(h));
   const sw = h_('button', 'sw' + (S.autoMark ? ' on' : ''));
   sw.innerHTML = '<i></i>Auto';
   sw.title = 'Run Auto-mark automatically when each capture closes';
@@ -1560,7 +1561,7 @@ function frame(now) {
     if (now - lastLiveRender > 250) { lastLiveRender = now; renderAcc(); renderSide(); renderTools(); }
     if (!h.asset && h.tNow >= h.tClose) { endCapture(h); renderUI(); }   // engine-fed heats close on the camera's end message
     tickClock();
-  }
+  } else if (h.req === 'pending' && now - lastLiveRender > 1000) { lastLiveRender = now; renderProps(); }   // "Timing… N s"
   const sec = Math.floor(Date.now() / 1000);
   if (sec !== lastSec) { lastSec = sec; tickTod(); }
   if (dirty || h.state === 'running') { dirty = false; drawScan(); drawBackup(); drawFront(); }
