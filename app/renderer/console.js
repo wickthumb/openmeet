@@ -156,9 +156,12 @@ function buildHeat(s) {
   return heat;
 }
 let HEATS = SPECS.map(buildHeat);
+const attemptsByHeat = new Map();
+const attemptKey = h => JSON.stringify([S.meet?.dir || 'sample', h.ev, h.rd, h.ht]);
 
 const S = {
   idx: 0, tab: 'run', selLane: null, selCol: null, entryNumber: '', source: 'replay', apiOnline: true,
+  rosterOrder: store.get('rosterOrder','lane'),
   autoStop: store.get('autoStop','manual'), stopAfter: store.get('stopAfter',60),
   autoArm: store.get('autoArm', true), autoMark: store.get('autoMark', true),
   flip: store.get('flip', false), lanes: store.get('lanes', false), cropTool: false,
@@ -281,7 +284,11 @@ function renderStrip(h) {
   const g = c.getContext('2d'), r = rng(h.seed * 977), clean = S.source === 'render';
   for (let y = 0; y < IMG_H; y++) { g.fillStyle = rowColor(y, r, clean); g.fillRect(0, y, h.nCols, 1); }
   if (!clean) for (let i = 0; i < h.nCols / 7; i++) { g.fillStyle = `rgba(0,0,0,${0.015 + r() * 0.03})`; g.fillRect(Math.floor(r() * h.nCols), 0, 1, IMG_H); }
-  [...h.athletes].sort((a, b) => a.lane - b.lane).forEach(a => { if (a.truth != null) drawRunner(g, h, a); });
+  const orderColumn=a=>h.status[a.lane]?Infinity:(h.marks[a.lane]?.col??h.proposals?.find(p=>p.lane===a.lane)?.col??Infinity);
+  [...h.athletes].sort((a,b)=>{
+    if(S.rosterOrder==='finish'){const ac=orderColumn(a),bc=orderColumn(b);if(ac!==bc)return ac<bc?-1:1;}
+    return a.lane-b.lane;
+  }).forEach(a => { if (a.truth != null) drawRunner(g, h, a); });
   h.img = c; h.imgSrc = S.source;
 }
 function ensureStrip(h) {
@@ -343,6 +350,7 @@ const snap = h => JSON.stringify({ marks: h.marks, status: h.status });
 function applyProposals(h, props, meta = {}) {
   const untouched = h.base === snap(h);
   h.proposals = props.filter(p=>!h.dismissed?.[p.lane]); h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;
+  h.inputDerived=!!meta.inputDerived;
   h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
   h.proposals.forEach(p => {
     const mk = h.marks[p.lane];
@@ -358,6 +366,7 @@ const predictParams = (h, extra = {}) => ({
   heat: { event: h.ev, round: h.rd, heat: h.ht },
   startList: h.athletes.filter(a => !['DNS', 'SC'].includes(h.status[a.lane])).map(a => ({ lane: a.lane, id: String(a.id) })),
   laneRows: h.laneRows ? h.laneRows.map(b => ({ lane: b.lane, top_row: Math.round(b.top), bottom_row: Math.round(b.bottom) })) : null,
+  laneGuides: modelLaneGuides(h),
   ...extra,
 });
 const toProps = res => res.predictions.map(p => ({ lane: p.lane, col: (res.fromCol || 0) + p.column, t: p.race_time_s, decision: p.decision, model: p.decision, reason: p.reason || '', conf: p.confidence ?? 0 }));
@@ -394,7 +403,7 @@ function liveSuggest(h) {
       if (h.runVersion !== runVersion || h.state !== 'running') return;
       const seenT = colTime(h, toCol);
       mergeLive(h, toProps(res).filter(p => p.t <= seenT - LIVE_LAG), seenT);
-      h.liveTo = toCol; h.model = res.model; h.stub = !!res.stub;
+      h.liveTo = toCol; h.model = res.model; h.stub = !!res.stub; h.inputDerived=!!res.inputDerived;
       if (cur() === h) { renderProps(); renderSide(); invalidate(); }
     }).catch(() => {}).finally(() => { if(h.runVersion === runVersion) h.liveBusy = false; });
   } else {
@@ -438,10 +447,10 @@ function fire() {
   h.runVersion = (h.runVersion || 0) + 1;
   h.stopMode=S.autoStop; h.stopAfter=S.stopAfter; h.stopping=false;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
-  h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {};
+  h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {}; h.inputDerived=false;
   if(!h.asset) { h.sampleStrip=h.sampleStrip||h.img; blankStrip(h); }
   h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';
-  S.view.user = false; S.selCol = null;
+  S.view.user = false; S.view.followZoom=null; S.selCol = null;
   if (h.asset && OM) {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
     OM.call('capture.start', {
@@ -469,6 +478,32 @@ function recall() {
   toast('Recall: false start. Heat re-armed. Set FS on the athlete from their row.');
   renderUI();
 }
+function prepareRestart(h) {
+  const key=attemptKey(h),attempts=attemptsByHeat.get(key)||[h];
+  if(!attempts.includes(h))attempts.push(h);
+  h.attemptNumber ||= attempts.indexOf(h)+1;
+  const next={...h,attemptNumber:attempts.length+1,state:'armed',marks:{},status:{},proposals:null,req:'idle',img:null,
+    stripTiles:null,recvCols:0,liveCol:-1,tNow:0,startPerf:0,startTOD:null,startReference:null,startTriggerId:null,startCorrection:0,
+    captureId:null,captureDir:null,frontRec:null,saves:0,lif:null,base:null,allProps:null,liveTo:null,liveBusy:false,dismissed:{},
+    stopping:false,restartAfterStop:false,runVersion:(h.runVersion||0)+1};
+  next.athletes.forEach(a=>{if(a.pre)next.status[a.lane]=a.pre;});
+  if(next.asset)attachAsset(next,next.asset);
+  else {next.img=h.sampleStrip||h.img;next.nCols=next.img?.width||h.nCols;next.tClose=next.tOpen+next.nCols*P;}
+  attempts.push(next);attemptsByHeat.set(key,attempts);HEATS[S.idx]=next;
+  S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';S.view.user=false;S.view.followZoom=null;
+  ensureStrip(next);fitView();renderUI();
+  toast(`Attempt ${next.attemptNumber} is armed. The previous capture and its start triggers are retained.`);
+}
+function restartRace() {
+  const h=cur();if(h.stopping||h.saving)return;
+  if(h.state==='running'){h.restartAfterStop=true;stopCapture();return;}
+  prepareRestart(h);
+}
+function selectAttempt(index) {
+  const h=cur();if(h.state==='running'||h.stopping)return;
+  const attempts=attemptsByHeat.get(attemptKey(h));if(!attempts?.[index])return;
+  HEATS[S.idx]=attempts[index];S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';fitView();renderUI();
+}
 function stopCapture() {
   const h=cur(); if(h.state!=='running'||h.stopping)return;
   h.stopping=true;renderUI();
@@ -482,6 +517,7 @@ function endCapture(h) {
   h.tClose=h.tOpen+h.nCols*P;
   h.state='review';h.stopping=false;h.liveCol=h.nCols-1;h.tNow=h.tClose;
   h.base=snap(h);fitView();
+  if(h.restartAfterStop){h.restartAfterStop=false;prepareRestart(h);return;}
   if(S.autoMark&&h.nCols>0)requestProposals(h);else h.req='idle';
 }
 function editHeat(h) { if (h.state === 'saved') h.state = 'review'; }
@@ -522,7 +558,7 @@ const resolved = (h, a) => !!(h.marks[a.lane] || h.status[a.lane]);
 function lifRequest(h) {
   const d = h.startTOD, tod = d ? d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000 : null;
   return {
-    dir: S.meet.resultsDir || S.meet.dir,
+    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
     results: h.athletes.map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
@@ -644,13 +680,19 @@ function renderSide() {
   opts.querySelector('#stopMode').onchange=e=>{S.autoStop=e.target.value;store.set('autoStop',S.autoStop);renderUI();};
   const timeoutInput=opts.querySelector('#stopAfter');if(timeoutInput)timeoutInput.onchange=e=>{S.stopAfter=Math.max(1,Math.min(86400,Number(e.target.value)||60));store.set('stopAfter',S.stopAfter);};
   if(h.state==='armed'||running){const secondary=h_('button','btn sm',running?'Recall false start':'Disarm');secondary.onclick=running?recall:disarm;opts.querySelector('.capture-secondary').append(secondary);}
+  const restart=h_('button','btn sm','Restart race');restart.onclick=restartRace;restart.disabled=h.stopping||h.saving;opts.querySelector('.capture-secondary').append(restart);
   const problems=warnings(h).filter(w=>w.k==='warn'),top=problems[0];
   $('#warn').innerHTML=top?`<div class="sidebar-problem">${ICON.warn}<span>${esc(top.t)}</span></div>`:'';
-  const progress=h_('div','roster-progress');progress.innerHTML=`<span>Athletes</span><span>${h.athletes.filter(a=>resolved(h,a)).length} / ${h.athletes.length} resolved</span>`;$('#warn').append(progress);
+  const progress=h_('div','roster-progress');progress.innerHTML=`<div class="roster-order" role="group" aria-label="Athlete list order"><button data-order="lane" aria-pressed="${S.rosterOrder==='lane'}">Lane</button><button data-order="finish" aria-pressed="${S.rosterOrder==='finish'}">Finish</button></div><span>${h.athletes.filter(a=>resolved(h,a)).length} / ${h.athletes.length} resolved</span>`;
+  progress.querySelectorAll('[data-order]').forEach(b=>{b.onclick=()=>{S.rosterOrder=b.dataset.order;store.set('rosterOrder',S.rosterOrder);renderSide();};});$('#warn').append(progress);
 
   const { pl } = places(h);
   const list = $('#list'); list.innerHTML = '';
-  [...h.athletes].sort((a, b) => a.lane - b.lane).forEach(a => {
+  const orderColumn=a=>h.status[a.lane]?Infinity:(h.marks[a.lane]?.col??h.proposals?.find(p=>p.lane===a.lane)?.col??Infinity);
+  [...h.athletes].sort((a,b)=>{
+    if(S.rosterOrder==='finish'){const ac=orderColumn(a),bc=orderColumn(b);if(ac!==bc)return ac<bc?-1:1;}
+    return a.lane-b.lane;
+  }).forEach(a => {
     const row = h_('div', 'row' + (S.selLane === a.lane ? ' sel' : ''));
     const mk = h.marks[a.lane], st = h.status[a.lane], p = h.proposals && h.proposals.find(x => x.lane === a.lane);
     let res;
@@ -668,9 +710,15 @@ function renderSide() {
       <div class="lane">${a.lane}</div>
       <div class="who"><div class="nm">${a.last}, ${a.first}</div><div class="sc">${a.team.name} <span class="athlete-id">· #${a.id}</span></div></div>
       <div class="res">${res}</div>`;
-    row.onclick = e => { if (e.target.closest('button,select,input')) return; selectLane(S.selLane === a.lane ? null : a.lane); };
+    row.onclick = e => { if (e.target.closest('button,select,input')) return; selectLane(a.lane); };
     if (S.selLane === a.lane) {
       const rc = h_('div', 'rowctl');
+      if (p && !mk && !st) {
+        const accept = h_('button', 'btn sm primary', 'Accept time');
+        accept.title = `Accept ${official(raceTime(h,p.col))} for lane ${a.lane}`;
+        accept.onclick = e => { e.stopPropagation(); setMark(a.lane,p.col); };
+        rc.append(accept);
+      }
       const status=h_('select','athlete-status');status.setAttribute('aria-label',`Race status for ${a.first} ${a.last}`);
       status.innerHTML='<option value="">Race status…</option>'+['DNS','DNF','DQ','FS'].map(c=>`<option value="${c}">${c}</option>`).join('');status.value=st||'';
       status.onchange=e=>setStatus(a.lane,e.target.value);rc.append(status);
@@ -687,7 +735,7 @@ function selectLane(lane) {
   if (lane != null) {
     const mk = h.marks[lane], p = h.proposals && h.proposals.find(x => x.lane === lane);
     const col = mk ? mk.col : p ? p.col : null;
-    if (col != null) { S.selCol = col; centerOn(col); }
+    if (col != null) { S.selCol = col; S.hoverCol = null; focusFinish(col); }
   }
   renderUI();
 }
@@ -706,6 +754,13 @@ function renderRace() {
       <dt>Capture window</dt><dd>${h.state === 'loaded' || h.state === 'armed' ? '—' : fmtT(h.tOpen, 2) + ' – ' + fmtT(h.tClose, 2) + ' s'}</dd>
       <dt>Resolved</dt><dd>${marked} / ${h.athletes.length}</dd>
     </dl>`;
+  const attempts=attemptsByHeat.get(attemptKey(h));
+  if(attempts?.length>1){
+    const wrap=h_('label','race-attempts');wrap.textContent='Attempt ';
+    const select=h_('select');select.setAttribute('aria-label','Race attempt');select.disabled=h.state==='running';
+    select.innerHTML=attempts.map((a,i)=>`<option value="${i}" ${a===h?'selected':''}>${i+1} · ${a.startTOD?todStr(a.startTOD).slice(0,12):'Not started'} · ${a.state}</option>`).join('');
+    select.onchange=e=>selectAttempt(+e.target.value);wrap.append(select);$('#race').append(wrap);
+  }
   tickClock();
 }
 function tickClock() {
@@ -760,6 +815,7 @@ function renderProps() {
     h.req === 'error' ? '<span class="dot warn"></span>failed' :
     h.req === 'live' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>live` :
     h.req === 'done' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
+  if(h.inputDerived) $('#apiState').append(h_('span','tag info','GUIDED INPUT'));
   const box = $('#props');
   if (h.req === 'offline' || h.req === 'error') {
     box.innerHTML = `<div class="empty">${h.req === 'error' ? 'Auto-timing failed: ' + esc(h.reqErr || '') + '.' : 'The auto-timing service could not be reached.'} Every lane can still be marked by hand.</div>`;
@@ -940,7 +996,7 @@ function renderStarts(body) {
     if (!body.querySelector('#startRows') || cur() !== h || S.meet?.dir !== dir) return;
     const assignment = log.assignments[key];
     const reference = h.startReference || log.triggers.find(t => t.id === assignment?.referenceTriggerId);
-    const selected = h.startTriggerId || assignment?.triggerId;
+    const selected = h.startTriggerId || h.startReference?.id || assignment?.triggerId;
     body.querySelector('#startRows').innerHTML = log.triggers.length ? `<table class="tbl"><tr><th>Trigger</th><th>Timestamp</th><th>Source</th><th>Heat</th><th></th></tr>${log.triggers.map((t, i) => {
       const assigned = Object.entries(log.assignments).filter(([,a])=>a.triggerId === t.id).map(([k])=>k).join(', ');
       const compatible = reference && t.clockId === reference.clockId;
@@ -1206,7 +1262,30 @@ if (OM) OM.on('scoreboard.agentOutput', d => {
 // Overlay appearance is stored per meet/camera and never changes timing or inference geometry.
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
-function overlayStyle(kind) { const saved=store.get(overlayKey(kind),{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false}:{enabled:S.lanes}), ...saved,positions:{...(saved.positions||{})} }; }
+function overlayStyle(kind) { const saved=store.get(overlayKey(kind),{});return { ...overlayDefaults, ...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes}), ...saved,positions:{...(saved.positions||{})},sizes:{...(saved.sizes||{})} }; }
+function frontLanePoint(o,lane) {
+  if(o.positions[lane])return o.positions[lane];
+  const a=o.positions[1]||{x:0.1,y:0.8},b=o.positions[o.laneCount]||{x:0.9,y:0.8};
+  const t=(lane-1)/Math.max(1,o.laneCount-1),near=o.firstScale||1,far=o.lastScale||0.55;
+  const u=t*near/((1-t)*far+t*near);
+  return {x:a.x+(b.x-a.x)*u,y:a.y+(b.y-a.y)*u};
+}
+function frontLaneSize(o,lane) {
+  if(o.sizes?.[lane])return o.sizes[lane];
+  const t=(lane-1)/Math.max(1,o.laneCount-1);
+  return o.fontSize/((1-t)/(o.firstScale||1)+t/(o.lastScale||0.55));
+}
+function spreadFrontLanes(o) {
+  const a=frontLanePoint(o,1),b=frontLanePoint(o,o.laneCount);
+  o.positions={1:a,[o.laneCount]:b};
+  const points={};for(let lane=1;lane<=o.laneCount;lane++)points[lane]=frontLanePoint(o,lane);
+  o.positions=points;
+}
+function modelLaneGuides(h) {
+  const o=overlayStyle('scan');if(!o.modelInput)return null;
+  const rows=[...new Set(laneBands(h).flatMap(b=>{const p=o.positions[b.lane]||b;return [Math.round(p.top),Math.round(p.bottom)];}))].filter(row=>row>=0&&row<rowsOf(h));
+  return {enabled:true,rows,color:o.lineColor,thickness:Math.max(1,Math.round(o.thickness))};
+}
 function saveOverlay(kind,value) { store.set(overlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);} updateFrontOverlay(); invalidate(); }
 let overlayMenu=null;
 function showOverlaySettings(kind,anchor) {
@@ -1215,6 +1294,12 @@ function showOverlaySettings(kind,anchor) {
   menu.innerHTML=`<div class="overlay-title">${kind==='front'?'Front camera':'Line-scan'} lanes<button class="btn sm" data-close>×</button></div>
     <label><span>Show overlay</span><input data-key="enabled" type="checkbox" ${o.enabled?'checked':''}></label>
     <label><span>Drag to position</span><input data-key="edit" type="checkbox" ${o.edit?'checked':''}></label>
+    ${kind==='front'?`<label><span>Lane count</span><input data-lane-count type="number" min="2" max="24" value="${o.laneCount}"></label>
+    <label><span>Positioning</span><select data-placement><option value="anchors">Set first + last</option><option value="individual">Fine-tune each lane</option></select></label>
+    <label><span>First lane size</span><input data-end-size="first" type="number" min="8" max="160" value="${Math.round(o.fontSize*o.firstScale)}"></label>
+    <label><span>Last lane size</span><input data-end-size="last" type="number" min="8" max="160" value="${Math.round(o.fontSize*o.lastScale)}"></label>
+    <p class="dimtext overlay-hint">Place the first and last numbers; the rest follow their positions and sizes. In fine-tune mode, drag any number. Alt + wheel adjusts its size.</p>`:''}
+    ${kind==='scan'?`<label><span>Lane guides in model input</span><input data-key="modelInput" type="checkbox" ${o.modelInput?'checked':''}></label><p class="dimtext overlay-hint">Renders opaque guide lines into a derived image. Original pixels stay unchanged. No finish marks or text are included.</p>`:''}
     <label><span>Font size</span><input data-key="fontSize" type="number" min="8" max="96" value="${o.fontSize}"></label>
     <label><span>Font weight</span><select data-key="weight">${[400,500,600,700,800,900].map(v=>`<option ${v===o.weight?'selected':''}>${v}</option>`).join('')}</select></label>
     <label><span>Line thickness</span><input data-key="thickness" type="number" min="0" max="12" step="0.5" value="${o.thickness}"></label>
@@ -1228,27 +1313,44 @@ function showOverlaySettings(kind,anchor) {
     let value=input.type==='checkbox'?input.checked:input.type==='color'?input.value:Number(input.value);
     const limits={fontSize:[8,96],thickness:[0,12],opacity:[0.1,1],weight:[400,900]};
     if(limits[key]) {if(!Number.isFinite(value))return;value=Math.max(limits[key][0],Math.min(limits[key][1],value));}
-    o[key]=value;saveOverlay(kind,o);
+    o[key]=value;
+    if(kind==='front'&&key==='fontSize')menu.querySelectorAll('[data-end-size]').forEach(e=>{e.value=Math.round(o.fontSize*(e.dataset.endSize==='first'?o.firstScale:o.lastScale));});
+    saveOverlay(kind,o);
   };});
+  if(kind==='front'){
+    const count=menu.querySelector('[data-lane-count]'),placement=menu.querySelector('[data-placement]');placement.value=o.placement||'anchors';
+    count.onchange=()=>{const last=frontLanePoint(o,o.laneCount),first=frontLanePoint(o,1);o.laneCount=Math.max(2,Math.min(24,Math.round(Number(count.value)||8)));count.value=o.laneCount;o.positions={1:first,[o.laneCount]:last};o.sizes={};spreadFrontLanes(o);saveOverlay(kind,o);};
+    placement.onchange=()=>{o.placement=placement.value;saveOverlay(kind,o);};
+    menu.querySelectorAll('[data-end-size]').forEach(input=>{input.oninput=()=>{const size=Math.max(8,Math.min(160,Number(input.value)||8));o[input.dataset.endSize==='first'?'firstScale':'lastScale']=size/o.fontSize;o.sizes={};if(o.placement==='anchors')spreadFrontLanes(o);saveOverlay(kind,o);};});
+  }
   menu.querySelector('[data-reset]').onclick=()=>{o.positions={};saveOverlay(kind,o);};
-  menu.querySelector('[data-defaults]').onclick=()=>{saveOverlay(kind,{...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5}:{}),enabled:o.enabled,positions:o.positions});showOverlaySettings(kind,anchor);};
+  menu.querySelector('[data-defaults]').onclick=()=>{saveOverlay(kind,{...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,laneCount:o.laneCount,placement:o.placement,firstScale:1,lastScale:0.55}:{}),enabled:o.enabled,positions:o.positions});showOverlaySettings(kind,anchor);};
   document.body.append(menu);const r=anchor.getBoundingClientRect();
   menu.style.left=Math.max(8,Math.min(innerWidth-270,r.left))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,r.bottom+5))+'px';
 }
 function updateFrontOverlay() {
   const layer=document.getElementById('frontLaneOverlay');if(!layer)return;
-  const o=overlayStyle('front'),lanes=[...new Set(cur().athletes.map(a=>a.lane))].sort((a,b)=>a-b);
-  layer.hidden=!o.enabled;
-  if(!o.enabled)return;
-  layer.style.opacity=o.opacity;
-  layer.innerHTML=lanes.map((lane,i)=>{const pos=o.positions[lane]||{x:(i+0.5)/lanes.length,y:0.8};return `<span class="front-lane" data-lane="${lane}" style="left:${pos.x*100}%;top:${pos.y*100}%;font-size:${o.fontSize}px;font-weight:${o.weight};color:${o.textColor};-webkit-text-stroke:${o.thickness}px ${o.lineColor};cursor:${o.edit?'grab':'default'};pointer-events:${o.edit?'auto':'none'}">${lane}</span>`;}).join('');
-  layer.querySelectorAll('.front-lane').forEach(label=>{label.onpointerdown=e=>{
-    if(!o.edit)return;e.preventDefault();e.stopPropagation();label.setPointerCapture(e.pointerId);
-    const lane=label.dataset.lane,rect=frontPb.getBoundingClientRect(),f=S.fview;
-    const move=ev=>{const x=Math.max(0.02,Math.min(0.98,(ev.clientX-rect.left-f.x)/f.s/rect.width)),y=Math.max(0.02,Math.min(0.98,(ev.clientY-rect.top-f.y)/f.s/rect.height));o.positions[lane]={x,y};label.style.left=x*100+'%';label.style.top=y*100+'%';};
-    const up=()=>{label.onpointermove=null;label.onpointerup=null;label.onpointercancel=null;saveOverlay('front',o);};
-    label.onpointermove=move;label.onpointerup=up;label.onpointercancel=up;
-  };});
+  const o=overlayStyle('front'),lanes=Array.from({length:o.laneCount},(_,i)=>i+1);
+  layer.hidden=!o.enabled;if(!o.enabled)return;layer.style.opacity=o.opacity;
+  layer.innerHTML=lanes.map(lane=>{
+    const pos=frontLanePoint(o,lane),movable=o.edit&&(o.placement==='individual'||lane===1||lane===o.laneCount);
+    return `<span class="front-lane${o.edit&&o.placement==='anchors'&&(lane===1||lane===o.laneCount)?' lane-anchor':''}" data-lane="${lane}" style="left:${pos.x*100}%;top:${pos.y*100}%;font-size:${frontLaneSize(o,lane)}px;font-weight:${o.weight};color:${o.textColor};-webkit-text-stroke:${o.thickness}px ${o.lineColor};cursor:${movable?'grab':'default'};pointer-events:${movable?'auto':'none'}">${lane}</span>`;
+  }).join('');
+  layer.querySelectorAll('.front-lane').forEach(label=>{
+    const lane=Number(label.dataset.lane);
+    label.onwheel=e=>{if(!o.edit||!e.altKey)return;e.preventDefault();e.stopPropagation();o.sizes[lane]=Math.max(8,Math.min(160,frontLaneSize(o,lane)+(e.deltaY<0?1:-1)));saveOverlay('front',o);};
+    label.onpointerdown=e=>{
+      if(!o.edit)return;e.preventDefault();e.stopPropagation();label.setPointerCapture(e.pointerId);
+      const rect=frontPb.getBoundingClientRect(),f=S.fview;
+      const move=ev=>{
+        const x=Math.max(0.02,Math.min(0.98,(ev.clientX-rect.left-f.x)/f.s/rect.width)),y=Math.max(0.02,Math.min(0.98,(ev.clientY-rect.top-f.y)/f.s/rect.height));
+        o.positions[lane]={x,y};if(o.placement==='anchors')spreadFrontLanes(o);
+        layer.querySelectorAll('.front-lane').forEach(el=>{const p=frontLanePoint(o,Number(el.dataset.lane));el.style.left=p.x*100+'%';el.style.top=p.y*100+'%';});
+      };
+      const up=()=>{label.onpointermove=null;label.onpointerup=null;label.onpointercancel=null;saveOverlay('front',o);};
+      label.onpointermove=move;label.onpointerup=up;label.onpointercancel=up;
+    };
+  });
 }
 
 // ---------------------------------------------------------------- line-scan toolbar
@@ -1263,6 +1365,10 @@ function renderTools() {
     box.append(b); return b;
   };
   const sep = () => box.append(h_('span', 'tsep'));
+  tool(ICON.next, 'Follow live', 'Return to the latest captured columns', h.state==='running'&&!S.view.user, h.state!=='running', () => {
+    S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.cropTool=false;S.hoverCol=null;
+    follow(h);renderTools();invalidate();
+  });
   tool(ICON.crop, 'Crop', 'Drag a box to zoom to it (Shift+drag works any time)', S.cropTool, !captured, () => { S.cropTool = !S.cropTool; renderTools(); syncCursor(); });
   tool(ICON.fit, 'Unzoom', 'Fit the whole capture (Esc)', false, !captured || !S.view.zoomed, () => { fitView(); renderUI(); });
   tool(ICON.auto, 'Mark', 'Create or replace the selected athlete’s finish here (Enter)', false, !captured || S.selLane == null || S.selCol == null, () => setMark(S.selLane,S.selCol));
@@ -1416,6 +1522,13 @@ function clampView() {
   v.c0 = Math.max(-vis * 0.05, Math.min(h.nCols - vis * 0.95, v.c0));
   v.r0 = Math.max(0, Math.min(rowsOf(h) - scanH() / v.zy, v.r0));
 }
+function focusFinish(col) {
+  const v = S.view;
+  v.zx = Math.max(v.zx, 1.5);
+  v.c0 = col + 0.5 - scanW() / (2 * v.zx);
+  v.zoomed = true; v.user = true;
+  clampView();
+}
 function centerOn(col) {
   const v = S.view, vis = scanW() / v.zx;
   if (col < v.c0 + vis * 0.1 || col > v.c0 + vis * 0.9) { v.c0 = col - vis / 2; clampView(); }
@@ -1424,7 +1537,7 @@ function centerOn(col) {
 function follow(h) {
   const v = S.view, W = scanW(), n = Math.max(1, h.liveCol + 1);
   v.zy = scanH() / rowsOf(h); v.r0 = 0;
-  v.zx = Math.max(MIN_ZX, Math.min(1, W / n));      // stream in at 1:1, condense to the floor, then autoscroll
+  v.zx = Math.max(MIN_ZX, v.followZoom ?? Math.min(1, W / n));      // stream in at 1:1, condense to the floor, then autoscroll
   v.c0 = Math.max(0, n - W / v.zx);
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)

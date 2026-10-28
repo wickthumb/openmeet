@@ -41,3 +41,9 @@ Click a finish column, type a roster number, then Enter; multiple digits are sup
 Both camera views have **Lanes ▾** appearance controls. Lane overlays are decorative and are saved per meet/camera. They do not change the private timing service's calibration.
 
 Private model weights, training data and inference implementations are never bundled. Only API clients and the labelled simulator stand-in ship with the app. CI checks the public source boundary before building.
+
+Review a suggested finish directly in the sidebar with **Accept time**; selection centers and zooms the scan. **Lane / Finish** changes roster order. **Follow live** resumes tracking the newest columns at the current zoom after scrolling.
+
+Use **Restart race** under Capture options to retain the old capture and prepare a new attempt. Earlier attempts can be selected in the Race panel during the session; full capture restoration across app restarts remains future work. Each saved attempt gets a LIF snapshot alongside its raw capture.
+
+Front-camera overlay setup supports a chosen lane count, first/last placement and perspective sizing, followed by individual refinement. The line-scan overlay has an independent, opt-in **Lane guides in model input** switch. This creates a derived image containing horizontal lane boundaries only, records preprocessing in `model-inputs.jsonl`, and leaves original pixels and timestamps untouched. It makes no claim of improved model accuracy.

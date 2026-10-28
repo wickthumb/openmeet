@@ -18,15 +18,19 @@ Click a column, type `4`, then Enter to assign it to lane 4. Entry accepts multi
 
 Drag any finish hairline along its full height. Select and delete it, then create a replacement. Operator edits are retained when later suggestions arrive. Close finishes remain available for review.
 
+Select a reviewed finish in the sidebar to center and zoom its hairline, then choose **Accept time**. Switch the roster between **Lane** and **Finish** order. After scrolling away during capture, **Follow live** returns to the newest columns.
+
 Hover the primary or backup line-scan to inspect the corresponding front-camera frame. Each view can be zoomed and panned.
 
 ## 4. Fit the display to the venue
 
-Use **Lanes ▾** on the line-scan or front-camera panel. Show or hide numbers, adjust font size and weight, colors, thickness and opacity, and enable dragging to position the guides. Appearance is remembered per meet/camera; decorative guides do not alter timing or the private model's input geometry.
+Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, choose the lane count and position the first and last labels. Intermediate positions and font sizes are interpolated with perspective; switch to individual mode to fine-tune. Alt + wheel adjusts an individual number’s size. Show or hide numbers, adjust font size and weight, colors, thickness and opacity, and enable dragging to position the guides. Appearance is remembered per meet/camera. By default these are decorative guides. The separate **Lane guides in model input** option makes a derived scan containing opaque horizontal boundaries, without labels or finish marks. Original pixels and timestamps remain unchanged, and a request ledger records the preprocessing. Whether this helps a private model needs evaluation.
 
 ## 5. Correct an accidental start trigger
 
 The **Starts** tab retains meet-wide start triggers and assignment history. Record another simulated trigger, then assign the correct trigger to the heat. All elapsed times update while the captured finish columns stay fixed. Re-save to update exported results.
+
+**Capture options → Restart race** preserves the prior attempt and arms a fresh one. Use the Race panel’s attempt selector to inspect earlier attempts during this session. Original capture files and start-trigger history are retained on disk; saved LIF snapshots are also copied into each capture folder.
 
 Physical start-sensor integration is still pending; the journal and assignment interface are implemented.
 

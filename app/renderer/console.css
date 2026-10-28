@@ -308,3 +308,16 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .rowctl .athlete-status { max-width:130px;font-size:11px;padding:3px 5px;background:var(--panel);border:1px solid var(--rule);border-radius:var(--radius); }
 .rowctl .clear-athlete { margin-left:auto;padding:3px 5px; }
 .rowctl .clear-athlete .i { margin:0; }
+
+.race-attempts { display:flex;align-items:center;gap:8px;color:var(--muted);margin-top:10px;font-size:11px; }
+.race-attempts select { min-width:0;max-width:100%;font-size:11px; }
+.rowctl .primary { white-space:nowrap; }
+
+.overlay-settings { max-height:calc(100vh - 16px);overflow-y:auto; }
+.overlay-hint { font-size:10.5px;line-height:1.45; }
+.front-lane.lane-anchor { outline:1px dashed currentColor;outline-offset:4px; }
+
+.roster-order { display:flex;gap:2px; }
+.roster-order button { border:0;background:none;color:var(--dim);padding:2px 6px;font:inherit;border-radius:2px;cursor:pointer; }
+.roster-order button[aria-pressed=true] { color:var(--paper);background:var(--panel2); }
+.roster-order button:focus-visible { outline:1px solid var(--blue); }
