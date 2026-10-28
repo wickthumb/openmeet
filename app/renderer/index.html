@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' omfile: data: blob:; media-src 'self' omfile: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>OpenMeet</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<header class="hdr">
+  <div class="brand"><svg id="wordmark" aria-label="OpenMeet"></svg><span class="tag sim" title="Every device in this replica is simulated">SIM</span></div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="status" id="status"></div>
+</header>
+
+<div class="app">
+  <aside class="side">
+    <div class="ev" id="ev"></div>
+    <div class="ctl" id="ctl"></div>
+    <div id="warn"></div>
+    <div class="list" id="list"></div>
+  </aside>
+
+  <main class="main">
+    <section class="work" id="work">
+      <div class="toast" id="toast"></div>
+      <div id="tiles"><div class="drop" id="drop"></div></div>
+      <div class="emptyws" id="emptyWs">Workspace is empty. Add a panel with the + button.</div>
+      <div class="wsadd">
+        <button class="btn" id="addBtn" title="Add or restore panels"><svg class="i" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8"/></svg></button>
+        <div class="menu" id="addMenu"></div>
+      </div>
+      <div class="drawer" id="drawer">
+        <div class="ph"><span class="kicker" id="drawerTitle"></span><span class="r"><button class="btn sm" id="drawerClose">Back to race</button></span></div>
+        <div class="pb" id="drawerBody"></div>
+      </div>
+    </section>
+
+    <section class="scan">
+      <div class="scanbar">
+        <span class="ts none" id="ts" title="Race time of the selected column">--.---</span>
+        <div class="tools" id="tools"></div>
+      </div>
+      <div class="scanwrap"><canvas id="scan"></canvas></div>
+    </section>
+  </main>
+</div>
+
+<div id="pool">
+  <div class="pnl" data-p="race"><div class="ph"><span class="kicker">Race</span></div><div class="pb" id="race"></div></div>
+  <div class="pnl" data-p="front"><div class="ph"><span class="kicker">Front camera</span></div><div class="pb flush"><canvas id="front"></canvas></div></div>
+  <div class="pnl" data-p="backup"><div class="ph"><span class="kicker">Backup line-scan</span></div><div class="pb flush"><canvas id="backup"></canvas></div></div>
+  <div class="pnl" data-p="acc"><div class="ph"><span class="kicker">Accessories</span></div><div class="pb" id="acc"></div></div>
+  <div class="pnl" data-p="props"><div class="ph"><span class="kicker">Auto-timing</span><span class="r" id="apiState"></span></div><div class="pb" id="props"></div></div>
+</div>
+
+<script src="console.js"></script>
+</body>
+</html>
