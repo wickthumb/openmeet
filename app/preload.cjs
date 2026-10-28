@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('openmeet', {
   },
   /** Native folder picker; resolves with an absolute path or null. */
   pickFolder: title => ipcRenderer.invoke('om:pickFolder', title),
+  /** Native file picker (kind 'image' filters to images); resolves with an absolute path or null. */
+  pickFile: (title, kind) => ipcRenderer.invoke('om:pickFile', title, kind),
+  /** Open a scoreboard (local scoreboard server URL) in its own window. */
+  openBoard: (url, title) => ipcRenderer.invoke('om:openBoard', url, title),
   /** URL the renderer can load (img, video) for a file under a folder the user opened. */
   fileUrl: absPath => 'omfile://local/' + encodeURIComponent(absPath),
   platform: process.platform,

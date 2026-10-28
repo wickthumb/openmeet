@@ -97,6 +97,24 @@ app.whenReady().then(() => {
     return new Response(Readable.toWeb(fs.createReadStream(abs)), { headers: { 'Content-Type': type, 'Content-Length': String(st.size), 'Accept-Ranges': 'bytes' } });
   });
   ipcMain.handle('om:call', (_e, method, params) => callEngine(method, params));
+  ipcMain.handle('om:pickFile', async (_e, title, kind) => {
+    const filters = kind === 'image' ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'] }] : [];
+    const r = await dialog.showOpenDialog(win, { title: title || 'Choose file', properties: ['openFile'], filters });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  });
+  // Scoreboard output: its own window on the local scoreboard server, for a second display, screen share or OBS capture.
+  const boards = new Map();
+  ipcMain.handle('om:openBoard', (_e, url, title) => {
+    const u = new URL(url);
+    if (!['127.0.0.1', 'localhost'].includes(u.hostname) || !u.pathname.startsWith('/scoreboard/')) throw new Error('not a scoreboard URL');
+    const existing = boards.get(u.pathname);
+    if (existing && !existing.isDestroyed()) { existing.loadURL(url); existing.focus(); return true; }
+    const b = new BrowserWindow({ width: 1280, height: 720, backgroundColor: '#000000', title: title || 'OpenMeet Scoreboard', autoHideMenuBar: true,
+      webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } });
+    b.loadURL(url);
+    boards.set(u.pathname, b);
+    return true;
+  });
   ipcMain.handle('om:pickFolder', async (_e, title) => {
     const r = await dialog.showOpenDialog(win, { title: title || 'Choose folder', properties: ['openDirectory', 'createDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;

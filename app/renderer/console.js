@@ -495,7 +495,7 @@ function warnings(h) {
 }
 
 // ---------------------------------------------------------------- header + sidebar
-const TABS = [['run', 'Run'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['settings', 'Settings']];
+const TABS = [['run', 'Run'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['settings', 'Settings']];
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
@@ -826,6 +826,9 @@ function renderDrawer() {
   if (S.tab === 'run') return;
   $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)[1];
   const body = $('#drawerBody');
+  body.classList.toggle('boardbody', S.tab === 'board');
+  if (S.tab === 'board') { renderBoard(body); return; }
+  body.dataset.tab = S.tab;
   if (S.tab === 'network') {
     body.innerHTML = `
       <div class="card"><h3>Camera network (closed loop)</h3>
@@ -932,6 +935,117 @@ function resultsCard(last) {
       </div>`;
 }
 
+// ---------------------------------------------------------------- scoreboards (engine serves them; a coding agent builds them)
+const B = { started: false, starting: false, port: null, lanUrls: [], list: [], sel: 'classic', running: false, snapshot: null, log: '' };
+const boardUrl = name => `http://127.0.0.1:${B.port}/scoreboard/${name}/`;
+// Live state for every scoreboard (docs/scoreboard-v1.md).
+function boardState() {
+  const h = cur(), done = ['review', 'saved'].includes(h.state), { fin, pl } = places(h), win = done ? fin[0] : null;
+  const timeOf = a => (h.marks[a.lane] && (!h.status[a.lane] || h.status[a.lane] === 'DQ') ? ceilTo(colTime(h, h.marks[a.lane].col), 2) : null);
+  const lanes = [...h.athletes].sort((a, b) => a.lane - b.lane).map(a => ({
+    lane: h.unlaned ? null : a.lane, id: a.id, first: a.first, last: a.last, affiliation: a.team.name,
+    status: h.status[a.lane] || null, time: timeOf(a), place: pl[a.lane] || null,
+  }));
+  return {
+    meet: { name: S.meet ? S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0] : 'OpenMeet Sample Meet', logo: null },
+    heat: { event: h.ev, round: h.rd, heat: h.ht, of: h.of, name: h.name, state: h.state },
+    clock: {
+      running: h.state === 'running', speed: SPEED,
+      startedAtMs: h.state === 'running' && h.startTOD ? h.startTOD.getTime() : null,
+      frozenS: win ? ceilTo(colTime(h, h.marks[win.lane].col), 2) : null,
+    },
+    lanes, results: lanes.filter(l => l.place).sort((a, b) => a.place - b.place),
+    wind: h.wind == null || !done ? null : h.wind, updatedAt: Date.now(),
+  };
+}
+let boardTimer = null;
+function publishBoard() {
+  if (!OM || !B.started || boardTimer) return;
+  boardTimer = setTimeout(() => { boardTimer = null; OM.call('scoreboard.publish', { state: boardState() }).catch(() => {}); }, 200);
+}
+async function startBoards() {
+  if (!OM || B.started || B.starting) return;
+  B.starting = true;
+  try {
+    const r = await OM.call('scoreboard.start', {});
+    B.port = r.port; B.lanUrls = r.lanUrls || []; B.started = true;
+    B.list = await OM.call('scoreboard.list').catch(() => []);
+    if (B.list.length && !B.list.some(t => (t.name || t) === B.sel)) B.sel = B.list[0].name || B.list[0];
+    publishBoard();
+  } catch (err) { toast('Scoreboards could not start: ' + err.message, true); } finally { B.starting = false; renderDrawer(); }
+}
+function renderBoard(body) {
+  if (!OM) { body.innerHTML = '<div class="card"><h3>Scoreboards</h3><p>Scoreboards run in the OpenMeet app (they need the engine).</p></div>'; return; }
+  if (!B.started) { body.innerHTML = '<div class="card"><p>Starting the scoreboard server…</p></div>'; startBoards(); return; }
+  if (body.dataset.tab !== 'board') {
+    body.dataset.tab = 'board';
+    body.innerHTML = `
+      <div class="card blist"><h3>Scoreboards</h3><div id="bList"></div>
+        <p><button class="btn sm" id="bNew">New from classic</button> <button class="btn sm" id="bNewTicker">New lower-third</button></p>
+        <p class="dimtext" id="bNet"></p></div>
+      <div class="card bprev"><iframe id="bFrame" title="Scoreboard preview"></iframe></div>
+      <div class="card bagent"><h3>Build with AI</h3>
+        <textarea id="bPrompt" rows="5" placeholder="Describe the board, e.g. put our meet logo top-left, a school logo beside each name, make the clock huge, gold for the winner."></textarea>
+        <p class="bctl"><select id="bAgent"><option value="muse">Muse Code (Meta)</option><option value="codex">Codex</option><option value="grok">Grok</option></select>
+          <button class="btn sm" id="bAddLogo">Add logo…</button><button class="btn sm primary" id="bBuild">Build</button><button class="btn sm" id="bUndo">Undo last build</button></p>
+        <pre class="file" id="bLog"></pre></div>`;
+    $('#bNew').onclick = () => newBoard('classic');
+    $('#bNewTicker').onclick = () => newBoard('results-ticker');
+    $('#bBuild').onclick = buildBoard;
+    $('#bUndo').onclick = async () => {
+      if (!B.snapshot) return;
+      try { await OM.call('scoreboard.restore', { name: B.sel, snapshotId: B.snapshot }); B.snapshot = null; toast('Restored the board from before the last build.'); reloadPreview(); } catch (err) { toast('Undo failed: ' + err.message, true); }
+    };
+    $('#bAddLogo').onclick = async () => {
+      const p = await OM.pickFile('Add a logo or image to this scoreboard', 'image');
+      if (!p) return;
+      try { const r = await OM.call('scoreboard.addAsset', { name: B.sel, path: p }); toast(`Added ${r.path || r} to ${B.sel}. Mention it in the request to place it.`); } catch (err) { toast('Could not add the image: ' + err.message, true); }
+    };
+    $('#bAgent').value = store.get('boardAgent', 'muse');
+    $('#bAgent').onchange = e => store.set('boardAgent', e.target.value);
+    reloadPreview();
+  }
+  const list = $('#bList'); list.innerHTML = '';
+  B.list.forEach(t => {
+    const name = t.name || t, row = h_('div', 'brow' + (name === B.sel ? ' cur' : ''));
+    row.innerHTML = `<span class="num">${esc(name)}</span>`;
+    const open = h_('button', 'btn sm', 'Open window');
+    open.onclick = e => { e.stopPropagation(); OM.openBoard(boardUrl(name), 'OpenMeet Scoreboard: ' + name); };
+    row.append(open);
+    row.onclick = () => { B.sel = name; reloadPreview(); renderDrawer(); };
+    list.append(row);
+  });
+  $('#bNet').innerHTML = B.lanUrls.length ? 'On the network (TV, OBS browser source):<br>' + B.lanUrls.map(u => `<span class="num">${esc(u)}${esc(B.sel)}/</span>`).join('<br>') : `Local: <span class="num">${esc(boardUrl(B.sel))}</span>`;
+  $('#bBuild').disabled = B.running; $('#bUndo').disabled = B.running || !B.snapshot;
+  $('#bLog').textContent = B.log || 'The agent edits only this board\'s folder. Each build can be undone.';
+}
+function reloadPreview() { const f = $('#bFrame'); if (f) f.src = boardUrl(B.sel) + '?preview=' + Date.now(); }
+async function newBoard(from) {
+  const base = from === 'classic' ? 'board' : 'ticker';
+  let n = 1; while (B.list.some(t => (t.name || t) === `${base}-${n}`)) n++;
+  try {
+    await OM.call('scoreboard.create', { name: `${base}-${n}`, from });
+    B.list = await OM.call('scoreboard.list'); B.sel = `${base}-${n}`;
+    const f = $('#bFrame'); if (f) f.removeAttribute('src');
+    $('#drawerBody').dataset.tab = ''; renderDrawer();
+  } catch (err) { toast('Could not create the board: ' + err.message, true); }
+}
+async function buildBoard() {
+  const req = $('#bPrompt').value.trim();
+  if (!req || B.running) return;
+  B.running = true; B.log = `> ${$('#bAgent').value}: ${req}\n`; renderDrawer();
+  try {
+    const r = await OM.call('scoreboard.agent', { name: B.sel, request: req, preset: $('#bAgent').value });
+    B.snapshot = r.snapshotId || null;
+    B.log += `\n[done: exit ${r.code}${r.restored ? ', the board broke the contract and was restored' : ''}]`;
+    reloadPreview();
+  } catch (err) { B.log += `\n[failed: ${err.message}]`; } finally { B.running = false; renderDrawer(); }
+}
+if (OM) OM.on('scoreboard.agentOutput', d => {
+  B.log = (B.log + (d.line != null ? d.line : d.text || '') + '\n').slice(-20000);
+  const l = $('#bLog'); if (l) { l.textContent = B.log; l.scrollTop = l.scrollHeight; }
+});
+
 // ---------------------------------------------------------------- line-scan toolbar
 function renderTools() {
   invalidate();
@@ -964,6 +1078,7 @@ function syncCursor() { scanCv.classList.toggle('crop', S.cropTool); }
 function renderUI() {
   invalidate();
   renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderSchedule(); renderDrawer(); renderTools();
+  publishBoard();
   updateTs();
 }
 // The timestamp follows the mouse over the line-scan, and falls back to the selected column.
