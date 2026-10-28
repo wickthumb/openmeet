@@ -38,3 +38,18 @@ All items below are planned work. This initial repository establishes the projec
 ## Longer-term product direction
 
 Expand toward a complete open-source photo-finish and meet-operations application: more race formats, dependable hardware integration, resilient operation, interoperability, and a simpler workflow for meet operators.
+
+## Optional custom line-scan background
+
+Requested for a later iteration; not implemented yet.
+
+A stationary line-scan scene repeats nearly the same column over time. Estimate that scene from empty-track columns, allowing for sensor noise, shadows, sun and cloud changes. Separate passing athletes from the baseline and optionally show a custom design behind them.
+
+- An operator toggle keeps the original view as the default and available instantly.
+- Offer a library and AI editing workflow similar to the scoreboard editor: meet titles, Track Tools Pro artwork, sponsor designs, or animated billboards across the time axis.
+- Preserve the original capture and timestamps. Render replacement backgrounds only in the display; timing marks, evidence exports and proprietary model requests continue to reference original pixels.
+- Define how artwork maps to captured column time, so scrolling, zooming and replay produce a stable design.
+- Evaluate foreground separation on bodies, limbs, overlapping runners, lane lines, shadows and gradual or sudden lighting changes. Show the original image whenever separation is uncertain.
+- Any proprietary segmentation or cropping model remains in a separate service; this public app contains only its API client and display integration.
+
+Acceptance: with the option disabled, capture and review remain unchanged; with it enabled, finish columns and saved times remain identical. Background design is presentation, never replacement timing evidence.
