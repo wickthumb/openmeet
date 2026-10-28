@@ -1,4 +1,10 @@
 // Bounded decoded-frame cache. Only the most recent requested frame may notify the view.
+export function containedImageRect(width,height,imageWidth,imageHeight) {
+  if(!width||!height||!imageWidth||!imageHeight)return {x:0,y:0,width:width||0,height:height||0};
+  const scale=Math.min(width/imageWidth,height/imageHeight),w=imageWidth*scale,h=imageHeight*scale;
+  return {x:(width-w)/2,y:(height-h)/2,width:w,height:h};
+}
+
 export class FrontFrameCache {
   constructor({load,onReady=()=>{},limit=48,concurrency=3}) {
     this.load=load;this.onReady=onReady;this.limit=limit;this.concurrency=concurrency;

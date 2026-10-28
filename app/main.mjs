@@ -17,7 +17,7 @@ const pending = new Map();
 const roots = new Set();
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'omfile', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'omfile', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled:true } },
 ]);
 
 function startEngine() {
@@ -91,10 +91,10 @@ app.whenReady().then(() => {
       if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${st.size}` } });
       return new Response(Readable.toWeb(fs.createReadStream(abs, { start, end })), {
         status: 206,
-        headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Accept-Ranges': 'bytes' },
+        headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin':'null' },
       });
     }
-    return new Response(Readable.toWeb(fs.createReadStream(abs)), { headers: { 'Content-Type': type, 'Content-Length': String(st.size), 'Accept-Ranges': 'bytes' } });
+    return new Response(Readable.toWeb(fs.createReadStream(abs)), { headers: { 'Content-Type': type, 'Content-Length': String(st.size), 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin':'null' } });
   });
   ipcMain.handle('om:call', (_e, method, params) => callEngine(method, params));
   ipcMain.handle('om:pickFile', async (_e, title, kind) => {

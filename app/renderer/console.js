@@ -1,7 +1,8 @@
 import { scanBoundaries, movedBoundaryRow, scanBackground, writeForegroundMask, foregroundInRows } from './scan-overlays.mjs';
-import { FrontFrameCache, linkedCameraRange, cameraAsset, cameraLaneBody } from './front-preview.mjs';
+import { FrontFrameCache, linkedCameraRange, cameraAsset, cameraLaneBody, containedImageRect } from './front-preview.mjs';
 import { SCAN_TOOLS, toolbarPreferences, moveToolbarTool } from './scan-toolbar.mjs';
 import { validateCropResult, columnProjection, displayCoordinate, originalCoordinate, visibleColumnPieces } from './column-map.mjs';
+import { FrontOverlayOcclusion } from './front-occlusion.mjs';
 
 (() => {
 'use strict';
@@ -206,6 +207,7 @@ async function loadScanSource(h,descriptor) {
 }
 async function chooseScanView(role,id) {
   const h=cur(),scans=h.asset?.lineScans;if(!scans?.some(s=>s.id===id)||h.viewLoading)return;
+  finishHeightFrame();
   const previous=viewHeat(),main=role==='main'?id:previous.asset.mainCameraId,comparison=role==='comparison'?id:previous.asset.comparisonCameraId;
   const selected=cameraAsset(h.asset,{main,comparison:main===comparison?previous.asset.mainCameraId:comparison});
   overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;
@@ -216,7 +218,7 @@ async function chooseScanView(role,id) {
     for(const cameraId of [selected.mainCameraId,selected.comparisonCameraId])if(cameraId&&cameraId!==h.asset.mainCameraId)await loadScanSource(h,scans.find(s=>s.id===cameraId));
     const linked=linkedCameraRange(S.view,{rows:rowsOf(previous),height:scanH(),width:scanW(),period:periodOf(previous),timeOrigin:previous.tOpen,otherWidth:scanW(),otherRows:selected.primarySize.height,mainLanes:(previous.displayMeta||previous.asset.primaryMeta).lane_rows,otherLanes:selected.primaryMeta.lane_rows});
     h.viewCameraId=selected.mainCameraId;h.viewCompareId=selected.comparisonCameraId;S.bview.linked=true;
-    if(role==='main'){S.view.r0=linked.r0*selected.primarySize.height;S.view.zy=scanH()/(linked.rv*selected.primarySize.height);}
+    if(role==='main'){if(!S.view.zoomed)fitScanHeight(viewHeat());else{S.view.r0=linked.r0*selected.primarySize.height;S.view.zy=scanH()/(linked.rv*selected.primarySize.height);}}
     store.set(cameraRoleKey(),{main:selected.mainCameraId,comparison:selected.comparisonCameraId});
     renderUI();
   }catch(err){toast('Camera view could not load: '+err.message,true);}finally{h.viewLoading=false;renderTools();}
@@ -302,6 +304,28 @@ const laneFeet = k => (laneTop(k - 1) + laneTop(k)) / 2;
 const laneHt = k => 95 + (k - 1) * 7.5;                             // runner height in rows
 const rowsOf = h => h.rows || h.asset?.primarySize?.height || h.asset?.primaryMeta?.rows || (h.asset && store.get(scanGeometryKey(h.asset.mainCameraId), {}).rows) || IMG_H;
 function scanGeometryKey(camera='primary') { return `camera-geometry:${S.meet?.dir || 'sample'}:${camera}`; }
+function scanFrameKey(h=viewHeat(),camera=h.asset?.mainCameraId||'simulated') { return `scan-framing:${S.meet?.dir||'sample'}:${camera}`; }
+function cameraFrame(h,camera) {
+  const value=store.get(scanFrameKey(h,camera),null),top=Number(value?.top),bottom=Number(value?.bottom);
+  return value&&Number.isFinite(top)&&Number.isFinite(bottom)&&top>=0&&bottom<=1&&bottom-top>=0.049999?{top,bottom}:{top:0,bottom:1};
+}
+function visibleRows(h=viewHeat()) {
+  const frame=S.frameEditor?{top:0,bottom:1}:cameraFrame(h),rows=rowsOf(h);
+  return {top:frame.top*rows,bottom:frame.bottom*rows};
+}
+function fitScanHeight(h=viewHeat()) {
+  const rows=visibleRows(h);S.view.r0=rows.top;S.view.zy=scanH()/(rows.bottom-rows.top);
+}
+function finishHeightFrame() {
+  if(!S.frameEditor)return;
+  S.frameEditor=null;fitScanHeight();renderTools();invalidate();
+}
+function toggleHeightFrame() {
+  if(S.frameEditor){finishHeightFrame();return;}
+  S.frameEditor={key:scanFrameKey()};S.view.focusLane=null;S.zoomTool=false;S.hoverCol=null;
+  fitScanHeight();syncCursor();renderTools();invalidate();
+  requestAnimationFrame(()=>document.querySelector('#scanHeightEditor [data-edge="top"]')?.focus({preventScroll:true}));
+}
 function rememberScanGeometry(h, observed={}, persist=true) {
   const camera=h.asset?.mainCameraId || 'simulated',key=scanGeometryKey(camera),previous=store.get(key,{});
   const rows=Number.isInteger(observed.rows)&&observed.rows>0?observed.rows:rowsOf(h);
@@ -584,6 +608,7 @@ function renderSetupSidebar() {
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
 function go(i) {
   if (S.cameraSetup || i < 0 || i >= HEATS.length) return;
+  finishHeightFrame();
   overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;toolbarPopover?.close(false);sourceMenu?.close(false);
   S.idx = i; S.selLane = null; S.selCol = null; S.entryNumber = ''; S.hoverCol = null;
   S.bview.linked = true; Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView();
@@ -604,7 +629,7 @@ function fire() {
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
   h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {}; h.inputDerived=false;
   if(!h.asset) { h.sampleStrip=h.sampleStrip||h.img; blankStrip(h); }
-  h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';
+  h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';h.learnedForeground=null;h.occlusionAttempt=null;
   S.view.user = false; S.view.followZoom=null; S.selCol = null;
   if (h.asset && OM) {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
@@ -1486,12 +1511,21 @@ const reviewHighlightDefaults = { pendingColor:'#ffd43b', pendingOpacity:0.32, p
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
 function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
+function frontImageRect() {
+  const h=viewHeat(),pb=$('#front').parentNode,meta=h.frontRec?.meta||h.asset?.frontMeta;
+  return containedImageRect(pb.clientWidth,pb.clientHeight,meta?.width||vidEl?.videoWidth||pb.clientWidth,meta?.height||vidEl?.videoHeight||pb.clientHeight);
+}
+const frontFontScale=o=>frontImageRect().height/(o.sizeReferenceHeight||frontImageRect().height||1);
 function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nativeRows=null) {
-  const saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
+  let saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
+  if(kind==='front'&&!saved.imageSpace){
+    const rect=frontImageRect(),pb=$('#front').parentNode;
+    if(rect.height>0){saved={...saved,imageSpace:1,sizeReferenceHeight:rect.height,positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,p])=>[lane,{x:Math.max(.02,Math.min(.98,(p.x*pb.clientWidth-rect.x)/rect.width)),y:Math.max(.02,Math.min(.98,(p.y*pb.clientHeight-rect.y)/rect.height))}]))};store.set(cameraOverlayKey(kind,camera),saved);}
+  }
   const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
   if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}
   const rows=kind==='scan'?(nativeRows||rowsForCamera(camera)):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
-  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
+  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'simple',needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
     positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
     boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
 }
@@ -1555,7 +1589,7 @@ function showOverlaySettings(kind, anchor) {
         </label>
         <label><span>Overlays behind runners</span><input data-key="behindRunners" type="checkbox" role="switch"></label>
       </div>
-    ` : ''}
+    ` : `<div class="overlay-quick"><label title="Uses changes from a clear background. Keep this camera fixed."><span>Behind runners</span><input data-key="behindRunners" type="checkbox" role="switch"></label><button class="btn sm" data-front-background title="Use the current camera image while the track is clear.">Set empty background</button></div>`}
 
     <details class="overlay-group" data-settings-group="placement" ${isFront ? 'open' : ''}>
       <summary>Placement</summary>
@@ -1608,6 +1642,8 @@ function showOverlaySettings(kind, anchor) {
           <label title="Adds lane dividers to the image sent for auto-timing. Finish marks and text are excluded."><span>Use guides for auto-timing</span><input data-key="modelInput" type="checkbox" role="switch" aria-describedby="${id}-model-help ${id}-model-reason"></label>
           <p class="overlay-hint" id="${id}-model-help" data-model-input-help>Original recording stays unchanged.</p>
           <p class="overlay-hint overlay-model-reason" id="${id}-model-reason" data-model-input-reason role="status" hidden></p>
+          <label><span>Runner mask</span><select data-occlusion><option value="simple">Simple</option><option value="learned" ${S.occlusionInfo?.configured?'':'disabled'}>Learned preview</option></select></label>
+          <p class="overlay-hint" data-occlusion-status role="status"></p>
         </div>
       </details>
     ` : ''}`;
@@ -1622,13 +1658,13 @@ function showOverlaySettings(kind, anchor) {
   };
   const syncEndSizes = () => endSizes.forEach(input => {
     const scale = input.dataset.endSize === 'first' ? (o.firstScale || 1) : (o.lastScale || 0.55);
-    input.value = Math.round(o.fontSize * scale);
+    input.value = Math.round(o.fontSize * scale * frontFontScale(o));
   });
   const syncControls = () => {
     inputs.forEach(input => {
       const value = o[input.dataset.key] ?? uiDefaults[input.dataset.key];
       if (input.type === 'checkbox') input.checked = !!value;
-      else input.value = value;
+      else input.value = isFront&&input.dataset.key==='fontSize'?Math.round(value*frontFontScale(o)):value;
       if (input.type === 'range') syncRange(input);
     });
     if (isFront) {
@@ -1638,6 +1674,10 @@ function showOverlaySettings(kind, anchor) {
     }
   };
   syncControls();
+  if(!isFront){
+    const method=menu.querySelector('[data-occlusion]');method.value=o.occlusionMethod;
+    method.onchange=()=>{o=overlayStyle(kind);o.occlusionMethod=method.value;const target=maskTarget(viewHeat());target.occlusionAttempt=null;target.occlusionError=null;saveOverlay(kind,o);updateModelMaskStatus();};updateModelMaskStatus();
+  }
   if (!isFront && viewHeat().asset?.mainCameraId !== cur().asset?.mainCameraId) {
     menu.querySelector('[data-key="modelInput"]').disabled = true;
     const reason = menu.querySelector('[data-model-input-reason]');
@@ -1657,6 +1697,7 @@ function showOverlaySettings(kind, anchor) {
       }
       // Image dragging may have saved newer geometry while this menu stayed open.
       o = overlayStyle(kind);
+      if(isFront&&key==='fontSize')value/=frontFontScale(o);
       o[key] = value;
       if (isFront && key === 'fontSize') syncEndSizes();
       if (input.type === 'range') syncRange(input);
@@ -1664,11 +1705,18 @@ function showOverlaySettings(kind, anchor) {
     };
     if (input.type === 'number') input.onchange = () => {
       o = overlayStyle(kind);
-      input.value = o[input.dataset.key];
+      input.value = isFront&&input.dataset.key==='fontSize'?Math.round(o.fontSize*frontFontScale(o)):o[input.dataset.key];
     };
   });
 
   if (isFront) {
+    menu.querySelector('[data-front-background]').onclick=()=>{
+      const source=currentFrontPixels();
+      if(!source){toast('Wait for a camera image first.');return;}
+      frontOcclusion.configure(frontCacheKey||`sample:${S.meet?.dir||'sample'}:${$('#front').clientWidth}:${$('#front').clientHeight}`);
+      frontOcclusion.generation++;frontOcclusion.loading=false;
+      if(frontOcclusion.setReference(source.image))toast('Background set for this camera view.');
+    };
     const count = menu.querySelector('[data-lane-count]');
     const placement = menu.querySelector('[data-placement]');
     count.onchange = () => {
@@ -1693,7 +1741,7 @@ function showOverlaySettings(kind, anchor) {
         if (!Number.isFinite(value)) return;
         const size = Math.max(8, Math.min(160, value));
         o = overlayStyle(kind);
-        o[input.dataset.endSize === 'first' ? 'firstScale' : 'lastScale'] = size / o.fontSize;
+        o[input.dataset.endSize === 'first' ? 'firstScale' : 'lastScale'] = size / (o.fontSize*frontFontScale(o));
         o.sizes = {};
         if (o.placement === 'anchors') spreadFrontLanes(o);
         saveOverlay(kind, o);
@@ -1712,7 +1760,7 @@ function showOverlaySettings(kind, anchor) {
     o = overlayStyle(kind);
     // Only appearance fields reset. Geometry, display effects and opt-ins survive.
     Object.assign(o, {
-      fontSize: isFront ? 28 : overlayDefaults.fontSize,
+      fontSize: isFront ? 28/frontFontScale(o) : overlayDefaults.fontSize,
       weight: overlayDefaults.weight,
       thickness: overlayDefaults.thickness,
       textColor: overlayDefaults.textColor,
@@ -1799,19 +1847,23 @@ function showOverlaySettings(kind, anchor) {
 function updateFrontOverlay() {
   const layer=document.getElementById('frontLaneOverlay');if(!layer)return;
   const o=overlayStyle('front'),lanes=Array.from({length:o.laneCount},(_,i)=>i+1);
+  if(!o.enabled||!o.behindRunners)layer.style.maskImage='none';
   layer.hidden=!o.enabled;if(!o.enabled)return;layer.style.opacity=o.opacity;
-  layer.innerHTML=lanes.map(lane=>{
+  const imageRect=frontImageRect(),scale=frontFontScale(o);
+  layer.innerHTML='<div class="front-image-overlays"></div>';const content=layer.firstElementChild;
+  Object.assign(content.style,{left:imageRect.x+'px',top:imageRect.y+'px',width:imageRect.width+'px',height:imageRect.height+'px'});
+  content.innerHTML=lanes.map(lane=>{
     const pos=frontLanePoint(o,lane),movable=o.edit&&(o.placement==='individual'||lane===1||lane===o.laneCount);
-    return `<span class="front-lane${o.edit&&o.placement==='anchors'&&(lane===1||lane===o.laneCount)?' lane-anchor':''}" data-lane="${lane}" style="left:${pos.x*100}%;top:${pos.y*100}%;font-size:${frontLaneSize(o,lane)}px;font-weight:${o.weight};color:${o.textColor};-webkit-text-stroke:${o.thickness}px ${o.lineColor};cursor:${movable?'grab':'default'};pointer-events:${movable?'auto':'none'}">${lane}</span>`;
+    return `<span class="front-lane${o.edit&&o.placement==='anchors'&&(lane===1||lane===o.laneCount)?' lane-anchor':''}" data-lane="${lane}" style="left:${pos.x*100}%;top:${pos.y*100}%;font-size:${frontLaneSize(o,lane)*scale}px;font-weight:${o.weight};color:${o.textColor};-webkit-text-stroke:${o.thickness*scale}px ${o.lineColor};cursor:${movable?'grab':'default'};pointer-events:${movable?'auto':'none'}">${lane}</span>`;
   }).join('');
   layer.querySelectorAll('.front-lane').forEach(label=>{
     const lane=Number(label.dataset.lane);
-    label.onwheel=e=>{if(!o.edit||!e.altKey)return;e.preventDefault();e.stopPropagation();o.sizes[lane]=Math.max(8,Math.min(160,frontLaneSize(o,lane)+(e.deltaY<0?1:-1)));saveOverlay('front',o);};
+    label.onwheel=e=>{if(!o.edit||!e.altKey)return;e.preventDefault();e.stopPropagation();o.sizes[lane]=Math.max(8/scale,Math.min(160/scale,frontLaneSize(o,lane)+(e.deltaY<0?1:-1)/scale));saveOverlay('front',o);};
     label.onpointerdown=e=>{
       if(!o.edit)return;e.preventDefault();e.stopPropagation();label.setPointerCapture(e.pointerId);
       const rect=frontPb.getBoundingClientRect(),f=S.fview;
       const move=ev=>{
-        const x=Math.max(0.02,Math.min(0.98,(ev.clientX-rect.left-f.x)/f.s/rect.width)),y=Math.max(0.02,Math.min(0.98,(ev.clientY-rect.top-f.y)/f.s/rect.height));
+        const x=Math.max(0.02,Math.min(0.98,((ev.clientX-rect.left-f.x)/f.s-imageRect.x)/imageRect.width)),y=Math.max(0.02,Math.min(0.98,((ev.clientY-rect.top-f.y)/f.s-imageRect.y)/imageRect.height));
         o.positions[lane]={x,y};if(o.placement==='anchors')spreadFrontLanes(o);
         layer.querySelectorAll('.front-lane').forEach(el=>{const p=frontLanePoint(o,Number(el.dataset.lane));el.style.left=p.x*100+'%';el.style.top=p.y*100+'%';});
       };
@@ -1845,8 +1897,9 @@ function scanToolStates() {
     follow:{icon:ICON.next,when:h.state==='running',on:!S.view.user,disabled:false,action:()=>{S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.zoomTool=false;S.hoverCol=null;follow(viewHeat());renderTools();invalidate();}},
     zoom:{icon:ICON.zoom,on:S.zoomTool,disabled:!captured,action:()=>{S.zoomTool=!S.zoomTool;renderTools();syncCursor();}},
     unzoom:{icon:ICON.fit,when:S.view.zoomed,disabled:!captured,action:()=>{fitView();renderUI();}},
-    mark:{icon:ICON.auto,disabled:!!S.cameraSetup||!captured||S.selLane==null||S.selCol==null,action:()=>setMark(S.selLane,S.selCol)},
-    delete:{icon:ICON.clear,disabled:!!S.cameraSetup||!captured||S.selLane==null,action:deleteSelectedFinish},
+    height:{icon:ICON.fit,on:!!S.frameEditor,disabled:false,action:toggleHeightFrame},
+    mark:{icon:ICON.auto,disabled:!!S.cameraSetup||!!S.frameEditor||!captured||S.selLane==null||S.selCol==null,action:()=>setMark(S.selLane,S.selCol)},
+    delete:{icon:ICON.clear,disabled:!!S.cameraSetup||!!S.frameEditor||!captured||S.selLane==null,action:deleteSelectedFinish},
     flip:{icon:ICON.flip,on:S.flip,disabled:false,action:()=>{S.flip=!S.flip;store.set('flip',S.flip);renderTools();}},
     lanes:{icon:ICON.lanes,on:overlayStyle('scan').enabled,disabled:false,action:anchor=>showOverlaySettings('scan',anchor)},
     auto:{icon:ICON.auto,on:S.autoMark,disabled:!!S.cameraSetup,action:anchor=>showToolbarPopover('auto',anchor)},
@@ -1951,7 +2004,7 @@ function renderTools() {
     const button=h_('button','tool'+(tool.on?' on':'')+(id==='mark'?' primary-tool':''));button.dataset.tool=id;button.title=tool.help;button.disabled=tool.disabled;
     button.innerHTML=tool.icon+tool.label+(['lanes','auto'].includes(id)?' ▾':'');
     if(['lanes','auto'].includes(id)){button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded',String(id==='lanes'?!!overlayMenu?.isConnected:toolbarPopover?.menu?.classList.contains('auto-timing-menu')||false));}
-    else if(['follow','zoom','flip','hideEmpty'].includes(id))button.setAttribute('aria-pressed',String(!!tool.on));
+    else if(['follow','zoom','flip','hideEmpty','height'].includes(id))button.setAttribute('aria-pressed',String(!!tool.on));
     button.onclick=()=>{if(id==='auto'&&toolbarPopover?.menu.classList.contains('auto-timing-menu')){toolbarPopover.close();return;}toolbarPopover?.close(false);runScanTool(id,button);};pinned.append(button);
   }
   const more=h_('button','tool more-scan-tools','⋯');more.dataset.more='';more.title='More tools, customize toolbar, and help';more.setAttribute('aria-label','More line-scan tools');more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded',String(!!toolbarPopover&&!toolbarPopover.menu.classList.contains('auto-timing-menu')));
@@ -2113,6 +2166,46 @@ function fitCanvas(cv) {
 const scanCv = $('#scan');scanCv.tabIndex=0;scanCv.setAttribute('aria-label','Main line-scan image');
 const laneGutter=$('#laneGutter');
 const scanW = () => scanCv.clientWidth, scanH = () => scanCv.clientHeight - RULER;
+const heightEditor=$('#scanHeightEditor');
+function renderHeightFrame(h) {
+  if(S.frameEditor&&S.frameEditor.key!==scanFrameKey(h))S.frameEditor=null;
+  heightEditor.hidden=!S.frameEditor;if(!S.frameEditor)return;
+  const frame=cameraFrame(h),rows=rowsOf(h),height=scanH();
+  heightEditor.querySelector('.height-shade-top').style.height=frame.top*100+'%';
+  heightEditor.querySelector('.height-shade-bottom').style.top=frame.bottom*100+'%';
+  for(const edge of heightEditor.querySelectorAll('[data-edge]')){
+    const name=edge.dataset.edge,y=frame[name]*height,top=Math.max(0,Math.min(height-24,y-12));
+    edge.style.top=top+'px';edge.style.setProperty('--edge-y',(y-top)+'px');
+    edge.setAttribute('aria-valuemin',name==='top'?0:Math.ceil((frame.top+.05)*rows));
+    edge.setAttribute('aria-valuemax',name==='top'?Math.floor((frame.bottom-.05)*rows):rows);
+    edge.setAttribute('aria-valuenow',Math.round(frame[name]*rows));
+    edge.setAttribute('aria-valuetext',`Row ${Math.round(frame[name]*rows)} of ${rows}`);
+    edge.title='Drag to frame the view. Arrow keys: one row; Shift: ten rows.';
+  }
+}
+function changeFrameEdge(name,value) {
+  if(!S.frameEditor||S.frameEditor.key!==scanFrameKey())return;
+  const frame=cameraFrame(viewHeat());
+  frame[name]=name==='top'?Math.max(0,Math.min(frame.bottom-.05,value)):Math.max(frame.top+.05,Math.min(1,value));
+  store.set(S.frameEditor.key,frame);invalidate();
+}
+for(const edge of heightEditor.querySelectorAll('[data-edge]')){
+  edge.onpointerdown=e=>{
+    if(e.button!==0||!S.frameEditor)return;e.preventDefault();e.stopPropagation();edge.focus({preventScroll:true});edge.setPointerCapture(e.pointerId);
+    const rect=heightEditor.getBoundingClientRect(),name=edge.dataset.edge,start=cameraFrame(viewHeat())[name],y=e.clientY;
+    const move=ev=>changeFrameEdge(name,start+(ev.clientY-y)/rect.height);
+    const done=()=>{edge.onpointermove=null;edge.onpointerup=null;edge.onpointercancel=null;edge.onlostpointercapture=null;};
+    edge.onpointermove=move;edge.onpointerup=done;edge.onpointercancel=done;edge.onlostpointercapture=done;
+  };
+  edge.onkeydown=e=>{
+    if(!['ArrowUp','ArrowDown','Home','End'].includes(e.key))return;e.preventDefault();e.stopPropagation();
+    const name=edge.dataset.edge,frame=cameraFrame(viewHeat());
+    changeFrameEdge(name,e.key==='Home'?0:e.key==='End'?1:frame[name]+(e.key==='ArrowUp'?-1:1)*(e.shiftKey?10:1)/rowsOf(viewHeat()));
+  };
+}
+heightEditor.querySelector('[data-full-height]').onclick=()=>{if(S.frameEditor){store.set(S.frameEditor.key,{top:0,bottom:1});invalidate();}};
+heightEditor.querySelector('[data-height-done]').onclick=()=>{finishHeightFrame();toolbarAnchor('height')?.focus({preventScroll:true});};
+heightEditor.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finishHeightFrame();toolbarAnchor('height')?.focus({preventScroll:true});}};
 function pendingLaneIds(h,o) {
   return new Set(o.needsFinish&&!S.cameraSetup&&['running','review','saved'].includes(h.state)?h.athletes.filter(a=>!resolved(h,a)).map(a=>a.lane):[]);
 }
@@ -2165,12 +2258,13 @@ function fitView() {
   v.focusLane=null;
   v.zx = Math.max(MIN_ZX, Math.min(1, W / displayCount(h)));
   v.c0 = Math.max(0, displayCount(h) - W / v.zx);
-  v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
+  fitScanHeight(h); v.zoomed = false;
 }
 function clampView() {
   const h = viewHeat(), v = S.view, vis = scanW() / v.zx;
   v.c0 = Math.max(h.preview?(h.minCol||0):-vis*0.05, Math.min(displayCount(h) - vis * 0.95, v.c0));
-  v.r0 = Math.max(0, Math.min(rowsOf(h) - scanH() / v.zy, v.r0));
+  const rows=visibleRows(h),span=scanH()/v.zy;
+  v.r0 = Math.max(rows.top, Math.min(rows.bottom-span, v.r0));
 }
 function focusFinish(col) {
   const v = S.view,h=viewHeat();
@@ -2179,7 +2273,7 @@ function focusFinish(col) {
   v.zx = Math.max(v.zx, 1.5);
   v.c0 = toDisplay(h,col+0.5) - scanW() / (2 * v.zx);
   const body=cameraLaneBody((h.displayMeta||h.asset?.primaryMeta)?.lane_rows,S.selLane),span=scanH()/v.zy;
-  if(body&&span<rowsOf(h)-0.5)v.r0=body.center-span/2;
+  if(body&&span<visibleRows(h).bottom-visibleRows(h).top-0.5)v.r0=body.center-span/2;
   v.zoomed = true; v.user = true;
   clampView();
 }
@@ -2190,7 +2284,7 @@ function centerOn(col) {
 // While running: the scan streams in at 1:1, condenses down to MIN_ZX, then autoscrolls with the live edge at the right.
 function follow(h) {
   const v = S.view, W = scanW(), n = Math.max(1, h.liveCol + 1);
-  v.zy = scanH() / rowsOf(h); v.r0 = 0;
+  fitScanHeight(h);
   v.focusLane=null;
   v.zx = Math.max(MIN_ZX, v.followZoom ?? Math.min(1, W / n));      // stream in at 1:1, condense to the floor, then autoscroll
   v.c0 = Math.max(0, n - W / v.zx);
@@ -2208,13 +2302,43 @@ function sampleForeground(h) {
   h.sampleForeground=new Uint8Array(Math.ceil(image.width*image.height/8));
   writeForegroundMask(h.sampleForeground,0,image,h.overlayBackground);
 }
+const maskTarget=h=>h.displaySource||h.recordingHeat||h;
+const maskRequestKey=h=>`${h.captureId}:${h.asset?.mainCameraId||'primary'}`;
+function learnedMask(h) {
+  const mask=maskTarget(h).learnedForeground;return mask?.key===maskRequestKey(h)?mask:null;
+}
+function updateModelMaskStatus() {
+  const label=overlayMenu?.querySelector('[data-occlusion-status]');if(!label)return;
+  const h=viewHeat(),target=maskTarget(h),o=overlayStyle('scan');
+  label.textContent=o.occlusionMethod!=='learned'?'':learnedMask(h)?'Learned preview ready':target.occlusionBusy?'Generating mask…':target.occlusionError?'Simple fallback':!S.occlusionInfo?.configured?'Private service not configured':h.state==='running'?'Simple while recording':!h.captureId?'Record a capture first':'Private service unavailable';
+  label.title=target.occlusionError||'Experimental line-scan mask. Real-data verification is still pending.';
+}
+async function maybeLearnedMask(h,o) {
+  if(!OM||S.cameraSetup||!o.enabled||!o.behindRunners||o.occlusionMethod!=='learned'||!['review','saved'].includes(h.state)||!h.captureId||!S.occlusionInfo?.ready)return;
+  const target=maskTarget(h),key=maskRequestKey(h);if(target.occlusionBusy||target.occlusionAttempt===key||learnedMask(h))return;
+  target.occlusionAttempt=key;target.occlusionBusy=true;target.occlusionError=null;updateModelMaskStatus();
+  try{
+    const descriptor=h.displaySource&&(h.recordingHeat||h).asset.lineScans.find(s=>s.id===h.asset.mainCameraId);
+    const response=await OM.call('occlusion.predict',{captureId:h.captureId,viewPng:descriptor?.png||null});
+    const width=h.displaySource?h.displaySource.w:h.nCols,rows=rowsOf(h);
+    if(response.width!==width||response.height!==rows)throw Error('Mask geometry differs from this camera');
+    const image=new Image();image.src='data:image/png;base64,'+response.mask_png_base64;await image.decode();
+    if(image.naturalWidth!==width||image.naturalHeight!==rows)throw Error('Mask pixels differ from this camera');
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=rows;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);
+    const pixels=ctx.getImageData(0,0,width,rows).data,bits=new Uint8Array(Math.ceil(width*rows/8));
+    for(let y=0;y<rows;y++)for(let x=0;x<width;x++)if(pixels[(y*width+x)*4]>127){const i=x*rows+y;bits[i>>3]|=1<<(i&7);}
+    if(maskRequestKey(h)===key)target.learnedForeground={key,bits,width,rows,requestId:response.request_id,model:response.model};
+  }catch(err){target.occlusionError=err.message;toast('Model mask unavailable; Simple kept.',true);}
+  finally{target.occlusionBusy=false;updateModelMaskStatus();invalidate();}
+}
 function guideOccluded(h, x0, x1, row0, row1) {
-  if(h.displaySource){const s=h.displaySource,a=Math.floor((colTime(h,colOf(x0))-s.t)/s.p)-1,b=Math.ceil((colTime(h,colOf(x1))-s.t)/s.p)+1;for(let x=Math.max(0,Math.min(a,b));x<=Math.min(s.w-1,Math.max(a,b));x++)if(foregroundInRows(s.mask,x,s.rows,Math.max(0,Math.floor(row0)-2),Math.ceil(row1)+2))return true;return false;}
+  const model=h.activeOcclusionMask;
+  if(h.displaySource){const s=h.displaySource,a=Math.floor((colTime(h,colOf(x0))-s.t)/s.p)-1,b=Math.ceil((colTime(h,colOf(x1))-s.t)/s.p)+1;for(let x=Math.max(0,Math.min(a,b));x<=Math.min(s.w-1,Math.max(a,b));x++)if(foregroundInRows(model?.bits||s.mask,x,s.rows,Math.max(0,Math.floor(row0)-2),Math.ceil(row1)+2))return true;return false;}
   const first=Math.max(0,Math.min(colOf(x0),colOf(x1))-1),last=Math.min((h.state==='running'?h.liveCol:h.nCols-1),Math.max(colOf(x0),colOf(x1))+1);
   const rows=rowsOf(h),lo=Math.max(0,Math.floor(row0)-2),hi=Math.min(rows-1,Math.ceil(row1)+2);
   for(let c=first;c<=last;c++) {
-    const mask=h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
-    const local=h.sampleForeground?c:c%STRIP_TILE;
+    const mask=model?.bits||h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
+    const local=model||h.sampleForeground?c:c%STRIP_TILE;
     if(foregroundInRows(mask,local,rows,lo,hi))return true;
   }
   return false;
@@ -2229,7 +2353,7 @@ function hitScanBoundary(h,x,y,inGutter=false) {
   }).filter(b=>b.d<=8).sort((a,b)=>a.d-b.d)[0]||null;
 }
 function guideRenderData(h,o,W,Hi,g) {
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,o.behindRunners,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
   if(h.guideRenderCache?.key===key)return h.guideRenderCache.lines;
   const lines=scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
     const y=(b.row-v.r0)*v.zy,path=new Path2D();
@@ -2247,20 +2371,20 @@ function guideRenderData(h,o,W,Hi,g) {
 }
 
 function foregroundColumns(h,x0,x1) {
-  const result=[],source=h.displaySource;
+  const result=[],source=h.displaySource,model=h.activeOcclusionMask;
   let a,b,limit;
   if(source){a=(colTime(h,colOf(x0))-source.t)/source.p;b=(colTime(h,colOf(x1))-source.t)/source.p;limit=source.w-1;}
   else {a=colOf(x0);b=colOf(x1);limit=h.state==='running'?h.liveCol:h.nCols-1;}
   const first=Math.max(0,Math.floor(Math.min(a,b))-1),last=Math.min(limit,Math.ceil(Math.max(a,b))+1);
   for(let c=first;c<=last;c++){
-    const mask=source?.mask||h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
-    if(mask)result.push({mask,column:source||h.sampleForeground?c:c%STRIP_TILE});
+    const mask=model?.bits||source?.mask||h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
+    if(mask)result.push({mask,column:model||source||h.sampleForeground?c:c%STRIP_TILE});
   }
   return result;
 }
 function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache') {
   if(!pending.size||W<1||Hi<1)return null;
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.pendingColor,[...pending],edges]);
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.pendingColor,[...pending],edges]);
   if(h[cache]?.key===key)return h[cache].canvas;
   const canvas=document.createElement('canvas');canvas.width=W;canvas.height=Hi;
   const ctx=canvas.getContext('2d'),bands=[];ctx.fillStyle=o.pendingColor;
@@ -2288,6 +2412,8 @@ function drawLaneGuides(g,h,W,Hi) {
   // Decorative lane guides can be adjusted without changing the model's lane geometry.
   const style=overlayStyle('scan'),hasPixels=(h.recvCols||0)>0||(!h.asset&&['review','saved'].includes(h.state));
   const o=hasPixels?style:{...style,behindRunners:false};
+  h.activeOcclusionMask=style.occlusionMethod==='learned'?learnedMask(h):null;
+  maybeLearnedMask(h,o);
   if(o.enabled) {
     const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
     if(o.behindRunners)sampleForeground(h);
@@ -2329,8 +2455,9 @@ function drawScan() {
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hc);
   const live = h.state === 'running', last = live ? h.liveCol : h.nCols - 1;
   const captured = h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0);
-  // No source pixels yet: use the camera's full native height, never a stale preview scale.
-  if(!captured){v.r0=0;v.zy=Hi/rowsOf(h);}
+  // Framing changes only the viewport. Sensor rows and lane coordinates remain native.
+  if(!captured||S.frameEditor)fitScanHeight(h);
+  renderHeightFrame(h);
   renderLaneGutter(h);
   if (!captured) {
     drawLaneGuides(g,h,W,Hi);
@@ -2428,7 +2555,9 @@ function backupRange(h) {
     const period=periodOf(h),pieces=displayPieces(h,Math.max(0,S.view.c0),Math.min(displayCount(h),S.view.c0+scanW()/S.view.zx)),src=backupSource(h);
     const finishes=[...Object.entries(h.marks).map(([lane,m])=>({lane:+lane,col:m.col})),...(h.proposals||[])];
     const finishLanes=[...new Set(finishes.filter(m=>pieces.some(p=>m.col>=p.start&&m.col<p.end)).map(m=>m.lane))];
-    return {...linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period,timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth,otherRows:src.rows,mainLanes:(h.displayMeta||h.asset?.primaryMeta)?.lane_rows,otherLanes:src.meta?.lane_rows,finishLanes}),projection:projectionOf(h),origin:h.tOpen,period};
+    const range=linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period,timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth,otherRows:src.rows,mainLanes:(h.displayMeta||h.asset?.primaryMeta)?.lane_rows,otherLanes:src.meta?.lane_rows,finishLanes});
+    if(!S.view.zoomed||S.frameEditor){const frame=cameraFrame(h,h.asset?.comparisonCameraId||'backup');range.r0=frame.top;range.rv=frame.bottom-frame.top;}
+    return {...range,projection:projectionOf(h),origin:h.tOpen,period};
   }
   return S.bview;
 }
@@ -2495,6 +2624,24 @@ function frontTime(h) {
   return col == null ? null : colTime(h, col);
 }
 let vidEl = null, vidTag = null, frontCache=null, frontCacheKey=null, lastFrontFrame=null, wantedVideoTime=null;
+const frontOcclusion=new FrontOverlayOcclusion(()=>invalidate());
+function currentFrontPixels() {
+  if(vidEl?.style.display==='block')return vidEl.readyState>=2?{image:vidEl,stamp:`video:${vidEl.currentTime}`}:null;
+  if(lastFrontFrame)return {image:lastFrontFrame.bitmap,stamp:`frame:${lastFrontFrame.index}`};
+  const cv=$('#front');return cv.width&&cv.height?{image:cv,stamp:`sample:${frontTime(viewHeat())}:${cv.width}:${cv.height}`}:null;
+}
+function updateFrontOcclusion(h) {
+  const layer=$('#frontLaneOverlay'),o=overlayStyle('front');
+  if(!o.enabled||!o.behindRunners){layer.style.maskImage='none';return;}
+  const rec=h.frontRec||(h.asset?.front?{path:h.asset.front,frames:h.asset.frontFrames}:null),source=currentFrontPixels();
+  if(rec){
+    frontOcclusion.configure(frontCacheKey);
+    frontOcclusion.loadReference(rec.frames?.[0]?OM.fileUrl(rec.frames[0]):null,OM.fileUrl(rec.path));
+  }
+  const mask=source&&frontOcclusion.mask(source.image,source.stamp);
+  layer.dataset.occlusion=mask?'ready':frontOcclusion.failed?'unavailable':frontOcclusion.reference?'waiting-frame':'loading-background';
+  layer.style.maskImage=mask?`url("${mask}")`:'none';
+}
 function seekFrontVideo(v,target) {
   wantedVideoTime=target;
   if(!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-target)>0.002)v.currentTime=target;
@@ -2502,7 +2649,7 @@ function seekFrontVideo(v,target) {
 function frontVideo() {
   if (!vidEl) {
     const pb = $('#front').parentNode;
-    vidEl = h_('video', 'frontvid'); vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';
+    vidEl = h_('video', 'frontvid'); vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';vidEl.crossOrigin='anonymous';
     vidEl.onloadedmetadata = invalidate;
     vidEl.onseeked=()=>{if(wantedVideoTime!=null&&Math.abs(vidEl.currentTime-wantedVideoTime)>0.002)seekFrontVideo(vidEl,wantedVideoTime);invalidate();};
     vidTag = h_('div', 'frametag');
@@ -2521,7 +2668,7 @@ function syncFront(h,g,W,Hf) {
   if (v.dataset.src !== url) { v.dataset.src = url; v.src = url; }
   const fps = (rec.meta && rec.meta.fps) || 30, ff = (rec.meta && rec.meta.first_frame_race_time_s) || 0;
   const cacheKey=rec.frames?.[0]||url;
-  if(frontCacheKey!==cacheKey){frontCache?.dispose();frontCache=null;lastFrontFrame=null;frontCacheKey=cacheKey;if(rec.frames?.length)frontCache=new FrontFrameCache({load:async index=>{const im=new Image();im.src=OM.fileUrl(rec.frames[index]);await im.decode();return createImageBitmap(im);},onReady:invalidate});}
+  if(frontCacheKey!==cacheKey){frontCache?.dispose();frontCache=null;lastFrontFrame=null;frontCacheKey=cacheKey;if(rec.frames?.length)frontCache=new FrontFrameCache({load:async index=>{const im=new Image();im.crossOrigin='anonymous';im.src=OM.fileUrl(rec.frames[index]);await im.decode();return createImageBitmap(im);},onReady:invalidate});}
   if (h.state === 'running'&&S.hoverCol==null) {
     wantedVideoTime=null;
     const want = h.tNow - ff;
@@ -2554,7 +2701,7 @@ function drawFront() {
   const cv = $('#front');
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hf] = fitCanvas(cv), h = viewHeat();
-  if (syncFront(h,g,W,Hf)) return;
+  if (syncFront(h,g,W,Hf)) {updateFrontOcclusion(h);return;}
   const hy = Hf * 0.17, cx = W / 2;
   const grd = g.createLinearGradient(0, 0, 0, hy);
   grd.addColorStop(0, '#1b2740'); grd.addColorStop(1, '#2b3a55');
@@ -2570,9 +2717,10 @@ function drawFront() {
   const yFin = yAt(6);
   g.strokeStyle = '#ffffff'; g.lineWidth = 2;
   g.beginPath(); g.moveTo(cx - 4 * sp(yFin), yFin); g.lineTo(cx + 4 * sp(yFin), yFin); g.stroke();
+  if(overlayStyle('front').behindRunners){frontOcclusion.configure(`sample:${S.meet?.dir||'sample'}:${W}:${Hf}`);if(!frontOcclusion.reference)frontOcclusion.setReference(cv);}
   const ft = frontTime(h), t = ft == null ? 0 : ft;
   const banner = txt => { g.fillStyle = 'rgba(8,16,34,0.55)'; g.fillRect(0, 0, W, 22); g.fillStyle = '#d8dee9'; g.font = '11px ' + TK.sans; g.fillText(txt, 8, 15); };
-  if ((h.state === 'review' || h.state === 'saved') && ft == null) { banner('Hover the line-scan to see this camera at that moment'); return; }
+  if ((h.state === 'review' || h.state === 'saved') && ft == null) { banner('Hover the line-scan to see this camera at that moment');updateFrontOcclusion(h);return; }
   const rs = h.athletes.filter(a => !a.pre).map(a => {
     let d;
     if (t <= 0.16) d = 0;
@@ -2590,6 +2738,7 @@ function drawFront() {
   });
   if (h.state === 'loaded' || h.state === 'armed') banner(h.state === 'armed' ? 'In the blocks' : 'Waiting for the heat');
   else if (ft != null && h.state !== 'running') banner(`${fmtT(t)} s`);
+  updateFrontOcclusion(h);
 }
 
 // ---------------------------------------------------------------- line-scan input
@@ -2715,6 +2864,7 @@ scanCv.addEventListener('dblclick', e => {
   setMark(S.selLane, S.selCol);
 });
 window.addEventListener('keydown', e => {
+  if(S.frameEditor){if(e.key==='Escape'){e.preventDefault();finishHeightFrame();}return;}
   if(e.target instanceof Element&&e.target.closest('#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings,.scan-tool-menu,.scan-toolbar-dialog'))return;
   if (document.querySelector('.race-reset-dialog[open],.scan-toolbar-dialog[open]')) return;
   if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable=true]')) return;
@@ -2839,9 +2989,11 @@ backupCv.title = 'Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: 
 const frontPb = document.getElementById('front').parentNode;
 const frontLaneLayer=h_('div','front-lane-overlay');frontLaneLayer.id='frontLaneOverlay';frontPb.append(frontLaneLayer);
 const frontLaneButton=h_('button','btn sm','Lanes ▾');
+frontLaneButton.id='frontLaneButton';
 frontLaneButton.onpointerdown=e=>e.stopPropagation();frontLaneButton.onmousedown=e=>e.stopPropagation();
 frontLaneButton.onclick=e=>{e.stopPropagation();showOverlaySettings('front',frontLaneButton);};
 const frontHeader=frontPb.parentNode.querySelector('.ph');frontLaneButton.style.marginLeft='auto';frontHeader.append(frontLaneButton);
+new ResizeObserver(()=>{clampFront();applyFrontView();updateFrontOverlay();invalidate();}).observe(frontPb);
 
 function applyFrontView() {
   const f = S.fview, t = `translate(${f.x}px, ${f.y}px) scale(${f.s})`;
@@ -2943,6 +3095,7 @@ if (OM) {
   });
   OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
   OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
+  OM.call('occlusion.info').then(info=>{S.occlusionInfo=info;updateModelMaskStatus();invalidate();}).catch(()=>{});
   OM.call('autocrop.info').then(info=>{S.cropInfo=info;renderTools();}).catch(()=>{});
   OM.call('autotiming.info').then(i => { S.atInfo = i; }).catch(() => {});
   OM.call('settings.get').then(s => { if (s.demoDir) openDemo(s.demoDir); else if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});

@@ -2,7 +2,8 @@
 export const SCAN_TOOLS = [
   { id:'follow', label:'Follow live', group:'View', help:'Return to the newest columns. Scrolling or panning pauses following.' },
   { id:'zoom', label:'Zoom', group:'View', shortcut:'Shift + drag', help:'Drag a box to inspect it. Zoom only changes the view.' },
-  { id:'unzoom', label:'Unzoom', group:'View', shortcut:'Esc', help:'Fit the complete capture again. Appears while zoomed.' },
+  { id:'unzoom', label:'Unzoom', group:'View', shortcut:'Esc', help:'Fit the capture to your camera framing again. Appears while zoomed.' },
+  { id:'height', label:'Frame height', group:'View', help:'Drag the top and bottom edges to hide unused vertical space. Saved per camera; Full height restores every row.' },
   { id:'mark', label:'Mark', group:'Marking', shortcut:'Enter', help:'Create or replace the selected athlete’s finish at the selected column.' },
   { id:'delete', label:'Delete mark', group:'Marking', shortcut:'Delete', help:'Remove the selected finish. The original recording is retained.' },
   { id:'flip', label:'Flip', group:'View', help:'Mirror the scan. Column timestamps and results stay the same.' },

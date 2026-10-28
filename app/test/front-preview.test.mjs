@@ -1,7 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {FrontFrameCache,linkedCameraRange,cameraAsset} from '../renderer/front-preview.mjs';
+import {FrontFrameCache,linkedCameraRange,cameraAsset,containedImageRect} from '../renderer/front-preview.mjs';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('front overlay coordinates use the letterboxed image across tall and wide tiles',()=>{
+  assert.deepEqual(containedImageRect(800,600,1920,1080),{x:0,y:75,width:800,height:450});
+  assert.deepEqual(containedImageRect(400,700,1920,1080),{x:0,y:237.5,width:400,height:225});
+  assert.deepEqual(containedImageRect(900,200,1920,1080),{x:272.22222222222223,y:0,width:355.55555555555554,height:200});
+});
 
 test('rapid scrubbing prioritizes the latest target and does not display stale completions',async()=>{
   const loads=[],ready=[],resolvers=new Map();

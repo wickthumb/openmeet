@@ -45,7 +45,14 @@
         <span class="ts none" id="ts" title="Race time of the selected column">--.---</span>
         <div class="tools" id="tools"></div>
       </div>
-      <div class="scanwrap"><div id="laneGutter" class="lane-gutter" aria-label="Lane rows" hidden></div><div class="scan-image"><canvas id="scan"></canvas></div></div>
+      <div class="scanwrap"><div id="laneGutter" class="lane-gutter" aria-label="Lane rows" hidden></div><div class="scan-image"><canvas id="scan"></canvas>
+        <div id="scanHeightEditor" class="scan-height-editor" hidden>
+          <div class="height-shade height-shade-top"></div><div class="height-shade height-shade-bottom"></div>
+          <div class="height-edge" data-edge="top" role="slider" tabindex="0" aria-label="Top visible row" aria-orientation="vertical"><span>Top ↕</span></div>
+          <div class="height-edge" data-edge="bottom" role="slider" tabindex="0" aria-label="Bottom visible row" aria-orientation="vertical"><span>Bottom ↕</span></div>
+          <div class="height-options"><b>Frame height</b><button class="btn sm" data-full-height>Full height</button><button class="btn sm primary" data-height-done>Done</button></div>
+        </div>
+      </div></div>
     </section>
   </main>
 </div>

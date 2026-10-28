@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { validateCropResult } from './renderer/column-map.mjs';
+import { occlusionInfo, requestOcclusion } from './private-occlusion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const userData = process.argv[2] || here;
@@ -214,7 +215,7 @@ const methods = {
     const pulseMs = Date.now();
     const trigger = meetDir && !preview ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
     if (trigger) (await startJournal(meetDir)).assign({ heatKey: key, triggerId: trigger.id, referenceTriggerId: trigger.id });
-    if(!preview) captures.set(id, { dir, sidecar, trigger });
+    if(!preview) captures.set(id, { dir, sidecar, trigger, cameraId });
     const controller = new AbortController();
     active = { id, stop: false, controller, preview };
     if(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) active.timer=setTimeout(()=>{ if(active?.id===id) controller.abort(); },timeoutSeconds/speed*1000);
@@ -271,6 +272,19 @@ const methods = {
     const settings=await loadSettings(),configured=!!(settings.cropServiceUrl||process.env.OPENMEET_CROP_URL||process.env.OPENMEET_CROP_COMMAND);
     if(!configured)return {configured:false};
     try{const info=await cropperRequest({operation:'health'});return {configured:true,ready:info.ready===true,contract:info.contract};}catch{return {configured:true,ready:false};}
+  },
+  async 'occlusion.info'() { return occlusionInfo(); },
+  async 'occlusion.predict'({captureId,viewPng=null}) {
+    const cap=captures.get(captureId);if(!cap)throw Error('No captured image is available');
+    if(active?.id===captureId)throw Error('Stop capture before requesting the model mask');
+    let png,width,height,camera=cap.cameraId||'primary';
+    if(viewPng){const source=scanSources.get(viewPng);if(!source)throw Error('Open this camera source first');png=await fsp.readFile(source.png);width=source.size.width;height=source.size.height;camera=source.id;}
+    else{const strip=await stripPng(cap.dir);png=strip.png;width=strip.columns;height=strip.rows;}
+    const result=await requestOcclusion({png,requestId:randomUUID()});
+    if(result.width!==width||result.height!==height)throw Error('Occlusion mask does not match the camera image');
+    await fsp.writeFile(path.join(cap.dir,`occlusion-${String(camera).replace(/[^\w-]/g,'_')}.png`),Buffer.from(result.mask_png_base64,'base64'));
+    await fsp.writeFile(path.join(cap.dir,`occlusion-${String(camera).replace(/[^\w-]/g,'_')}.json`),JSON.stringify({request_id:result.request_id,image_sha256:result.image_sha256,width,height,model:result.model,at:new Date().toISOString(),displayOnly:true}));
+    return result;
   },
   async 'autocrop.run'({captureId}) {
     const cap=captures.get(captureId);if(!cap)throw Error('No captured image is available');
