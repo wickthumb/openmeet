@@ -32,11 +32,19 @@ workflow**, build all three OSes. Download `OpenMeet-Windows-installers`,
 **Artifacts** section within 14 days. Windows installation and RunMeet shared-folder
 interoperability still need hands-on testing on Windows.
 
+## Toolbar and meet navigation
+
+The scan's camera and selected-column time stay visible. The default toolbar keeps Zoom, Mark, Lanes and Auto timing in reach. Follow live appears during capture; Unzoom appears when zoomed. **More** groups the remaining view, marking and result tools.
+
+**More → Customize toolbar** pins and reorders controls, remembers the layout on this computer and can restore defaults. Extra pinned controls move into More when the window is narrow. **Controls & shortcuts** explains the workflow and keyboard controls. Auto timing combines its automatic-suggestions toggle and Run now action in one menu; Auto-mark can also be pinned separately.
+
+The top **Meet** tab searches events, heats and athletes and filters recorded/upcoming work. Selecting a heat opens it in Run; the Race panel retains its attempt selector. Meet-manager schedule changes update the navigation order while retaining captured work and the selected heat. An active recording continues while another heat is reviewed; the green Return to live control brings it back. Starting a second capture or changing meet folders requires the active capture to stop first. Capture restoration after restarting the app remains separate work.
+
 ## Operator controls
 
 Capture stops manually by default. Before a heat, expand **Capture options** to enable timeout or all-runners-marked auto-stop. **Stop capture** is always available during a run. The simulator continues streaming empty-track columns after its prerecorded finish window.
 
-Click a finish column, type a roster number, then Enter; multiple digits are supported. Drag hairlines to edit, or delete and replace them. **Starts** keeps trigger history and changes the elapsed-time origin without moving finish columns. Save corrected heats again to update LIF files.
+Click a finish column, type a roster number, then Enter; multiple digits are supported. Clicking either scan gives it keyboard focus: Left/Right moves one column, Shift+Left/Right moves ten, and flipped views follow screen direction. Drag hairlines to edit, or delete and replace them. **Starts** keeps trigger history and changes the elapsed-time origin without moving finish columns. Save corrected heats again to update LIF files.
 
 Both camera views have **Lanes ▾** appearance controls. On the line-scan, the dividers in the separate left lane column are always draggable when visible. **Placement → Drag on image** also enables dragging directly over the scan. The adjacent lane heights change while every other edge stays fixed; lines cannot cross. Numbers stay outside the image, centered in each lane row. Old band-based profiles are reconciled into shared boundaries. Lane overlays and the last known native scan height are saved per meet/camera. The gutter and guide lines keep their correct proportions before columns arrive, after preview and restart, and when the workspace height changes. Saved divider coordinates carry their original resolution and scale proportionally for same-view resolution changes. These display settings do not change the private timing service's calibration.
 
@@ -44,7 +52,7 @@ Both camera views have **Lanes ▾** appearance controls. On the line-scan, the 
 
 The mask compensates for broad lighting changes and requires coherent foreground support, rather than treating isolated pixel noise as an athlete. Tests cover noise, lighting, shadows, thin limbs, overlaps and streaming tile seams. On the eight current demo strips, the measured empty-window guide interruption rate fell from 10.72% to 1.41%; this is a fixture diagnostic, not a real-camera accuracy claim. Remaining weaknesses include coherent background changes, very low-contrast clothing, and ambiguity between a dark garment and a shadow. The feature remains optional. The brighter yellow review fill uses the same foreground mask, leaving runners in front of the highlight.
 
-Private model weights, training data and inference implementations are never bundled. Only API clients and the labelled simulator stand-in ship with the app. CI checks the public source boundary before building.
+The optional [private auto-cropper](../docs/autocrop-api.md) hides empty spans after capture stops, with explicit time breaks and a one-click full view. Original pixels and timestamps remain stored. Private model weights, training data and inference implementations are never bundled. Only API clients and the labelled simulator stand-in ship with the app. CI checks the public source boundary before building.
 
 Review a suggested finish directly in the sidebar with **Accept time**; selection centers and zooms the scan. **Lane / Finish** changes roster order. **Follow live** resumes tracking the newest columns at the current zoom after scrolling.
 
@@ -66,7 +74,7 @@ These are simulated sources. Real concurrent camera drivers, shared hardware-clo
 
 **Zoom** changes only the view. **Unzoom** appears after zooming and fits the capture again. Original capture pixels are retained. Drag the horizontal divider above the scan to change the workspace/scan height; the scan always remains full width. The split is remembered, has usable limits, and supports Up/Down, Home/End and Enter when focused.
 
-**Lanes → Highlight unfinished lanes** is optional. It highlights roster lanes needing an accepted finish or status, including pending review proposals. DNS/DNF/DQ/FS resolves the warning. Gutter numbers automatically fit their lane rows. Settings keep a fixed opening position while sections expand, with internal scrolling for longer groups. Placement stays separate from Appearance; advanced model-input processing remains an explicit opt-in. Reset appearance keeps positions and opt-ins intact.
+**Lanes → Highlight unfinished lanes** is optional. It highlights roster lanes needing an accepted finish or status, including pending review proposals. DNS/DNF/DQ/FS resolves the warning. Race-status codes also appear in the gutter. DNS/FS and unentered lanes get a muted lane background; DNF/DQ retain their distinct status labels. Gutter numbers automatically fit their lane rows. Settings keep a fixed opening position while sections expand, with internal scrolling for longer groups. Placement stays separate from Appearance; advanced model-input processing remains an explicit opt-in. Reset appearance keeps positions and opt-ins intact.
 
 ## Visual regression check
 
@@ -85,3 +93,5 @@ node app/test/visual-workspace.mjs "$PWD/app" /path/to/demo /tmp/openmeet-worksp
 ```
 
 This creates its own fixture and capture folder, shares only read-only source assets, and adds a generated 2000-row / 2 ms test camera. It checks compact settings anchored across toolbar updates and expansion, automatic gutter label sizing, masked review highlights, matching main/comparison marks, and the lane gutter without edit mode, empty-view geometry after preview/resizing, remembered 640/2000-row modes and reloads, individual divider drag, race-status highlighting, scoped appearance resets, height limits, camera selectors and source-specific mark timestamps. It verifies that reviewing and saving leaves the original pixels and clocks byte-for-byte unchanged. Use it alongside `npm --prefix app test` and `npm --prefix engine test`; the synthetic tests also check native resolutions, clock periods, cache eviction and stale-request handling. Actual camera footage and additional hardware still require validation.
+
+For toolbar customization and discovery, run `node app/test/visual-toolbar.mjs "$PWD/app" /path/to/demo /tmp/openmeet-toolbar-check`. For Meet navigation, live review, schedule changes and fine column control, run `node app/test/visual-meet-crop.mjs "$PWD/app" /path/to/demo /tmp/openmeet-meet-check`. A configured private worker also enables the latter's real cropper integration check. These checks keep screenshots local and use disposable captures.

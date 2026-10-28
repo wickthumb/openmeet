@@ -10,7 +10,7 @@ Choose the top **Camera alignment** tab to preview the simulated camera before a
 
 ## 2. Capture without losing control
 
-Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
+Use **Meet** to find an event, heat or athlete, then open that heat in Run. Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
 
 Optionally choose **After timeout** or **All runners marked** before starting another heat. These are explicit modes. A runner's status can resolve a DNS, DNF or DQ without manufacturing a finish time.
 
@@ -20,7 +20,7 @@ Click a column, type `4`, then Enter to assign it to lane 4. Entry accepts multi
 
 Drag any finish hairline along its full height. Select and delete it, then create a replacement. Operator edits are retained when later suggestions arrive. Close finishes remain available for review.
 
-Select a reviewed finish in the sidebar to center and zoom its hairline, then choose **Accept time**. Switch the roster between **Lane** and **Finish** order. After scrolling away during capture, **Follow live** returns to the newest columns.
+Click either scan and nudge the selected column with Left/Right or Shift+Left/Right. Select a reviewed finish in the sidebar to center and zoom its hairline, then choose **Accept time**. Switch the roster between **Lane** and **Finish** order. After scrolling away during capture, **Follow live** returns to the newest columns. More contains the other tools, Customize toolbar and Controls & shortcuts. Pin a tool, move it earlier and show that the layout survives reopening.
 
 Hover either line-scan to inspect the corresponding front-camera frame. Use **Zoom** to inspect a box; **Unzoom** appears while zoomed. Neither changes original pixels. Drag the horizontal divider to give more height to the workspace or scan; the scan stays full width.
 
@@ -32,7 +32,7 @@ Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, c
 
 On the line-scan, drag a divider in the left lane column anytime. **Drag on image** optionally enables editing over the scan itself. Only that shared edge moves, resizing the lanes above and below it. **Overlays behind runners** hides guide segments where the image differs from the initial empty-track reference. Compare the toggle on and off; finish markers stay visible. This display feature is separate from the opaque lines optionally included in model-input copies.
 
-In Camera alignment, choose the main and comparison scan sources. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
+In Camera alignment, choose the main and comparison scan sources. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. DNS and vacant lanes are identified in the gutter. With a configured private cropper, More → Hide empty spans shortens the displayed scan with explicit time breaks; Show all columns restores the complete recording. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
 
 ## 5. Correct an accidental start trigger
 

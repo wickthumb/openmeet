@@ -7,6 +7,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { validateCropResult } from './renderer/column-map.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const userData = process.argv[2] || here;
@@ -139,6 +141,18 @@ async function startJournal(dir) {
   return startJournals.get(key);
 }
 
+async function cropperRequest(payload) {
+  const settings=await loadSettings(),url=settings.cropServiceUrl||process.env.OPENMEET_CROP_URL;
+  if(url){const health=payload.operation==='health',response=await fetch(new URL(health?'/health':'/v1/column-ranges',url),{method:health?'GET':'POST',...(!health?{headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}:{}),signal:AbortSignal.timeout(health?3000:120000)});const result=await response.json();if(!response.ok)throw Error(result.error||'Auto-cropper request failed');return result;}
+  const command=JSON.parse(process.env.OPENMEET_CROP_COMMAND||'null');
+  if(!Array.isArray(command)||!command.length||command.some(a=>typeof a!=='string'))throw Error('Configure a private auto-cropper worker first');
+  return new Promise((resolve,reject)=>{
+    const child=execFile(command[0],command.slice(1),{timeout:120000,maxBuffer:64*1024*1024,windowsHide:true},(error,stdout)=>{
+      try{const result=JSON.parse(stdout);if(error||result.error)reject(Error(result.error||'Private cropper worker failed'));else resolve(result);}catch{reject(Error(error?.message||'Invalid private cropper response'));}
+    });child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(payload));
+  });
+}
+
 const methods = {
   async ping() { return { ok: true, pid: process.pid, core: !!core, node: process.versions.node }; },
   async 'settings.get'() { return loadSettings(); },
@@ -252,6 +266,21 @@ const methods = {
     if (!dir || !/^[\w-]+\.lif$/i.test(name)) throw new Error('bad results file name');
     const p = await writeAtomic(dir, name, text);
     return { path: p, bytes: Buffer.byteLength(text, 'latin1') };
+  },
+  async 'autocrop.info'() {
+    const settings=await loadSettings(),configured=!!(settings.cropServiceUrl||process.env.OPENMEET_CROP_URL||process.env.OPENMEET_CROP_COMMAND);
+    if(!configured)return {configured:false};
+    try{const info=await cropperRequest({operation:'health'});return {configured:true,ready:info.ready===true,contract:info.contract};}catch{return {configured:true,ready:false};}
+  },
+  async 'autocrop.run'({captureId}) {
+    const cap=captures.get(captureId);if(!cap)throw Error('No captured image is available');
+    if(active?.id===captureId)throw Error('Stop capture before hiding empty spans');
+    const strip=await stripPng(cap.dir),digest=createHash('sha256').update(strip.png).digest('hex'),requestId=randomUUID();
+    const output=await cropperRequest({request_id:requestId,image_sha256:digest,image:{encoding:'png',data_base64:strip.png.toString('base64')},mode:'both'});
+    if(output.image_sha256!==digest||output.request_id!==requestId)throw Error('Cropper returned a different image');
+    validateCropResult(output.result,strip.columns,'storage-display');validateCropResult(output.result,strip.columns,'inference-safe');
+    const record={...output,first_column_race_time_s:strip.firstRaceTime,column_period_s:strip.period,at:new Date().toISOString()};
+    await fsp.writeFile(path.join(cap.dir,'autocrop.json'),JSON.stringify(record));return record;
   },
   async 'camera.image'({png,captureId,includePixels=true}) {
     const source=scanSources.get(png);if(!source)throw new Error('Open this camera source first');

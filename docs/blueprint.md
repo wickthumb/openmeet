@@ -220,13 +220,17 @@ The workspace is a **tiling layout, like Hyprland**: a split tree, so panels nev
 - Double-click a header to maximise that panel.
 - The layout is saved per computer.
 
+**Meet navigation.** The top Meet tab provides event/heat and athlete search, recorded/upcoming filters, direct review selection and a return to the active recording. Schedule-file reordering preserves selected and captured work. Recording and automatic timing continue independently of the selected review heat. The Meet Link tab remains responsible for folder interoperability.
+
 **Line-scan** (bottom region, full width minus the sidebar).
+
+The camera name and timestamp anchor the toolbar. Zoom, Mark, Lanes and Auto timing are the default pinned tools. Follow and Unzoom appear in context. More groups other tools and offers persistent pin/order customization plus a controls-and-shortcuts modal. Overflowed pins remain available through More. Native scan clicks take keyboard focus for one-column arrows and ten-column Shift+arrows.
 
 Drag the horizontal divider above it to change workspace and scan heights. Both regions keep a usable minimum height; the scan cannot become a side-by-side panel. The split is remembered per computer. Keyboard Up/Down adjusts the divider; Home/End reaches the limits; Enter restores an even split.
 
 Click the main scan's camera name or the comparison card's camera name to choose a source. During review, the selected view changes while the original recording and finish times remain intact. Different camera heights and sampling periods are mapped through race time. Calibrated lane/body regions guide linked vertical zoom; without calibration the fallback is a normalized image region. Sidebar review relinks and centers the selected runner. Independent comparison navigation remains available.
 
-Lane numbers occupy a separate gutter immediately left of the image. Each row identifies one lane; each shared divider is always draggable there. An optional switch enables divider dragging over the image. Adjacent lanes need not have equal heights. Camera profiles retain native scan height independently of incoming columns. The empty scan uses that full-height coordinate system, and saved divider positions record their source resolution so same-view resolution changes preserve their proportions. Lane settings keep common switches visible and collapse placement, appearance and advanced controls. Expanding a section scrolls inside the panel without moving its opening position. Gutter numbers fit their row heights automatically. Optional yellow highlighting stays behind runners and flags roster lanes awaiting an accepted finish or a race status; DNS/DNF/DQ/FS resolves a lane without creating a time.
+Lane numbers occupy a separate gutter immediately left of the image. Each row identifies one lane; each shared divider is always draggable there. An optional switch enables divider dragging over the image. Adjacent lanes need not have equal heights. Camera profiles retain native scan height independently of incoming columns. The empty scan uses that full-height coordinate system, and saved divider positions record their source resolution so same-view resolution changes preserve their proportions. Lane settings keep common switches visible and collapse placement, appearance and advanced controls. Expanding a section scrolls inside the panel without moving its opening position. Gutter numbers fit their row heights automatically. DNS/FS and unentered lanes receive a muted fill and a status label in the gutter; DNF/DQ retain their own labels. Optional yellow highlighting stays behind runners and flags roster lanes awaiting an accepted finish or a race status; DNS/DNF/DQ/FS resolves a lane without creating a time.
 
 - The top bar shows the selected column's timestamp, with no caption, and the line-scan tools.
 
@@ -415,3 +419,7 @@ Add a hardware adapter registry to the native engine. Each adapter declares iden
 AI/vision inference remains behind separate service APIs. This public app ships integration code, profiles and API clients; proprietary timing/cropping models, weights, training data and model implementations remain outside the repository and installers.
 
 Acceptance for the first real integration: a novice can identify and connect one specified physical device, see a diagnostic output, confirm it, run the normal meet output, and reconnect from its saved profile. Hardware-in-the-loop evidence is required before listing that model as supported.
+
+## 10. Reversible empty-span hiding
+
+The approved cropper is called through a private external worker or HTTP API. OpenMeet validates its `autocrop-ranges-v2` response and renders kept spans through the original-column map. Breaks visibly mark omitted time. Show all columns reverses the view; raw columns, timestamps and finish marks stay in the original coordinate system. Timing requests keep original capture context. See [the adapter contract](autocrop-api.md). The failed lane model is not integrated; lane placement remains camera calibration.

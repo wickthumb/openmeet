@@ -33,7 +33,12 @@ const ev = async expr => { const r = await send('Runtime.evaluate', { expression
 const shot = async name => { const r = await send('Page.captureScreenshot', { format: 'png' }); if (r.result) writeFileSync(`${outDir}/${name}.png`, Buffer.from(r.result.data, 'base64')); };
 await send('Runtime.enable'); await send('Page.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-const click = txt => ev(`(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(txt)}) && !b.disabled && b.offsetParent); if (!b) return 'NOBTN ' + ${JSON.stringify(txt)}; b.click(); return 'ok'; })()`);
+const click = async txt => {
+  const find=()=>ev(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim().startsWith(${JSON.stringify(txt)})&&!b.disabled&&b.offsetParent);if(!b)return false;b.click();return true;})()`);
+  if(await find())return 'ok';
+  const opened=await ev(`(()=>{const b=document.querySelector('#tools [data-more]');if(!b)return false;b.click();return true;})()`);
+  return opened&&await find()?'ok':'NOBTN '+txt;
+};
 const state = () => ev(`document.querySelector('.state').textContent`);
 
 try {

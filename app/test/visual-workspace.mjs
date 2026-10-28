@@ -44,7 +44,12 @@ const ev = async expr => { const r = await send('Runtime.evaluate', { expression
 const shot = async name => { const r = await send('Page.captureScreenshot', { format: 'png' }); if (r.result) writeFileSync(`${outDir}/${name}.png`, Buffer.from(r.result.data, 'base64')); };
 await send('Runtime.enable'); await send('Page.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-const click = txt => ev(`(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(txt)}) && !b.disabled && b.offsetParent); if (!b) return 'NOBTN ' + ${JSON.stringify(txt)}; b.click(); return 'ok'; })()`);
+const click = async txt => {
+  const find=()=>ev(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim().startsWith(${JSON.stringify(txt)})&&!b.disabled&&b.offsetParent);if(!b)return false;b.click();return true;})()`);
+  if(await find())return 'ok';
+  const opened=await ev(`(()=>{const b=document.querySelector('#tools [data-more]');if(!b)return false;b.click();return true;})()`);
+  return opened&&await find()?'ok':'NOBTN '+txt;
+};
 const state = () => ev(`document.querySelector('.state').textContent`);
 
 const assert=(value,message)=>{if(!value)throw Error(message);};
@@ -65,11 +70,11 @@ try {
  await settings();const menuOrigin=await bounds('.overlay-settings');
  const wordCount=await ev(String.raw`document.querySelector('.overlay-settings').innerText.trim().split(/\s+/).length`);assert(wordCount<40,'Settings still show too much helper copy');
  assert(!await ev(`!!document.querySelector('.overlay-settings [data-key="fontSize"]')`),'Scan still requires a manual font size');
- await shot('compact-lane-settings');await click('Flip');
+ await shot('compact-lane-settings');await send('Emulation.setDeviceMetricsOverride',{width:1450,height:900,deviceScaleFactor:1,mobile:false});await sleep(80);await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});await sleep(80);
  for(const group of ['advanced','appearance','placement']){await ev(`document.querySelector('[data-settings-group="${group}"]').open=true`);await sleep(70);const r=await bounds('.overlay-settings');assert(Math.abs(r.x-menuOrigin.x)<1&&Math.abs(r.y-menuOrigin.y)<1,'Expanding '+group+' moved the settings panel');if(group==='advanced'){const control=await bounds('[data-key="modelInput"]');assert(control.y+control.h<=r.y+r.h,'Expanded advanced control is hidden below panel');await shot('advanced-settings-fixed-position');}}
  await shot('expanded-settings-stay-anchored');
  await send('Emulation.setDeviceMetricsOverride',{width:1080,height:680,deviceScaleFactor:1,mobile:false});await sleep(80);const smallMenu=await bounds('.overlay-settings');assert(smallMenu.x>=8&&smallMenu.y>=8&&smallMenu.x+smallMenu.w<=1073&&smallMenu.y+smallMenu.h<=673,'Settings overflow the smaller viewport');
- await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});await sleep(80);await closeSettings();await click('Flip');
+ await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});await sleep(80);await closeSettings();
  await ev(`document.querySelector('.pnl[data-p="front"] .ph button.btn').click()`);assert(await ev(`!!document.querySelector('.overlay-settings [data-key="fontSize"]')`),'Front camera lost its label size control');await closeSettings();
  const normalizedEdges=()=>ev(`(()=>{const height=document.querySelector('#scan').clientHeight-22;return [...document.querySelectorAll('.lane-divider')].map(e=>({key:e.dataset.boundary,fraction:(parseFloat(e.style.top)+6)/height}));})()`);
  const emptyBefore=await normalizedEdges();

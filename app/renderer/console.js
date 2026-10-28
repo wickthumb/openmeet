@@ -1,5 +1,7 @@
 import { scanBoundaries, movedBoundaryRow, scanBackground, writeForegroundMask, foregroundInRows } from './scan-overlays.mjs';
 import { FrontFrameCache, linkedCameraRange, cameraAsset, cameraLaneBody } from './front-preview.mjs';
+import { SCAN_TOOLS, toolbarPreferences, moveToolbarTool } from './scan-toolbar.mjs';
+import { validateCropResult, columnProjection, displayCoordinate, originalCoordinate, visibleColumnPieces } from './column-map.mjs';
 
 (() => {
 'use strict';
@@ -177,6 +179,7 @@ const S = {
 const OM = window.openmeet || null;   // the Electron bridge; absent when this page runs as the static replica
 const windStr = h => (h.wind == null ? '—' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1) + ' m/s');
 const cur = () => HEATS[S.idx];
+const runningHeat = () => HEATS.find(h=>h.state==='running')||null;
 const scanSourceViews=new Map();
 const viewHeat = () => S.cameraSetup?.heat || scanPresentation(cur());
 function scanPresentation(h) {
@@ -265,6 +268,11 @@ function places(h) {
   });
   return { fin, pl };
 }
+const projectionOf=h=>{const owner=h.recordingHeat||h;return owner.hideEmpty?owner.cropProjection:null;};
+const displayCount=h=>projectionOf(h)?.length??h.nCols;
+const toDisplay=(h,c)=>projectionOf(h)?displayCoordinate(projectionOf(h),c):c;
+const toOriginal=(h,c)=>projectionOf(h)?originalCoordinate(projectionOf(h),c):c;
+const displayPieces=(h,a,b)=>visibleColumnPieces(projectionOf(h),a,b,h.nCols);
 const periodOf = h => h.asset?.primaryMeta?.column_period_s || P;
 const colTime = (h, col) => h.tOpen + (col + 0.5) * periodOf(h);
 const raceTime = (h, col) => colTime(h, col) - (h.startCorrection || 0);
@@ -526,7 +534,7 @@ function requestProposals(h) {
 
 // Camera setup preview is independent of the official heat and its start journal.
 async function startCameraSetup() {
-  if(cur().state==='running'||S.cameraSetup?.starting)return;
+  if(runningHeat()||S.cameraSetup?.starting)return;
   const source={...cur()};if(source.asset)attachAsset(source,source.asset);ensureStrip(source);
   if(!S.cameraSetup) S.cameraSetup={previousView:{...S.view},previousSelection:{lane:S.selLane,col:S.selCol},mode:'alignment'};
   const setup=S.cameraSetup;
@@ -572,7 +580,8 @@ function renderSetupSidebar() {
 
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
 function go(i) {
-  if (S.cameraSetup || cur().state === 'running' || i < 0 || i >= HEATS.length) return;
+  if (S.cameraSetup || i < 0 || i >= HEATS.length) return;
+  overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;toolbarPopover?.close(false);sourceMenu?.close(false);
   S.idx = i; S.selLane = null; S.selCol = null; S.entryNumber = ''; S.hoverCol = null;
   S.bview.linked = true; Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView();
   const h = cur();
@@ -586,8 +595,8 @@ function disarm() { const h = cur(); if (h.state === 'armed') { h.state = 'loade
 function fire() {
   if(S.cameraSetup)return;
   const h = cur();
-  if (h.state !== 'armed') return;
-  h.runVersion = (h.runVersion || 0) + 1;
+  if (h.state !== 'armed'||runningHeat()) return;
+  S.lastLiveHeat=h;h.runVersion = (h.runVersion || 0) + 1;h.hideEmpty=false;h.cropResult=null;h.cropProjection=null;
   h.stopMode=S.autoStop; h.stopAfter=S.stopAfter; h.stopping=false;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
   h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {}; h.inputDerived=false;
@@ -622,19 +631,20 @@ function recall() {
   renderUI();
 }
 function prepareRestart(h) {
+  const heatIndex=HEATS.indexOf(h),selected=h===cur();if(heatIndex<0)return;
   const key=attemptKey(h),attempts=attemptsByHeat.get(key)||[h];
   if(!attempts.includes(h))attempts.push(h);
   h.attemptNumber ||= attempts.indexOf(h)+1;
   const next={...h,attemptNumber:attempts.length+1,state:'armed',marks:{},status:{},proposals:null,req:'idle',img:null,
     stripTiles:null,recvCols:0,liveCol:-1,tNow:0,startPerf:0,startTOD:null,startReference:null,startTriggerId:null,startCorrection:0,
     captureId:null,captureDir:null,frontRec:null,saves:0,lif:null,base:null,allProps:null,liveTo:null,liveBusy:false,dismissed:{},
-    stopping:false,restartAfterStop:false,runVersion:(h.runVersion||0)+1};
+    stopping:false,restartAfterStop:false,hideEmpty:false,cropResult:null,cropProjection:null,cropBusy:false,runVersion:(h.runVersion||0)+1};
   next.athletes.forEach(a=>{if(a.pre)next.status[a.lane]=a.pre;});
   if(next.asset)attachAsset(next,next.asset);
   else {next.img=h.sampleStrip||h.img;next.nCols=next.img?.width||h.nCols;next.tClose=next.tOpen+next.nCols*periodOf(next);}
-  attempts.push(next);attemptsByHeat.set(key,attempts);HEATS[S.idx]=next;rememberScanGeometry(next);
-  S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';S.view.user=false;S.view.followZoom=null;
-  ensureStrip(next);fitView();renderUI();
+  attempts.push(next);attemptsByHeat.set(key,attempts);HEATS[heatIndex]=next;if(selected)rememberScanGeometry(next);
+  if(selected){S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';S.view.user=false;S.view.followZoom=null;}
+  ensureStrip(next);if(selected)fitView();renderUI();
   toast(`Attempt ${next.attemptNumber} is armed. The previous capture and its start triggers are retained.`);
 }
 function restartRace() {
@@ -663,8 +673,8 @@ function selectAttempt(index) {
   const attempts=attemptsByHeat.get(attemptKey(h));if(!attempts?.[index])return;
   HEATS[S.idx]=attempts[index];S.selLane=null;S.selCol=null;S.hoverCol=null;S.entryNumber='';fitView();renderUI();
 }
-function stopCapture() {
-  const h=cur(); if(h.state!=='running'||h.stopping)return;
+function stopCapture(target) {
+  const h=target?.state?target:cur(); if(h.state!=='running'||h.stopping)return;
   h.stopping=true;renderUI();
   if(h.asset&&OM) OM.call('capture.stop').catch(err=>{h.stopping=false;h.restartAfterStop=false;toast(err.message,true);renderUI();});
   else {endCapture(h);renderUI();}
@@ -675,7 +685,7 @@ function endCapture(h) {
   else h.nCols=Math.min(h.nCols,Math.max(1,h.liveCol+1));
   h.tClose=h.tOpen+h.nCols*periodOf(h);
   h.state='review';h.stopping=false;h.liveCol=h.nCols-1;h.tNow=h.tClose;
-  h.base=snap(h);fitView();
+  h.base=snap(h);if(h===cur())fitView();
   if(h.restartAfterStop){h.restartAfterStop=false;prepareRestart(h);return;}
   if(S.autoMark&&h.nCols>0)requestProposals(h);else h.req='idle';
 }
@@ -683,6 +693,7 @@ function editHeat(h) { if (h.state === 'saved') h.state = 'review'; }
 function setMark(lane, col) {
   if(S.cameraSetup)return;
   const h = cur();
+  if(!h.athletes.some(a=>a.lane===lane))return;
   if (col == null || !(['review', 'saved'].includes(h.state) || (h.state === 'running' && col <= h.liveCol))) return;   // marking works while capturing too
   const p = h.proposals && h.proposals.find(x => x.lane === lane);
   const src = p ? (p.col === col ? 'checked' : 'edited') : 'manual';
@@ -784,13 +795,13 @@ function warnings(h) {
 }
 
 // ---------------------------------------------------------------- header + sidebar
-const TABS = [['run', 'Run'], ['alignment', 'Camera alignment'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
+const TABS = [['run', 'Run'], ['events', 'Meet'], ['alignment', 'Camera alignment'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
     const b = h_('button', 'tab' + (S.tab === k ? ' on' : ''), label);
-    b.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping)||(k==='alignment'&&cur().state==='running');
-    if(k==='alignment'&&cur().state==='running')b.title='Stop race capture before entering camera alignment';
+    b.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping)||(k==='alignment'&&!!runningHeat());
+    if(k==='alignment'&&!!runningHeat())b.title='Stop race capture before entering camera alignment';
     b.onclick = async () => {
       if(k==='alignment'){if(!S.cameraSetup)await startCameraSetup();else {S.tab=k;renderUI();}return;}
       if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;}
@@ -822,19 +833,21 @@ function renderSide() {
     <div class="ev-top"><span class="kicker">Event ${h.ev} · Round ${h.rd} · Heat ${h.ht} of ${h.of}</span><span class="state ${h.state}">${stLabel}</span></div>
     <div class="ev-name">${h.name}</div>
     <div class="ev-sub">${S.idx + 1} of ${HEATS.length} in schedule · ${h.athletes.length} athletes</div>`;
+  const active=runningHeat();
+  if(active&&active!==h){const back=h_('button','background-capture',`Recording E${active.ev} · H${active.ht} — return to live`);back.onclick=()=>{S.tab='run';go(HEATS.indexOf(active));};$('#ev').append(back);}
   const ctl = $('#ctl'); ctl.innerHTML = '';
   const running = h.state === 'running';
   const actions=h_('div','race-actions wide');
   const btn = (html, cls, on, dis) => { const b = h_('button', 'btn ' + cls); b.innerHTML = html; b.onclick = on; b.disabled = !!dis; actions.append(b); return b; };
   const nav=h_('div','heat-nav wide');
   const prev=h_('button','btn sm'),next=h_('button','btn sm');prev.innerHTML=ICON.prev;next.innerHTML=ICON.next;
-  prev.title='Previous heat';prev.setAttribute('aria-label','Previous heat');prev.disabled=running||S.idx===0;prev.onclick=()=>go(S.idx-1);
-  next.title='Next heat';next.setAttribute('aria-label','Next heat');next.disabled=running||S.idx===HEATS.length-1;next.onclick=()=>go(S.idx+1);
+  prev.title='Previous heat';prev.setAttribute('aria-label','Previous heat');prev.disabled=S.idx===0;prev.onclick=()=>go(S.idx-1);
+  next.title='Next heat';next.setAttribute('aria-label','Next heat');next.disabled=S.idx===HEATS.length-1;next.onclick=()=>go(S.idx+1);
   nav.append(prev,h_('span','dimtext',`Heat ${h.ht} of ${h.of}`),next);ctl.append(nav);
   const ready=h.state==='review'&&h.athletes.every(a=>resolved(h,a));
   if(running)btn(h.stopping?'Stopping…':'Stop capture','go wide',stopCapture,h.stopping);
   else if(h.state==='loaded')btn('Arm heat','primary wide',arm);
-  else if(h.state==='armed')btn('Start <span class="tag sim">SIM</span>','go wide',fire);
+  else if(h.state==='armed')btn('Start <span class="tag sim">SIM</span>','go wide',fire,!!runningHeat());
   else if(h.state==='review'&&ready)btn(h.saves?'Save corrected results':'Save results','go wide',save);
   else if(h.state==='review')btn('Review next finish','primary wide',()=>{const a=h.athletes.find(a=>!resolved(h,a));if(a)selectLane(a.lane);});
   else btn('Next heat','primary wide',()=>go(S.idx+1),S.idx===HEATS.length-1);
@@ -1191,6 +1204,35 @@ function renderStarts(body) {
   }).catch(err => { if(body.querySelector('#startRows')) body.querySelector('#startRows').textContent = err.message; });
 }
 
+function renderMeetNavigator(body) {
+  if(!body.querySelector('#meetNavigator')){
+    body.innerHTML='<div id="meetNavigator" class="meet-navigator"><div class="meet-nav-controls"><input type="search" id="meetSearch" placeholder="Find event or athlete" aria-label="Find event or athlete"><select id="meetFilter" aria-label="Filter heats"><option value="all">All heats</option><option value="recorded">Recorded</option><option value="upcoming">To run</option></select></div><div id="meetNavSummary"></div><div id="meetEventList"></div></div>';
+    const search=body.querySelector('#meetSearch'),filter=body.querySelector('#meetFilter');search.value=S.meetQuery||'';filter.value=S.meetFilter||'all';
+    search.oninput=()=>{S.meetQuery=search.value;renderMeetNavigator(body);};search.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();body.querySelector('[data-meet-heat]')?.click();}};
+    filter.onchange=()=>{S.meetFilter=filter.value;renderMeetNavigator(body);};
+  }
+  const signature=JSON.stringify([S.idx,S.meetQuery,S.meetFilter,HEATS.map(h=>[h.ev,h.rd,h.ht,h.name,h.state,h.saves,h.offSchedule,h.athletes.filter(a=>resolved(h,a)).length])]);
+  const list=body.querySelector('#meetEventList');if(list.dataset.signature===signature)return;list.dataset.signature=signature;
+  const terms=(S.meetQuery||'').toLowerCase().trim().split(/\s+/).filter(Boolean),groups=new Map();let count=0;
+  HEATS.forEach((h,i)=>{
+    const recorded=['review','saved'].includes(h.state);
+    if(S.meetFilter==='recorded'&&!recorded||S.meetFilter==='upcoming'&&recorded)return;
+    const text=`${h.ev} ${h.name} round ${h.rd} heat ${h.ht} ${h.athletes.map(a=>a.first+' '+a.last+' '+a.team.name).join(' ')}`.toLowerCase();if(!terms.every(t=>text.includes(t)))return;
+    const key=`${h.ev}:${h.rd}`;if(!groups.has(key))groups.set(key,{heat:h,items:[]});groups.get(key).items.push({h,i});count++;
+  });
+  list.replaceChildren();
+  for(const {heat,items}of groups.values()){
+    const section=h_('section','meet-event');section.append(h_('h3','',`E${heat.ev} · ${heat.name}`),h_('p','meet-round',`Round ${heat.rd}`));
+    const heats=h_('div','meet-heat-grid');
+    for(const {h,i}of items){const button=h_('button','meet-heat'+(i===S.idx?' selected':''));button.dataset.meetHeat=i;button.setAttribute('aria-current',i===S.idx?'true':'false');const done=h.athletes.filter(a=>resolved(h,a)).length,attempts=attemptsByHeat.get(attemptKey(h));
+      button.innerHTML=`<span><b>Heat ${h.ht}</b><span class="state ${h.state}">${h.state==='running'?'RECORDING':h.state.toUpperCase()}</span></span><small>${['review','saved'].includes(h.state)?`${done} / ${h.athletes.length} resolved`:`${h.athletes.length} athletes`}${attempts?.length>1?` · ${attempts.length} attempts`:''}${h.offSchedule?' · Off schedule':''}</small>`;
+      button.onclick=()=>{S.tab='run';go(i);};heats.append(button);
+    }section.append(heats);list.append(section);
+  }
+  if(!count)list.append(h_('p','empty','No matching heats.'));
+  const summary=body.querySelector('#meetNavSummary');summary.replaceChildren(h_('span','dimtext',`${count} of ${HEATS.length} heats`));const active=runningHeat();if(active){const live=h_('button','btn sm',`Return to live · E${active.ev} H${active.ht}`);live.onclick=()=>{S.tab='run';go(HEATS.indexOf(active));};summary.append(live);}
+}
+
 function renderDrawer() {
   const d = $('#drawer');
   d.classList.toggle('open', S.tab !== 'run' && S.tab !== 'alignment');
@@ -1200,6 +1242,7 @@ function renderDrawer() {
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
+  if (S.tab === 'events') { renderMeetNavigator(body); return; }
   if (S.tab === 'starts') { renderStarts(body); return; }
   if (S.tab === 'network') {
     body.innerHTML = `
@@ -1313,7 +1356,7 @@ const B = { started: false, starting: false, port: null, lanUrls: [], list: [], 
 const boardUrl = name => `http://127.0.0.1:${B.port}/scoreboard/${name}/`;
 // Live state for every scoreboard (docs/scoreboard-v1.md).
 function boardState() {
-  const h = cur(), done = ['review', 'saved'].includes(h.state), { fin, pl } = places(h), win = done ? fin[0] : null;
+  const h = runningHeat()||S.lastLiveHeat||cur(), done = ['review', 'saved'].includes(h.state), { fin, pl } = places(h), win = done ? fin[0] : null;
   const timeOf = a => (h.marks[a.lane] && (!h.status[a.lane] || h.status[a.lane] === 'DQ') ? ceilTo(raceTime(h, h.marks[a.lane].col), 2) : null);
   const lanes = [...h.athletes].sort((a, b) => a.lane - b.lane).map(a => ({
     lane: h.unlaned ? null : a.lane, id: a.id, first: a.first, last: a.last, affiliation: a.team.name,
@@ -1440,11 +1483,11 @@ const reviewHighlightDefaults = { pendingColor:'#ffd43b', pendingOpacity:0.32, p
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
 function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
-function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary') {
+function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nativeRows=null) {
   const saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
   const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
   if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}
-  const rows=kind==='scan'?rowsForCamera(camera):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
+  const rows=kind==='scan'?(nativeRows||rowsForCamera(camera)):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
   return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,needsFinish:false,...reviewHighlightDefaults}),...saved,...highlight,
     positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
     boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
@@ -1468,13 +1511,14 @@ function spreadFrontLanes(o) {
   o.positions=points;
 }
 function modelLaneGuides(h) {
-  const o=overlayStyle('scan',h.asset?.mainCameraId||'primary');if(!o.modelInput)return null;
+  const o=overlayStyle('scan',h.asset?.mainCameraId||'primary',rowsOf(h));if(!o.modelInput)return null;
   const rows=[...new Set(scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>Math.round(b.row)))];
   return {enabled:true,rows,color:o.lineColor,thickness:Math.max(1,Math.round(o.thickness))};
 }
 function saveOverlay(kind,value) { if(kind==='scan')value={...value,resolutionRows:rowsOf(viewHeat())};store.set(cameraOverlayKey(kind),value); if(kind==='scan'){S.lanes=value.enabled;store.set('lanes',S.lanes);syncLaneGutter(value);} updateFrontOverlay(); invalidate(); }
 let overlayMenu=null;
 function showOverlaySettings(kind, anchor) {
+  toolbarPopover?.close(false);
   // Clean up listeners as well as the previous popover when switching cameras.
   overlayMenu?.overlaySettingsCleanup?.();
   overlayMenu?.remove();
@@ -1680,7 +1724,7 @@ function showOverlaySettings(kind, anchor) {
   const previousExpanded = anchor.getAttribute('aria-expanded');
   const previousControls = anchor.getAttribute('aria-controls');
   const anchorRect = anchor.getBoundingClientRect();
-  const currentAnchor = () => anchor.isConnected ? anchor : isFront ? frontLaneButton : [...document.querySelectorAll('#tools button')].find(b => b.textContent.includes('Lanes'));
+  const currentAnchor = () => anchor.isConnected ? anchor : isFront ? frontLaneButton : toolbarAnchor('lanes');
   anchor.setAttribute('aria-expanded', 'true');
   anchor.setAttribute('aria-controls', id);
   let position = null;
@@ -1775,41 +1819,146 @@ function updateFrontOverlay() {
 }
 
 // ---------------------------------------------------------------- line-scan toolbar
+let toolbarPopover=null;
+let toolbarOverflow=[];
+async function toggleEmptyColumns() {
+  const h=cur();if(h.cropBusy||!['review','saved'].includes(h.state))return;
+  if(h.hideEmpty){h.hideEmpty=false;fitView();if(S.selCol!=null)focusFinish(S.selCol);renderUI();return;}
+  h.cropBusy=true;renderTools();
+  try{
+    if(!h.cropResult)h.cropResult=await OM.call('autocrop.run',{captureId:h.captureId});
+    const ranges=validateCropResult(h.cropResult.result,h.nCols),projection=columnProjection(ranges,h.nCols);
+    const finishes=[...Object.values(h.marks).map(m=>m.col),...(h.proposals||[]).filter(p=>!h.status[p.lane]&&!h.dismissed?.[p.lane]).map(p=>p.col)];
+    if(!projection.length||projection.length===h.nCols){toast('No empty spans to hide.');return;}
+    if(finishes.some(c=>displayCoordinate(projection,c+0.5)==null)){toast('A marked finish is outside the cropper ranges. Full view kept.',true);return;}
+    h.cropProjection=projection;h.hideEmpty=true;
+    if(cur()===h){S.hoverCol=null;fitView();if(S.selCol!=null&&displayCoordinate(projection,S.selCol+0.5)!=null)focusFinish(S.selCol);else S.selCol=null;renderUI();}
+  }catch(err){toast('Could not hide empty spans: '+err.message,true);}finally{h.cropBusy=false;renderTools();}
+}
+function scanToolStates() {
+  const h=viewHeat(),captured=['review','saved'].includes(h.state)||(h.state==='running'&&h.liveCol>=0);
+  const review=!S.cameraSetup&&['review','saved'].includes(h.state);
+  const states={
+    follow:{icon:ICON.next,when:h.state==='running',on:!S.view.user,disabled:false,action:()=>{S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.zoomTool=false;S.hoverCol=null;follow(viewHeat());renderTools();invalidate();}},
+    zoom:{icon:ICON.zoom,on:S.zoomTool,disabled:!captured,action:()=>{S.zoomTool=!S.zoomTool;renderTools();syncCursor();}},
+    unzoom:{icon:ICON.fit,when:S.view.zoomed,disabled:!captured,action:()=>{fitView();renderUI();}},
+    mark:{icon:ICON.auto,disabled:!!S.cameraSetup||!captured||S.selLane==null||S.selCol==null,action:()=>setMark(S.selLane,S.selCol)},
+    delete:{icon:ICON.clear,disabled:!!S.cameraSetup||!captured||S.selLane==null,action:deleteSelectedFinish},
+    flip:{icon:ICON.flip,on:S.flip,disabled:false,action:()=>{S.flip=!S.flip;store.set('flip',S.flip);renderTools();}},
+    lanes:{icon:ICON.lanes,on:overlayStyle('scan').enabled,disabled:false,action:anchor=>showOverlaySettings('scan',anchor)},
+    auto:{icon:ICON.auto,on:S.autoMark,disabled:!!S.cameraSetup,action:anchor=>showToolbarPopover('auto',anchor)},
+    hideEmpty:{icon:ICON.zoom,when:!!h.captureId&&review&&!!(S.cropInfo?.configured||h.cropResult),label:h.hideEmpty?'Show all columns':h.cropBusy?'Finding empty spans…':'Hide empty spans',on:!!h.hideEmpty,disabled:!!h.cropBusy,action:toggleEmptyColumns},
+    autoRun:{icon:ICON.auto,disabled:!review||!S.apiOnline||h.req==='pending',action:()=>requestProposals(cur())},
+    clear:{icon:ICON.clear,disabled:!review||!Object.keys(h.marks).length,action:clearMarks},
+    revert:{icon:ICON.revert,disabled:!review||!h.base||h.base===snap(h),action:revert},
+  };
+  return SCAN_TOOLS.map(tool=>({...tool,when:true,...states[tool.id]}));
+}
+function toolbarAnchor(id) { return document.querySelector(`#tools [data-tool="${id}"]`)||document.querySelector('#tools [data-more]'); }
+function runScanTool(id,anchor=toolbarAnchor(id)) {
+  const tool=scanToolStates().find(t=>t.id===id);
+  if(tool?.when&&!tool.disabled)tool.action(anchor);
+}
+function showToolbarPopover(kind,anchor) {
+  overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;sourceMenu?.close(false);
+  toolbarPopover?.close(false);
+  const menu=h_('div','scan-tool-menu'),rect=anchor.getBoundingClientRect(),heat=cur();
+  menu.setAttribute('role',kind==='auto'?'dialog':'menu');menu.setAttribute('aria-label',kind==='auto'?'Auto timing':'More line-scan tools');
+  let ids=[];
+  const close=(focus=true)=>{menu.remove();window.removeEventListener('pointerdown',outside);window.removeEventListener('resize',closeOnResize);if(toolbarPopover?.menu===menu)toolbarPopover=null;const target=kind==='auto'?toolbarAnchor('auto'):document.querySelector('#tools [data-more]');target?.setAttribute('aria-expanded','false');if(focus)target?.focus();};
+  const outside=e=>{if(!menu.contains(e.target)&&!e.target.closest('#tools'))close(false);};
+  const closeOnResize=()=>close(false);
+  const update=()=>{
+    if(cur()!==heat){close(false);return;}
+    const tools=scanToolStates();
+    if(kind==='auto'){
+      const toggle=menu.querySelector('[data-auto-toggle]'),run=menu.querySelector('[data-auto-run]');
+      if(toggle){toggle.checked=S.autoMark;toggle.disabled=!!S.cameraSetup;run.disabled=!!S.cameraSetup||!['review','saved'].includes(cur().state)||!S.apiOnline||cur().req==='pending';menu.querySelector('[data-auto-status]').textContent=!S.apiOnline?'Offline':cur().req==='pending'?'Timing…':cur().stub?'Simulator stand-in':'Automatic suggestions as runners finish';}
+      return;
+    }
+    const available=tools.filter(t=>toolbarOverflow.includes(t.id)&&t.when);
+    const next=available.map(t=>t.id);
+    if(!menu.children.length||JSON.stringify(next)!==JSON.stringify(ids)){
+      ids=next;menu.replaceChildren();
+      for(const group of ['View','Marking','Timing','Results']){
+        const items=available.filter(t=>t.group===group);if(!items.length)continue;
+        menu.append(h_('div','tool-menu-group',group));
+        for(const tool of items){const button=h_('button','tool-menu-action'+(['clear','revert'].includes(tool.id)?' recovery':''));button.dataset.tool=tool.id;button.setAttribute('role','menuitem');button.innerHTML=`<span>${tool.icon}${tool.label}</span>${tool.shortcut?`<kbd>${tool.shortcut}</kbd>`:''}`;button.title=tool.help;button.onclick=()=>{close(false);runScanTool(tool.id,toolbarAnchor(tool.id));};menu.append(button);}
+      }
+      const footer=h_('div','tool-menu-footer');
+      const customize=h_('button','tool-menu-action','Customize toolbar…');customize.setAttribute('role','menuitem');customize.onclick=()=>{close(false);showToolbarDialog('customize');};
+      const help=h_('button','tool-menu-action','Controls & shortcuts…');help.setAttribute('role','menuitem');help.onclick=()=>{close(false);showToolbarDialog('help');};footer.append(customize,help);menu.append(footer);
+    }
+    for(const tool of available){const button=menu.querySelector(`[data-tool="${tool.id}"]`);button.disabled=tool.disabled;button.classList.toggle('on',!!tool.on);}
+  };
+  if(kind==='auto'){
+    menu.classList.add('auto-timing-menu');
+    menu.innerHTML='<h3>Auto timing</h3><label><span>Automatic suggestions</span><input data-auto-toggle type="checkbox" role="switch"></label><p data-auto-status></p><button class="btn wide" data-auto-run>Run now</button>';
+    menu.querySelector('[data-auto-toggle]').onchange=e=>{S.autoMark=e.target.checked;store.set('autoMark',S.autoMark);renderUI();};
+    menu.querySelector('[data-auto-run]').onclick=()=>{close(false);requestProposals(cur());};
+  }
+  toolbarPopover={menu,close,update};update();document.body.append(menu);
+  menu.style.left=Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,rect.right-menu.offsetWidth))+'px';
+  const below=innerHeight-rect.bottom-8;
+  menu.style.top=(below>=Math.min(menu.offsetHeight,250)?rect.bottom+5:Math.max(8,rect.top-menu.offsetHeight-5))+'px';
+  menu.style.maxHeight=Math.max(96,innerHeight-parseFloat(menu.style.top)-8)+'px';
+  anchor.setAttribute('aria-expanded','true');
+  window.addEventListener('pointerdown',outside);window.addEventListener('resize',closeOnResize);
+  menu.onkeydown=e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();close();return;}if(kind==='more'&&['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();const buttons=[...menu.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement);buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}};
+  menu.querySelector('button:not(:disabled),input:not(:disabled)')?.focus({preventScroll:true});
+}
+function showToolbarDialog(kind) {
+  toolbarPopover?.close(false);overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;
+  if(document.querySelector('.scan-toolbar-dialog[open]'))return;
+  document.querySelector('.scan-toolbar-dialog')?.remove();
+  const dialog=h_('dialog','scan-toolbar-dialog');dialog.setAttribute('aria-labelledby','scan-toolbar-dialog-title');
+  const header=h_('div','toolbar-dialog-header');header.append(h_('h2','',kind==='customize'?'Customize toolbar':'Line-scan help'));
+  header.querySelector('h2').id='scan-toolbar-dialog-title';const close=h_('button','btn sm','×');close.setAttribute('aria-label','Close');close.onclick=()=>dialog.close();header.append(close);dialog.append(header);
+  const body=h_('div','toolbar-dialog-body');dialog.append(body);
+  if(kind==='customize'){
+    body.append(h_('p','toolbar-dialog-intro','Pin tools and put them in your preferred order.'));
+    const list=h_('div','toolbar-customize-list');body.append(list);
+    const draw=()=>{
+      const preferences=toolbarPreferences(store.get('scanToolbar',null));list.replaceChildren();
+      preferences.order.forEach((id,index)=>{
+        const tool=SCAN_TOOLS.find(t=>t.id===id),row=h_('div','toolbar-customize-row'),label=h_('label'),pin=h_('input');pin.type='checkbox';pin.checked=preferences.pinned.includes(id);pin.setAttribute('aria-label',`Pin ${tool.label}`);
+        pin.onchange=()=>{const next=toolbarPreferences(store.get('scanToolbar',null));next.pinned=pin.checked?[...next.pinned,id]:next.pinned.filter(t=>t!==id);store.set('scanToolbar',next);renderTools();};
+        label.append(pin,h_('span','',tool.label));row.append(label);
+        for(const [delta,text]of[[-1,'↑'],[1,'↓']]){const button=h_('button','btn sm',text);button.disabled=delta<0?index===0:index===preferences.order.length-1;button.setAttribute('aria-label',`Move ${tool.label} ${delta<0?'earlier':'later'}`);button.onclick=()=>{store.set('scanToolbar',moveToolbarTool(store.get('scanToolbar',null),id,delta));draw();renderTools();list.querySelector(`[data-order="${id}"] button${delta<0?':first-of-type':':last-of-type'}`)?.focus();};row.append(button);}
+        row.dataset.order=id;list.append(row);
+      });
+    };draw();
+    const footer=h_('div','toolbar-dialog-footer'),reset=h_('button','btn','Reset toolbar'),done=h_('button','btn primary','Done');reset.onclick=()=>{store.set('scanToolbar',toolbarPreferences(null));draw();renderTools();};done.onclick=()=>dialog.close();footer.append(reset,done);dialog.append(footer);
+  }else{
+    const intro=h_('p','toolbar-dialog-intro','Select a column, type a lane or hip number, then press Enter.');body.append(intro);
+    for(const group of ['Marking','View','Timing','Results']){const section=h_('section','toolbar-help-section');section.append(h_('h3','',group));for(const tool of SCAN_TOOLS.filter(t=>t.group===group)){const row=h_('div','toolbar-help-row');row.innerHTML=`<div><b>${tool.label}</b>${tool.shortcut?`<kbd>${tool.shortcut}</kbd>`:''}</div><p>${tool.help}</p>`;section.append(row);}body.append(section);}
+    const gestures=h_('p','toolbar-help-gestures');gestures.textContent='Wheel: scroll · Ctrl/Cmd + wheel: zoom · Drag: pan · Arrow keys: nudge the selected column · Shift + arrow: 10 columns';body.append(gestures);
+    const footer=h_('div','toolbar-dialog-footer'),done=h_('button','btn primary','Got it');done.onclick=()=>dialog.close();footer.append(done);dialog.append(footer);
+  }
+  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('close',()=>{dialog.remove();document.querySelector('#tools [data-more]')?.focus();},{once:true});document.body.append(dialog);dialog.showModal();
+}
 function renderTools() {
   invalidate();
-  const h = viewHeat(), box = $('#tools'); box.innerHTML = '';
-  syncLaneGutter(overlayStyle('scan'));
-  $('#scanCameraLabel').textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';$('#scanCameraLabel').disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;$('#scanCameraLabel').onclick=e=>showSourceMenu('main',e.currentTarget);
-  $('#scanCameraLabel').title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:'Choose main line-scan view';
+  const h=viewHeat(),box=$('#tools');box.innerHTML='';syncLaneGutter(overlayStyle('scan'));
+  const camera=$('#scanCameraLabel');camera.textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';camera.disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;camera.onclick=e=>showSourceMenu('main',e.currentTarget);
+  camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:'Choose main line-scan view';
   const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} ▾`:'Backup line-scan';
-  const captured = h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0);
-  const review = !S.cameraSetup && (h.state === 'review' || h.state === 'saved');
-  const tool = (icon, label, title, on, dis, act) => {
-    const b = h_('button', 'tool' + (on ? ' on' : ''));
-    b.innerHTML = icon + label; b.title = title; b.disabled = !!dis; b.onclick = act;
-    box.append(b); return b;
-  };
-  const sep = () => box.append(h_('span', 'tsep'));
-  tool(ICON.next, 'Follow live', 'Return to the latest captured columns', h.state==='running'&&!S.view.user, h.state!=='running', () => {
-    S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.zoomTool=false;S.hoverCol=null;
-    follow(h);renderTools();invalidate();
-  });
-  tool(ICON.zoom, 'Zoom', 'Drag a box to zoom to it (Shift+drag works any time)', S.zoomTool, !captured, () => { S.zoomTool = !S.zoomTool; renderTools(); syncCursor(); });
-  if(S.view.zoomed)tool(ICON.fit, 'Unzoom', 'Fit the whole capture (Esc)', false, !captured || !S.view.zoomed, () => { fitView(); renderUI(); });
-  tool(ICON.auto, 'Mark', 'Create or replace the selected athlete’s finish here (Enter)', false, !!S.cameraSetup || !captured || S.selLane == null || S.selCol == null, () => setMark(S.selLane,S.selCol));
-  tool(ICON.clear, 'Delete mark', 'Remove the selected finish (Delete)', false, !!S.cameraSetup || !captured || S.selLane == null, deleteSelectedFinish);
-  tool(ICON.flip, 'Flip', 'Mirror the image: winner on the left or on the right', S.flip, false, () => { S.flip = !S.flip; store.set('flip', S.flip); renderTools(); });
-  const laneOptions=tool(ICON.lanes, 'Lanes ▾', 'Lane overlay appearance and positions', overlayStyle('scan').enabled, false, () => showOverlaySettings('scan',laneOptions));
-  sep();
-  tool(ICON.auto, 'Auto-mark', 'Ask the finish model for suggested times now (for your review)', false, !review || !S.apiOnline || h.req === 'pending', () => requestProposals(cur()));
-  const sw = h_('button', 'sw' + (S.autoMark ? ' on' : ''));
-  sw.innerHTML = '<i></i>Auto';
-  sw.title = 'Suggest finishes as athletes arrive and after capture stops';
-  sw.onclick = () => { S.autoMark = !S.autoMark; store.set('autoMark', S.autoMark); renderUI(); };
-  box.append(sw);
-  sep();
-  tool(ICON.clear, 'Clear', 'Remove every mark in this heat (statuses stay)', false, !review || !Object.keys(h.marks).length, clearMarks);
-  tool(ICON.revert, 'Revert', h.saves ? 'Back to the last saved results' : 'Back to the capture as it closed', false, !review || !h.base || h.base === snap(h), revert);
+  const tools=scanToolStates(),preferences=toolbarPreferences(store.get('scanToolbar',null)),pinned=h_('div','pinned-scan-tools');box.append(pinned);
+  for(const id of preferences.order){const tool=tools.find(t=>t.id===id);if(!preferences.pinned.includes(id)||!tool.when)continue;
+    const button=h_('button','tool'+(tool.on?' on':'')+(id==='mark'?' primary-tool':''));button.dataset.tool=id;button.title=tool.help;button.disabled=tool.disabled;
+    button.innerHTML=tool.icon+tool.label+(['lanes','auto'].includes(id)?' ▾':'');
+    if(['lanes','auto'].includes(id)){button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded',String(id==='lanes'?!!overlayMenu?.isConnected:toolbarPopover?.menu?.classList.contains('auto-timing-menu')||false));}
+    else if(['follow','zoom','flip'].includes(id))button.setAttribute('aria-pressed',String(!!tool.on));
+    button.onclick=()=>{if(id==='auto'&&toolbarPopover?.menu.classList.contains('auto-timing-menu')){toolbarPopover.close();return;}toolbarPopover?.close(false);runScanTool(id,button);};pinned.append(button);
+  }
+  const more=h_('button','tool more-scan-tools','⋯');more.dataset.more='';more.title='More tools, customize toolbar, and help';more.setAttribute('aria-label','More line-scan tools');more.setAttribute('aria-haspopup','menu');more.setAttribute('aria-expanded',String(!!toolbarPopover&&!toolbarPopover.menu.classList.contains('auto-timing-menu')));
+  more.onclick=()=>{if(toolbarPopover?.menu.getAttribute('role')==='menu')toolbarPopover.close();else showToolbarPopover('more',more);};box.append(more);
+  while(pinned.children.length&&pinned.scrollWidth>pinned.clientWidth+1)pinned.lastElementChild.remove();
+  const visible=[...pinned.children].map(b=>b.dataset.tool);toolbarOverflow=tools.filter(t=>!visible.includes(t.id)).map(t=>t.id);
+  toolbarPopover?.update();
+}
+function initScanToolbar() {
+  let width=0;new ResizeObserver(entries=>{const next=Math.round(entries[0].contentRect.width);if(next!==width){width=next;renderTools();}}).observe($('#tools'));
 }
 function syncCursor() { scanCv.classList.toggle('zoom', S.zoomTool); }
 
@@ -1850,14 +1999,14 @@ function orderEvents(parsed) {
 function applyMeet(parsed, fresh) {
   const evs = orderEvents(parsed);
   if (fresh) {
-    HEATS = evs.map(e => buildHeat(specFromEvent(e, evs)));
+    S.lastLiveHeat=null;HEATS = evs.map(e => buildHeat(specFromEvent(e, evs)));
     S.idx = 0; S.files = []; S.selLane = null; S.selCol = null;
     const h = cur(); ensureStrip(h); if (S.autoArm) h.state = 'armed';
     fitView(); renderUI();
     return;
   }
   // Live re-seed from the meet manager: heats not yet started take the new start list; a heat that already ran only warns.
-  const notes = [];
+  const notes = [],selectedKey=JSON.stringify([cur().ev,cur().rd,cur().ht]);
   evs.forEach(e => {
     const spec = specFromEvent(e, evs), i = HEATS.findIndex(h => h.ev === e.event && h.rd === e.round && h.ht === e.heat);
     if (i < 0) { HEATS.push(buildHeat(spec)); notes.push(`${spec.name} heat ${e.heat} added`); return; }
@@ -1870,10 +2019,15 @@ function applyMeet(parsed, fresh) {
       notes.push(`${spec.name} heat ${e.heat} re-seeded`);
     } else notes.push(`${spec.name} heat ${e.heat} changed after it ran: check it against the meet manager`);
   });
+  const runOrder=new Map(evs.map((e,i)=>[JSON.stringify([e.event,e.round,e.heat]),i]));
+  HEATS.forEach(h=>{h.offSchedule=!runOrder.has(JSON.stringify([h.ev,h.rd,h.ht]));});
+  HEATS.sort((a,b)=>(runOrder.get(JSON.stringify([a.ev,a.rd,a.ht]))??Infinity)-(runOrder.get(JSON.stringify([b.ev,b.rd,b.ht]))??Infinity));
+  S.idx=Math.max(0,HEATS.findIndex(h=>JSON.stringify([h.ev,h.rd,h.ht])===selectedKey));
   if (notes.length) toast('Meet folder changed: ' + notes.join('; ') + '.', notes.some(n => n.includes('after it ran')));
   renderUI();
 }
 async function openMeet(dir) {
+  if(runningHeat()){toast('Stop capture before changing the meet folder.',true);return;}
   if(S.cameraSetup)await stopCameraSetup(true);
   try {
     const r = await OM.call('meet.open', { dir });
@@ -1917,6 +2071,7 @@ function renderCameraRoles(container) {
   if(['review','saved'].includes(cur().state))box.append(h_('p','dimtext','Changing the view keeps the original recording and finish times. The chosen roles also prepare the next capture.'));
 }
 async function openDemo(dir) {
+  if(runningHeat()){toast('Stop capture before changing the meet folder.',true);return;}
   scanSourceViews.clear();
   try {
     const r = await OM.call('assets.open', { dir });
@@ -1931,8 +2086,9 @@ async function openDemo(dir) {
   } catch (err) { toast('Could not open the demo meet: ' + err.message, true); }
 }
 function closeMeet() {
+  if(runningHeat()){toast('Stop capture before changing the meet folder.',true);return;}
   if(S.cameraSetup){stopCameraSetup(true).then(closeMeet);return;}
-  S.meet = null; HEATS = SPECS.map(buildHeat); S.idx = 0; S.files = [];
+  S.meet = null;S.lastLiveHeat=null;HEATS = SPECS.map(buildHeat); S.idx = 0; S.files = [];
   OM.call('settings.set', { patch: { meetDir: null, demoDir: null } }).catch(() => {});
   const h = cur(); ensureStrip(h); if (S.autoArm) h.state = 'armed';
   fitView(); renderUI();
@@ -1951,14 +2107,15 @@ function fitCanvas(cv) {
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
   return [g, w, hgt];
 }
-const scanCv = $('#scan');
+const scanCv = $('#scan');scanCv.tabIndex=0;scanCv.setAttribute('aria-label','Main line-scan image');
 const laneGutter=$('#laneGutter');
 const scanW = () => scanCv.clientWidth, scanH = () => scanCv.clientHeight - RULER;
 function pendingLaneIds(h,o) {
   return new Set(o.needsFinish&&!S.cameraSetup&&['running','review','saved'].includes(h.state)?h.athletes.filter(a=>!resolved(h,a)).map(a=>a.lane):[]);
 }
 function syncLaneGutter(o) {
-  const wrap=laneGutter.parentNode,width=Math.max(40,Math.min(64,20+12*String(Math.max(...laneBands(viewHeat()).map(b=>b.lane))).length)),size=width+'px';
+  const h=viewHeat(),hasStatus=!S.cameraSetup&&(Object.keys(h.status||{}).length>0||laneBands(h).some(b=>!h.athletes.some(a=>a.lane===b.lane)));
+  const wrap=laneGutter.parentNode,width=hasStatus?72:Math.max(40,Math.min(64,20+12*String(Math.max(...laneBands(h).map(b=>b.lane))).length)),size=width+'px';
   if(laneGutter.hidden===!o.enabled&&wrap.style.getPropertyValue('--lane-gutter-width')===size)return;
   const oldWidth=scanW(),center=S.view.c0+oldWidth/(2*S.view.zx);
   laneGutter.hidden=!o.enabled;wrap.classList.toggle('with-lane-gutter',o.enabled);wrap.style.setProperty('--lane-gutter-width',size);
@@ -1968,14 +2125,15 @@ function syncLaneGutter(o) {
 function renderLaneGutter(h) {
   if(laneGutter.hidden)return;
   const o=overlayStyle('scan'),edges=scanBoundaries(laneBands(h),o,rowsOf(h)),pending=pendingLaneIds(h,o),v=S.view,Hi=scanH();
-  const key=JSON.stringify([Hi,v.r0,v.zy,edges,o.fontSize,o.weight,o.textColor,o.lineColor,o.thickness,o.opacity,o.edit,[...pending],S.selLane]);
+  const key=JSON.stringify([Hi,v.r0,v.zy,edges,o.fontSize,o.weight,o.textColor,o.lineColor,o.thickness,o.opacity,o.edit,[...pending],h.status,S.selLane]);
   if(laneGutter.dataset.renderKey===key)return;laneGutter.dataset.renderKey=key;laneGutter.replaceChildren();
   for(let i=0;i<edges.length-1;i++){
     const lane=edges[i].below,top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);
     if(lane==null||bottom<=top)continue;
-    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(pending.has(lane)?' pending':''));row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.max(6,Math.min(28,Math.floor((bottom-top)*0.7),(laneGutter.clientWidth-12)/(String(lane).length*0.65)))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
-    if(bottom-top>=8)row.textContent=lane;
-    row.setAttribute('aria-label',`Lane ${lane}${pending.has(lane)?', awaiting a finish or status':''}`);row.setAttribute('aria-pressed',String(S.selLane===lane));
+    const entered=h.athletes.some(a=>a.lane===lane),status=!S.cameraSetup?(h.status[lane]||(!entered?'Empty':null)):null;
+    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(pending.has(lane)?' pending':'')+(status?' has-status':'')+(['DNS','FS','Empty'].includes(status)?' empty-lane':''));row.disabled=!S.cameraSetup&&!entered;row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.max(6,Math.min(28,Math.floor((bottom-top)*0.7),(laneGutter.clientWidth-12)/(String(lane).length*0.65)))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
+    if(bottom-top>=8){row.append(h_('span','lane-number',lane));if(status){const code=h_('small','lane-status',status);row.append(code);}}
+    row.setAttribute('aria-label',`Lane ${lane}${status?', '+status:''}${pending.has(lane)?', awaiting a finish or status':''}`);row.setAttribute('aria-pressed',String(S.selLane===lane));
     row.onclick=()=>{if(S.cameraSetup){S.selLane=lane;renderUI();}else selectLane(lane);};laneGutter.append(row);
   }
   edges.forEach(b=>{
@@ -2002,27 +2160,28 @@ function fitView() {
   const h = viewHeat(), v = S.view, W = scanW();
   S.bview.linked=true;
   v.focusLane=null;
-  v.zx = Math.max(MIN_ZX, Math.min(1, W / h.nCols));
-  v.c0 = Math.max(0, h.nCols - W / v.zx);
+  v.zx = Math.max(MIN_ZX, Math.min(1, W / displayCount(h)));
+  v.c0 = Math.max(0, displayCount(h) - W / v.zx);
   v.zy = scanH() / rowsOf(h); v.r0 = 0; v.zoomed = false;
 }
 function clampView() {
   const h = viewHeat(), v = S.view, vis = scanW() / v.zx;
-  v.c0 = Math.max(h.preview?(h.minCol||0):-vis*0.05, Math.min(h.nCols - vis * 0.95, v.c0));
+  v.c0 = Math.max(h.preview?(h.minCol||0):-vis*0.05, Math.min(displayCount(h) - vis * 0.95, v.c0));
   v.r0 = Math.max(0, Math.min(rowsOf(h) - scanH() / v.zy, v.r0));
 }
 function focusFinish(col) {
   const v = S.view,h=viewHeat();
+  if(toDisplay(h,col+0.5)==null){cur().hideEmpty=false;}
   S.bview.linked=true;v.focusLane=S.selLane;
   v.zx = Math.max(v.zx, 1.5);
-  v.c0 = col + 0.5 - scanW() / (2 * v.zx);
+  v.c0 = toDisplay(h,col+0.5) - scanW() / (2 * v.zx);
   const body=cameraLaneBody((h.displayMeta||h.asset?.primaryMeta)?.lane_rows,S.selLane),span=scanH()/v.zy;
   if(body&&span<rowsOf(h)-0.5)v.r0=body.center-span/2;
   v.zoomed = true; v.user = true;
   clampView();
 }
 function centerOn(col) {
-  const v = S.view, vis = scanW() / v.zx;
+  const v = S.view, vis = scanW() / v.zx;col=toDisplay(viewHeat(),col+0.5);
   if (col < v.c0 + vis * 0.1 || col > v.c0 + vis * 0.9) { v.c0 = col - vis / 2; clampView(); }
 }
 // While running: the scan streams in at 1:1, condenses down to MIN_ZX, then autoscrolls with the live edge at the right.
@@ -2035,8 +2194,8 @@ function follow(h) {
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)
 const unflipX = x => (S.flip ? scanW() - x : x);
-const xOf = col => unflipX((col + 0.5 - S.view.c0) * S.view.zx);
-const colOf = x => {const h=viewHeat(),column=S.view.c0+unflipX(x)/S.view.zx;if(!h.displaySource)return Math.floor(column);const s=h.displaySource,time=h.tOpen+column*periodOf(h),native=Math.floor((time-s.t)/s.p);return (s.t+(native+0.5)*s.p-h.tOpen)/periodOf(h)-0.5;};
+const xOf = col => {const value=toDisplay(viewHeat(),col+0.5);return value==null?NaN:unflipX((value-S.view.c0)*S.view.zx);};
+const colOf = x => {const h=viewHeat(),column=toOriginal(h,S.view.c0+unflipX(x)/S.view.zx);if(!h.displaySource)return Math.floor(column);const s=h.displaySource,time=h.tOpen+column*periodOf(h),native=Math.floor((time-s.t)/s.p);return (s.t+(native+0.5)*s.p-h.tOpen)/periodOf(h)-0.5;};
 
 function sampleForeground(h) {
   if(h.asset||h.preview||h.sampleForeground)return;
@@ -2067,7 +2226,7 @@ function hitScanBoundary(h,x,y,inGutter=false) {
   }).filter(b=>b.d<=8).sort((a,b)=>a.d-b.d)[0]||null;
 }
 function guideRenderData(h,o,W,Hi,g) {
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,h.asset?.mainCameraId,o.behindRunners,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,o.behindRunners,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
   if(h.guideRenderCache?.key===key)return h.guideRenderCache.lines;
   const lines=scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
     const y=(b.row-v.r0)*v.zy,path=new Path2D();
@@ -2096,10 +2255,10 @@ function foregroundColumns(h,x0,x1) {
   }
   return result;
 }
-function reviewHighlightLayer(h,o,W,Hi,pending,edges) {
+function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache') {
   if(!pending.size||W<1||Hi<1)return null;
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.pendingColor,[...pending],edges]);
-  if(h.reviewHighlightCache?.key===key)return h.reviewHighlightCache.canvas;
+  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.pendingColor,[...pending],edges]);
+  if(h[cache]?.key===key)return h[cache].canvas;
   const canvas=document.createElement('canvas');canvas.width=W;canvas.height=Hi;
   const ctx=canvas.getContext('2d'),bands=[];ctx.fillStyle=o.pendingColor;
   for(let i=0;i<edges.length-1;i++){
@@ -2118,7 +2277,7 @@ function reviewHighlightLayer(h,o,W,Hi,pending,edges) {
     }
     ctx.putImageData(image,0,0);
   }
-  h.reviewHighlightCache={key,canvas};return canvas;
+  h[cache]={key,canvas};return canvas;
 }
 
 function drawLaneGuides(g,h,W,Hi) {
@@ -2129,6 +2288,9 @@ function drawLaneGuides(g,h,W,Hi) {
   if(o.enabled) {
     const pending=pendingLaneIds(h,o),edges=scanBoundaries(laneBands(h),o,rowsOf(h));
     if(o.behindRunners)sampleForeground(h);
+    const emptyLanes=new Set(!S.cameraSetup?laneBands(h).filter(b=>!h.athletes.some(a=>a.lane===b.lane)||['DNS','FS'].includes(h.status[b.lane])).map(b=>b.lane):[]);
+    const emptyLayer=reviewHighlightLayer(h,{...o,pendingColor:'#8d9ab0'},W,Hi,emptyLanes,edges,'statusHighlightCache');
+    if(emptyLayer){g.save();g.globalAlpha=0.18;g.drawImage(emptyLayer,0,0);g.restore();}
     const highlight=reviewHighlightLayer(h,o,W,Hi,pending,edges);
     if(highlight){g.save();g.globalAlpha=o.pendingOpacity;g.drawImage(highlight,0,0);g.restore();}
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
@@ -2178,18 +2340,19 @@ function drawScan() {
     drawRuler(g, W, Hc, h, false);
     return;
   }
-  const vis = W / v.zx, sx = Math.max(0, v.c0), ex = Math.min(last + 1, v.c0 + vis);
-  g.imageSmoothingEnabled = v.zx < 3;
-  if (ex > sx) {
-    g.save();
-    if (S.flip) { g.translate(W, 0); g.scale(-1, 1); }
-    if(h.displaySource){const s=h.displaySource,p=periodOf(h),start=h.tOpen+sx*p,end=h.tOpen+ex*p,x=t=>(t-h.tOpen-v.c0*p)/p*v.zx,sh=Hi/v.zy;
+  const vis=W/v.zx,sx=Math.max(0,v.c0),ex=Math.min(displayCount(h),v.c0+vis,live?last+1:Infinity);
+  g.imageSmoothingEnabled=v.zx<3;
+  g.save();if(S.flip){g.translate(W,0);g.scale(-1,1);}
+  for(const piece of displayPieces(h,sx,ex)){
+    const dx=(piece.displayStart-v.c0)*v.zx,dw=(piece.end-piece.start)*v.zx;
+    if(h.displaySource){const s=h.displaySource,p=periodOf(h),start=h.tOpen+piece.start*p,end=h.tOpen+piece.end*p,x=t=>dx+(t-start)/p*v.zx,sh=Hi/v.zy;
       if(start<s.t){const stop=Math.min(end,s.t);g.drawImage(s.img,0,v.r0,1,sh,x(start),0,x(stop)-x(start),Hi);}
       const a=Math.max(0,(start-s.t)/s.p),b=Math.min(s.w,(end-s.t)/s.p);if(b>a)g.drawImage(s.img,a,v.r0,b-a,sh,x(s.t+a*s.p),0,(b-a)*s.p/p*v.zx,Hi);
       const tail=Math.max(start,s.t+s.w*s.p);if(end>tail)g.drawImage(s.img,0,v.r0,1,sh,x(tail),0,x(end)-x(tail),Hi);
-    }else drawStrip(g,h,sx,v.r0,ex-sx,Hi/v.zy,(sx-v.c0)*v.zx,0,(ex-sx)*v.zx,Hi);
-    g.restore();
+    }else drawStrip(g,h,piece.start,v.r0,piece.end-piece.start,Hi/v.zy,dx,0,dw,Hi);
   }
+  g.restore();
+  drawTimeBreaks(g,h,W,Hi,c=>unflipX((c-v.c0)*v.zx));
   if (live) { g.fillStyle = TK.blue; g.fillRect(xOf(last) - 1, 0, 2, Hi); }
 
   drawLaneGuides(g,h,W,Hi);
@@ -2217,6 +2380,14 @@ function drawScan() {
   }
   drawRuler(g, W, Hc, h, true);
 }
+function drawTimeBreaks(g,h,W,height,project) {
+  const map=projectionOf(h);if(!map)return;
+  for(let i=1;i<map.spans.length;i++){
+    const span=map.spans[i],x=project(span.displayStart);if(x<0||x>W)continue;
+    const gap=(span.start-map.spans[i-1].end)*periodOf(h);
+    g.save();g.fillStyle=TK.deep;g.globalAlpha=.8;g.fillRect(x-3,0,6,height);g.globalAlpha=1;g.strokeStyle=TK.muted;g.setLineDash([3,3]);g.beginPath();g.moveTo(x-2,0);g.lineTo(x-2,height);g.moveTo(x+2,0);g.lineTo(x+2,height);g.stroke();g.setLineDash([]);g.font='10px '+TK.mono;const label=`+${gap.toFixed(2)} s`,width=g.measureText(label).width+8,tx=Math.min(W-width-3,Math.max(4,x+6));g.fillStyle=TK.deep;g.fillRect(tx-3,height-20,width,16);g.fillStyle=TK.paper;g.fillText(label,tx+1,height-8);g.restore();
+  }
+}
 function drawRuler(g, W, Hc, h, on) {
   const y0 = Hc - RULER;
   g.fillStyle = TK.deep; g.fillRect(0, y0, W, RULER);
@@ -2226,13 +2397,13 @@ function drawRuler(g, W, Hc, h, on) {
   const steps = [0.00125, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1];
   const step = steps.find(s => s * pxPerS >= 70) || 1;
   const dec = step < 0.01 ? 4 : step < 0.1 ? 2 : 1;
-  const t0 = h.tOpen + v.c0 * period, t1 = h.tOpen + (v.c0 + W / v.zx) * period;
-  g.font = '10px ' + TK.mono;
-  for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) {
-    const x = Math.round(unflipX(((t - h.tOpen) / period - v.c0) * v.zx));
-    g.fillStyle = TK.dim; g.fillRect(x, y0 + 1, 1, 6);
-    g.fillStyle = TK.muted; g.textAlign = S.flip ? 'right' : 'left';
-    g.fillText((t-(h.startCorrection||0)).toFixed(dec), x + (S.flip ? -3 : 3), y0 + 16);
+  g.font='10px '+TK.mono;
+  for(const piece of displayPieces(h,Math.max(0,v.c0),Math.min(displayCount(h),v.c0+W/v.zx))){
+    const t0=h.tOpen+piece.start*period,t1=h.tOpen+piece.end*period;
+    for(let t=Math.ceil(t0/step)*step;t<t1;t+=step){
+      const x=Math.round(xOf((t-h.tOpen)/period-0.5));
+      g.fillStyle=TK.dim;g.fillRect(x,y0+1,1,6);g.fillStyle=TK.muted;g.textAlign=S.flip?'right':'left';g.fillText((t-(h.startCorrection||0)).toFixed(dec),x+(S.flip?-3:3),y0+16);
+    }
   }
   g.textAlign = 'left';
 }
@@ -2251,14 +2422,14 @@ function backupSource(h) {
 }
 function backupRange(h) {
   if (S.bview.linked) {
-    const period=periodOf(h),start=h.tOpen+S.view.c0*period,end=start+scanW()/S.view.zx*period,src=backupSource(h);
+    const period=periodOf(h),pieces=displayPieces(h,Math.max(0,S.view.c0),Math.min(displayCount(h),S.view.c0+scanW()/S.view.zx)),src=backupSource(h);
     const finishes=[...Object.entries(h.marks).map(([lane,m])=>({lane:+lane,col:m.col})),...(h.proposals||[])];
-    const finishLanes=[...new Set(finishes.filter(m=>colTime(h,m.col)>=start&&colTime(h,m.col)<=end).map(m=>m.lane))];
-    return linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period,timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth,otherRows:src.rows,mainLanes:(h.displayMeta||h.asset?.primaryMeta)?.lane_rows,otherLanes:src.meta?.lane_rows,finishLanes});
+    const finishLanes=[...new Set(finishes.filter(m=>pieces.some(p=>m.col>=p.start&&m.col<p.end)).map(m=>m.lane))];
+    return {...linkedCameraRange(S.view,{rows:rowsOf(h),height:scanH(),width:scanW(),period,timeOrigin:h.tOpen,otherWidth:backupCv.clientWidth,otherRows:src.rows,mainLanes:(h.displayMeta||h.asset?.primaryMeta)?.lane_rows,otherLanes:src.meta?.lane_rows,finishLanes}),projection:projectionOf(h),origin:h.tOpen,period};
   }
   return S.bview;
 }
-const backupCv = document.getElementById('backup');
+const backupCv = document.getElementById('backup');backupCv.tabIndex=0;backupCv.setAttribute('aria-label','Comparison line-scan image');
 const comparisonPicker=h_('button','kicker camera-source-picker');comparisonPicker.id='comparisonCameraPicker';comparisonPicker.setAttribute('aria-label','Choose comparison line-scan view');comparisonPicker.setAttribute('aria-haspopup','menu');
 comparisonPicker.onpointerdown=e=>e.stopPropagation();comparisonPicker.onmousedown=e=>e.stopPropagation();comparisonPicker.onclick=e=>{e.stopPropagation();showSourceMenu('comparison',comparisonPicker);};backupCv.parentNode.parentNode.querySelector('.kicker').replaceWith(comparisonPicker);
 const backupLinkButton=h_('button','btn sm','Linked');
@@ -2266,8 +2437,10 @@ backupLinkButton.setAttribute('aria-label','Link comparison view');backupLinkBut
 backupLinkButton.onpointerdown=e=>e.stopPropagation();backupLinkButton.onmousedown=e=>e.stopPropagation();
 backupLinkButton.onclick=e=>{e.stopPropagation();if(S.bview.linked)unlinkBackup(viewHeat());else S.bview.linked=true;invalidate();};
 backupCv.parentNode.parentNode.querySelector('.ph').append(backupLinkButton);
-const bX = (t, r, W) => { const x = (t - r.t0) / r.spp; return S.flip ? W - x : x; };
-const bT = (x, r, W) => r.t0 + (S.flip ? W - x : x) * r.spp;
+const bAxisTime=(x,r,W)=>r.t0+(S.flip?W-x:x)*r.spp;
+const bUnflippedX=(t,r)=>{const value=r.projection?displayCoordinate(r.projection,(t-r.origin)/r.period):null;return ((r.projection?(value==null?NaN:r.origin+value*r.period):t)-r.t0)/r.spp;};
+const bX=(t,r,W)=>{const x=bUnflippedX(t,r);return S.flip?W-x:x;};
+const bT=(x,r,W)=>{const t=bAxisTime(x,r,W);return r.projection?r.origin+originalCoordinate(r.projection,(t-r.origin)/r.period)*r.period:t;};
 function drawBackup() {
   const cv = backupCv;
   backupLinkButton.textContent=S.bview.linked?'Linked':'Link views';backupLinkButton.setAttribute('aria-pressed',String(S.bview.linked));
@@ -2281,21 +2454,19 @@ function drawBackup() {
     g.fillText('Backup capture follows the primary.', W / 2, Hh / 2); g.textAlign = 'left';
     return;
   }
-  const src = backupSource(h), r = backupRange(h), liveT = colTime(h, last) + periodOf(h) / 2;
-  const tEnd = Math.min(liveT, r.t0 + W * r.spp), sy = r.r0 * src.rows, sh = r.rv * src.rows;
-  const x = t => (t - r.t0) / r.spp;
-  g.save();
-  if (S.flip) { g.translate(W, 0); g.scale(-1, 1); }
-  if (!src.own) g.filter = 'grayscale(1) contrast(1.1)';
-  g.imageSmoothingEnabled = src.p / r.spp < 3;
-  // empty scene from the gun until this camera's first frame (sim renders cover the finish window only)
-  if (src.own && src.t > r.t0) {
-    const a = Math.max(r.t0, h.tOpen), b = Math.min(src.t, tEnd);
-    if (b > a) g.drawImage(src.img, 0, sy, 1, sh, x(a), 0, x(b) - x(a), Hh);
+  const src=backupSource(h),r=backupRange(h),period=periodOf(h),origin=h.tOpen;
+  const start=(r.t0-origin)/period,end=Math.min(displayCount(h),start+W*r.spp/period),sy=r.r0*src.rows,sh=r.rv*src.rows;
+  const pieces=visibleColumnPieces(r.projection,start,end,h.nCols),x=t=>bUnflippedX(t,r);
+  g.save();if(S.flip){g.translate(W,0);g.scale(-1,1);}
+  if(!src.own)g.filter='grayscale(1) contrast(1.1)';g.imageSmoothingEnabled=src.p/r.spp<3;
+  for(const piece of pieces){
+    const a=origin+piece.start*period,b=origin+piece.end*period;
+    if(src.own&&a<src.t){const stop=Math.min(b,src.t);if(stop>a)g.drawImage(src.img,0,sy,1,sh,x(a),0,x(stop)-x(a),Hh);}
+    const i0=Math.max(0,(a-src.t)/src.p),i1=Math.min(src.w,(b-src.t)/src.p);
+    if(i1>i0){const left=x(src.t+i0*src.p),right=x(src.t+i1*src.p);if(src.own)g.drawImage(src.img,i0,sy,i1-i0,sh,left,0,right-left,Hh);else drawStrip(g,h,i0,sy,i1-i0,sh,left,0,right-left,Hh);}
   }
-  const i0 = Math.max(0, Math.floor((r.t0 - src.t) / src.p)), i1 = Math.min(src.w, Math.ceil((tEnd - src.t) / src.p));
-  if (i1 > i0) { if(src.own) g.drawImage(src.img, i0, sy, i1 - i0, sh, x(src.t + i0 * src.p), 0, (i1 - i0) * src.p / r.spp, Hh); else drawStrip(g,h,i0,sy,i1-i0,sh,x(src.t+i0*src.p),0,(i1-i0)*src.p/r.spp,Hh); }
   g.restore();
+  drawTimeBreaks(g,h,W,Hh,c=>{const px=(origin+c*period-r.t0)/r.spp;return S.flip?W-px:px;});
   // marks, then the shared hover and selected hairlines
   drawFinishMarkers(g,h,W,Hh,col=>bX(colTime(h,col),r,W));
   if (S.hoverCol != null) { g.fillStyle = 'rgba(247,248,250,0.5)'; g.fillRect(Math.round(bX(colTime(h, S.hoverCol), r, W)), 0, 1, Hh); }
@@ -2427,7 +2598,7 @@ scanCv.addEventListener('wheel', e => {
   if (e.ctrlKey || e.metaKey) {
     S.bview.linked=true;
     const colAt = v.c0 + xa / v.zx;
-    v.zx = Math.max(S.cameraSetup?scanW()/Math.min(h.nCols,STRIP_TILE*8):scanW() / h.nCols * 0.5, Math.min(16, v.zx * Math.exp(-e.deltaY * 0.0018)));
+    v.zx = Math.max(S.cameraSetup?scanW()/Math.min(h.nCols,STRIP_TILE*8):scanW() / displayCount(h) * 0.5, Math.min(16, v.zx * Math.exp(-e.deltaY * 0.0018)));
     v.c0 = colAt - xa / v.zx; v.zoomed = true;
   } else {
     v.c0 += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) / v.zx * (S.flip ? -1 : 1);
@@ -2462,6 +2633,7 @@ scanCv.addEventListener('mousemove', e => {
 scanCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
 scanCv.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
+  scanCv.focus({preventScroll:true});
   S.entryNumber = ''; updateEntryNumber();
   const r = scanCv.getBoundingClientRect();
   const h = viewHeat(),boundary=!e.shiftKey&&hitScanBoundary(h,e.clientX-r.left,e.clientY-r.top);
@@ -2540,8 +2712,8 @@ scanCv.addEventListener('dblclick', e => {
   setMark(S.selLane, S.selCol);
 });
 window.addEventListener('keydown', e => {
-  if(e.target instanceof Element&&e.target.closest('#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings'))return;
-  if (document.querySelector('.race-reset-dialog[open]')) return;
+  if(e.target instanceof Element&&e.target.closest('#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings,.scan-tool-menu,.scan-toolbar-dialog'))return;
+  if (document.querySelector('.race-reset-dialog[open],.scan-toolbar-dialog[open]')) return;
   if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable=true]')) return;
   if (S.cameraSetup)return;
   if (S.tab !== 'run' || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -2562,7 +2734,8 @@ window.addEventListener('keydown', e => {
     if (S.selCol == null) return;
     e.preventDefault();
     const dir = (e.key === 'ArrowLeft' ? -1 : 1) * (S.flip ? -1 : 1);   // arrows move on screen, whichever way the image faces
-    S.selCol = Math.max(0, Math.min(h.nCols - 1, S.selCol + dir * (e.shiftKey ? 10 : 1)*(h.displaySource?h.displaySource.p/periodOf(h):1)));
+    const step=dir*(e.shiftKey?10:1)*(h.displaySource?h.displaySource.p/periodOf(h):1);
+    S.selCol=projectionOf(h)?toOriginal(h,Math.max(0.5,Math.min(displayCount(h)-0.5,toDisplay(h,S.selCol+0.5)+step)))-0.5:Math.max(0,Math.min(h.nCols-1,S.selCol+step));
     S.hoverCol=null;
     centerOn(S.selCol); renderUI();
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2604,13 +2777,14 @@ backupCv.addEventListener('wheel', e => {
   e.preventDefault(); unlinkBackup(h);
   const b = S.bview, rect = backupCv.getBoundingClientRect(), W = rect.width, mx = e.clientX - rect.left;
   if (e.ctrlKey || e.metaKey) {
-    const tAt = bT(mx, b, W);
+    const tAt = bAxisTime(mx, b, W);
     b.spp = Math.max(periodOf(h) / 16, Math.min((h.tClose - h.tOpen) / W, b.spp * Math.exp(e.deltaY * 0.0018)));
     b.t0 = tAt - (S.flip ? W - mx : mx) * b.spp;
   } else b.t0 += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * b.spp * (S.flip ? -1 : 1);
   invalidate();
 }, { passive: false });
 backupCv.addEventListener('mousedown', e => {
+  if(e.button===0)backupCv.focus({preventScroll:true});
   if (e.button !== 0 || !backupReady(viewHeat())) return;
   S.entryNumber = ''; updateEntryNumber();
   const r = backupCv.getBoundingClientRect();
@@ -2637,7 +2811,7 @@ window.addEventListener('mouseup', () => {
   if (d.moved && d.mode === 'zoom') {
     const w = Math.abs(d.x1 - d.x0), hh = Math.abs(d.y1 - d.y0);
     if (w > 8 && hh > 8) {
-      const st = d.start, ta = bT(d.x0, st, r.width), tb = bT(d.x1, st, r.width);
+      const st = d.start, ta = bAxisTime(d.x0, st, r.width), tb = bAxisTime(d.x1, st, r.width);
       Object.assign(S.bview, { linked: false, t0: Math.min(ta, tb), spp: Math.abs(tb - ta) / r.width, r0: st.r0 + Math.min(d.y0, d.y1) / r.height * st.rv, rv: hh / r.height * st.rv });
     }
   } else if (!d.moved) {
@@ -2695,7 +2869,7 @@ frontPb.title = 'Wheel: zoom · Drag: pan · Double-click: reset';
 // ---------------------------------------------------------------- frame loop (canvases redraw only while running or after a change)
 let lastSec = -1, lastLiveRender = 0, lastSideStamp='';
 function frame(now) {
-  const h = cur();
+  const h = runningHeat()||cur();
   if(S.cameraSetup){
     const p=S.cameraSetup,preview=p.heat;
     if(p.live){
@@ -2723,10 +2897,10 @@ function frame(now) {
       h.recvCols=target;h.nCols=Math.max(h.nCols,target);h.tClose=h.tOpen+target*periodOf(h);
     }
     const lc=(h.recvCols||0)-1;
-    if (lc !== h.liveCol) { h.liveCol = lc; if (!S.view.user && lc >= 0) follow(viewHeat()); }
-    if (now - lastLiveRender > 250) { lastLiveRender = now; liveSuggest(h); renderAcc(); const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();} renderProps(); renderTools(); renderSchedule(); publishBoard(); }
-    if(h.stopMode==='timeout'&&h.tNow>=h.stopAfter)stopCapture();
-    if(h.stopMode==='complete'&&h.athletes.length&&h.athletes.every(a=>resolved(h,a)))stopCapture();
+    if (lc !== h.liveCol) { h.liveCol = lc; if (h===cur()&&!S.view.user && lc >= 0) follow(viewHeat()); }
+    if(now-lastLiveRender>250){lastLiveRender=now;liveSuggest(h);if(h===cur()){renderAcc();const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();}renderProps();renderTools();}renderSchedule();if(S.tab==='events')renderMeetNavigator($('#drawerBody'));publishBoard();}
+    if(h.stopMode==='timeout'&&h.tNow>=h.stopAfter)stopCapture(h);
+    if(h.stopMode==='complete'&&h.athletes.length&&h.athletes.every(a=>resolved(h,a)))stopCapture(h);
 
     tickClock();
   } else if (h.req === 'pending' && now - lastLiveRender > 1000) { lastLiveRender = now; renderProps(); }   // "Timing… N s"
@@ -2737,7 +2911,7 @@ function frame(now) {
 }
 
 document.documentElement.dataset.theme = store.get('theme', 'dark');
-wordmark(); readTokens(); initTiles(); initWorkspaceSplit(); syncCursor();
+wordmark(); readTokens(); initTiles(); initWorkspaceSplit(); initScanToolbar(); syncCursor();
 const h0 = cur();
 ensureStrip(h0);
 if (S.autoArm) h0.state = 'armed';
@@ -2766,6 +2940,7 @@ if (OM) {
   });
   OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
   OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
+  OM.call('autocrop.info').then(info=>{S.cropInfo=info;renderTools();}).catch(()=>{});
   OM.call('autotiming.info').then(i => { S.atInfo = i; }).catch(() => {});
   OM.call('settings.get').then(s => { if (s.demoDir) openDemo(s.demoDir); else if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});
 }
