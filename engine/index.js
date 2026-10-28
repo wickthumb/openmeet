@@ -16,3 +16,4 @@ export {
   reduce, apply, places, missingResults, lifInput, HeatError,
   HEAT_STATES, STATUS_CODES, MARK_SOURCES, EVENT_TYPES,
 } from './heat/state.js';
+export * from './scoreboard/index.js';

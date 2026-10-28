@@ -5,6 +5,8 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import vm from 'node:vm';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { createScoreboardServer } from './server.js';
 import { createTemplate } from './templates.js';
 
@@ -105,6 +107,19 @@ test('nested template edits bump that template version and close releases feeds'
   assert.notEqual(changed, initial);
   await server.close(); await server.close();
   await assert.rejects(fetch(base + '/scoreboard/state'));
+});
+
+test('polling detects edits when fs.watch is unavailable', { timeout: 8000 }, async t => {
+  const original = fs.watch;
+  fs.watch = () => { throw new Error('watch unsupported'); };
+  syncBuiltinESMExports();
+  t.after(() => { fs.watch = original; syncBuiltinESMExports(); });
+  const { root, base } = await setup(t), next = await feed(t, base);
+  await next(); const before = (await next()).data.classic;
+  await writeFile(path.join(root, 'classic/assets/new.svg'), '<svg/>');
+  let after = before;
+  while (after === before) { const event = await next(); if (event.event === 'version') after = event.data.classic; }
+  assert.notEqual(after, before);
 });
 
 test('runtime parses, delivers current state immediately, reconnect versions reload and clock math is right', async t => {
