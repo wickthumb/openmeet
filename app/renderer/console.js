@@ -1519,8 +1519,9 @@ const frontFontScale=o=>frontImageRect().height/(o.sizeReferenceHeight||frontIma
 function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nativeRows=null) {
   let saved=store.get(cameraOverlayKey(kind,camera),kind!=='scan'||camera==='primary'?store.get(overlayKey(kind),{}):{});
   if(kind==='front'&&!saved.imageSpace){
-    const rect=frontImageRect(),pb=$('#front').parentNode;
-    if(rect.height>0){saved={...saved,imageSpace:1,sizeReferenceHeight:rect.height,positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,p])=>[lane,{x:Math.max(.02,Math.min(.98,(p.x*pb.clientWidth-rect.x)/rect.width)),y:Math.max(.02,Math.min(.98,(p.y*pb.clientHeight-rect.y)/rect.height))}]))};store.set(cameraOverlayKey(kind,camera),saved);}
+    const rect=frontImageRect(),pb=$('#front').parentNode,h=viewHeat(),meta=h.frontRec?.meta||h.asset?.frontMeta;
+    // Wait for the image's actual aspect ratio before converting an older tile profile.
+    if(rect.height>0&&(!S.meet||meta?.width&&meta?.height)){saved={...saved,imageSpace:1,sizeReferenceHeight:rect.height,positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,p])=>[lane,{x:Math.max(.02,Math.min(.98,(p.x*pb.clientWidth-rect.x)/rect.width)),y:Math.max(.02,Math.min(.98,(p.y*pb.clientHeight-rect.y)/rect.height))}]))};store.set(cameraOverlayKey(kind,camera),saved);}
   }
   const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
   if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}

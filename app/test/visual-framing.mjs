@@ -79,6 +79,10 @@ const frontSettings=()=>ev(`document.querySelector('#frontLaneButton').click()`)
 const frontOption=(key,value)=>ev(`(()=>{const e=document.querySelector('#overlay-settings-front [data-key="${key}"]');${typeof value==='boolean'?`e.checked=${value}`:`e.value=${JSON.stringify(value)}`};e.dispatchEvent(new Event('input'));})()`);
 try {
  await sleep(1600);await send('Page.navigate',{url:page.url+'?speed=4'});await sleep(1400);
+ // Reopening an old tile-based profile must wait until the video dimensions arrive.
+ await ev(`(()=>{const key=Object.keys(localStorage).find(k=>k.endsWith(':front')&&!k.includes(':sample:'));localStorage.setItem(key,JSON.stringify({enabled:true,positions:{1:{x:.5,y:.5}},fontSize:28}));})()`);await send('Page.reload');await sleep(1600);
+ assert(await ev(`(()=>{const r=document.querySelector('#front').getBoundingClientRect(),p=document.querySelector('#frontLaneOverlay [data-lane="1"]').getBoundingClientRect();return Math.abs(p.x+p.width/2-r.x-r.width*.5)<1&&Math.abs(p.y+p.height/2-r.y-r.height*.5)<1;})()`),'Legacy profile migrated before the real image aspect ratio was known');
+
  await settings();await option('enabled',true);await closeSettings();await sleep(100);const baseline=await laneHeight();
  await showHeight();await dragHeight('top',.25);await dragHeight('bottom',-.05);
  const trimmed=await frameValues();assert(Math.abs(trimmed.top-original.rows*.25)<2&&Math.abs(trimmed.bottom-original.rows*.95)<2,'Pointer framing bounds are wrong');await shot('01-adjust-height');await click('Done');await sleep(100);

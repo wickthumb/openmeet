@@ -278,8 +278,9 @@ const methods = {
     const cap=captures.get(captureId);if(!cap)throw Error('No captured image is available');
     if(active?.id===captureId)throw Error('Stop capture before requesting the model mask');
     let png,width,height,camera=cap.cameraId||'primary';
-    if(viewPng){const source=scanSources.get(viewPng);if(!source)throw Error('Open this camera source first');png=await fsp.readFile(source.png);width=source.size.width;height=source.size.height;camera=source.id;}
-    else{const strip=await stripPng(cap.dir);png=strip.png;width=strip.columns;height=strip.rows;}
+    const checkSize=()=>{if(width>32768||height>32768||width*height>16*1024*1024)throw Error('This capture exceeds the model preview size limit; Simple remains available');};
+    if(viewPng){const source=scanSources.get(viewPng);if(!source)throw Error('Open this camera source first');width=source.size.width;height=source.size.height;checkSize();png=await fsp.readFile(source.png);camera=source.id;}
+    else{const record=core.openCaptureStore(cap.dir,{readOnly:true});try{width=record.columnCount();height=record.meta().rows;checkSize();}finally{await record.close();}const strip=await stripPng(cap.dir);png=strip.png;}
     const result=await requestOcclusion({png,requestId:randomUUID()});
     if(result.width!==width||result.height!==height)throw Error('Occlusion mask does not match the camera image');
     await fsp.writeFile(path.join(cap.dir,`occlusion-${String(camera).replace(/[^\w-]/g,'_')}.png`),Buffer.from(result.mask_png_base64,'base64'));
