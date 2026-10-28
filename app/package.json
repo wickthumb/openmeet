@@ -3,6 +3,7 @@
   "productName": "OpenMeet",
   "version": "0.1.0",
   "description": "Open-source track-and-field photo-finish timing",
+  "homepage": "https://github.com/wickthumb/openmeet",
   "license": "MIT",
   "author": "Track Tools Pro LLC",
   "private": true,
