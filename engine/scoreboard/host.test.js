@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
-import { mkdtemp, writeFile, rm, readFile, cp, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile, cp, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { once } from 'node:events';
+import { fakeMuseEnv } from './testing/fake-muse.js';
 
 test('host methods start once, publish, manage templates/assets, run a preset and restore over RPC', { timeout: 10000 }, async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'openmeet-host-'));
@@ -17,10 +18,12 @@ process.parentPort = new EventEmitter();
 process.parentPort.postMessage = message => process.send(message);
 process.on('message', data => process.parentPort.emit('message', {data}));
 await import(${JSON.stringify(new URL('../../app/engine-host.mjs', import.meta.url).href)});`);
-  const bin = path.join(root, 'bin'); await mkdir(bin);
+  const bin = path.join(root, 'bin');
   // The host accepts presets only. Put a fake Muse executable first in this test's PATH.
-  await writeFile(path.join(bin, 'muse'), '#!/bin/sh\nprintf "preset output\\n"\nprintf "<!-- host edit -->" >> index.html\n', { mode: 0o755 });
-  const child = fork(adapter, [root], { env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  const env = await fakeMuseEnv(bin, `const fs=require('node:fs');
+fs.writeFileSync('argv.json',JSON.stringify(argv));
+fs.writeSync(1,'preset output\\n');fs.appendFileSync('index.html','<!-- host edit -->');`);
+  const child = fork(adapter, [root], { env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   child.stdout.resume(); child.stderr.resume();
   t.after(async () => { if (child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; } });
   const pending = new Map(), events = []; let id = 0;
@@ -43,9 +46,12 @@ await import(${JSON.stringify(new URL('../../app/engine-host.mjs', import.meta.u
   const logo = path.join(root, 'Logo.svg'); await writeFile(logo, '<svg/>');
   assert.match(await call('scoreboard.addAsset', { name: 'overlay', path: logo }), /^assets\/logo-/);
   const result = await call('scoreboard.agent', { name: 'overlay', request: 'Add a footer', preset: 'muse' });
-  assert.equal(result.code, 0); assert.equal(result.restored, false);
+  assert.equal(result.code, 0, result.error); assert.equal(result.restored, false);
   assert.ok(events.some(v => v.event === 'scoreboard.agentOutput' && v.data.name === 'overlay' && v.data.line === 'preset output'));
   const index = path.join(root, 'scoreboards/overlay/index.html');
+  const argv = JSON.parse(await readFile(path.join(root, 'scoreboards/overlay/argv.json'), 'utf8'));
+  assert.deepEqual(argv.slice(0, 5), ['exec', '--workspace', await realpath(path.dirname(index)), '--disable-web-tools', '--user-input-auto-resolve']);
+  assert.equal(argv.length, 6); assert.match(argv[5], /Add a footer/);
   assert.match(await readFile(index, 'utf8'), /host edit/);
   await call('scoreboard.restore', { name: 'overlay', snapshotId: result.snapshotId });
   assert.doesNotMatch(await readFile(index, 'utf8'), /host edit/);

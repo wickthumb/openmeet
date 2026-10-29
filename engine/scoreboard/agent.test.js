@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { runScoreboardAgent, AGENT_PRESETS } from './agent.js';
@@ -25,7 +25,7 @@ fs.writeSync(1,'first\\nlast');fs.writeSync(2,'diagnostic\\r\\n');`);
   const result = await runScoreboardAgent({ root, name: 'board', request: 'Add stars, retain literal {dir} and {prompt}', agent, onOutput: chunk => output.push(chunk) });
   assert.equal(result.code, 0); assert.equal(result.restored, false);
   const args = JSON.parse(await readFile(path.join(root, 'board/arguments.json'), 'utf8'));
-  assert.equal(args.cwd, path.join(root, 'board')); assert.equal(args.dir, args.cwd);
+  assert.equal(args.cwd, await realpath(path.join(root, 'board'))); assert.equal(args.dir, args.cwd);
   for (const pattern of [/Add stars, retain literal \{dir\} and \{prompt\}/, /assets\/central.svg/, /1280 x 720/,
     /Live data contract/, /startedAtMs/, /onData/, /No network requests/, /Edit only files inside/]) assert.match(args.prompt, pattern);
   assert.deepEqual(output.filter(v => v.stream === 'stdout').map(v => v.line), ['first', 'last']);

@@ -12,15 +12,21 @@ async function temp(t) {
 }
 
 test('old stock Classic upgrades once with a restorable snapshot; edited boards stay untouched',async t=>{
+ for(const newline of ['\n','\r\n'])await t.test(newline==='\n'?'LF':'CRLF',async t=>{
   const root=await temp(t);await createTemplate(root,'classic');
   const file=path.join(root,'classic/index.html'),latest=await readFile(file,'utf8');
-  const previous=await readFile(new URL('./fixtures/classic-v1.html',import.meta.url),'utf8');
+  const previous=(await readFile(new URL('./fixtures/classic-v1.html',import.meta.url),'utf8')).replace(/\r\n/g,'\n').replace(/\n/g,newline);
   await writeFile(file,previous);const result=await refreshBuiltinTemplate(root);
   assert.equal(result.updated,true);assert.equal(await readFile(file,'utf8'),latest);
-  assert.equal(await readFile(path.join(root,'classic/.history',result.snapshotId,'index.html'),'utf8'),previous);
+  assert.deepEqual(await readFile(path.join(root,'classic/.history',result.snapshotId,'index.html')),Buffer.from(previous));
   assert.deepEqual(await refreshBuiltinTemplate(root),{updated:false});
-  const edited=previous+'<!-- custom scoreboard -->';await writeFile(file,edited);
-  assert.deepEqual(await refreshBuiltinTemplate(root),{updated:false});assert.equal(await readFile(file,'utf8'),edited);
+  await restore(root,'classic',result.snapshotId);assert.deepEqual(await readFile(file),Buffer.from(previous));
+  for(const edited of [previous+'<!-- custom scoreboard -->',previous+' ']){
+   await writeFile(file,edited);
+   assert.deepEqual(await refreshBuiltinTemplate(root),{updated:false});assert.equal(await readFile(file,'utf8'),edited);
+  }
+  assert.deepEqual(await readdir(path.join(root,'classic/.history')),[result.snapshotId]);
+ });
 });
 
 test('create, list, copy, image import, snapshot and restore round-trip', async t => {

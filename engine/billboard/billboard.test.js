@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,rm,mkdir,cp} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm,mkdir,cp,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL,fileURLToPath} from 'node:url';
@@ -25,7 +25,7 @@ test('fake CLI edits SVG, receives billboard contract, streams and can undo; app
  assert.equal(result.code,0);assert.equal(result.restored,false);assert.ok(output.some(d=>d.line==='fake edit'));
  assert.match(await readFile(path.join(root,'art/prompt.txt'),'utf8'),/STATIC LINE-SCAN BILLBOARD/);
  assert.match(await readFile(path.join(root,'art/prompt.txt'),'utf8'),/Edit ONLY assets\/billboard.svg/);
- assert.equal(await readFile(path.join(root,'art/cwd.txt'),'utf8'),path.join(root,'art'));
+ assert.equal(await readFile(path.join(root,'art/cwd.txt'),'utf8'),await realpath(path.join(root,'art')));
  await restoreBillboard(root,'art',result.snapshotId);assert.equal(await readFile(path.join(root,'art/assets/billboard.svg'),'utf8'),original);
  assert.deepEqual(AGENT_PRESETS,scoreboardPresets);
 });

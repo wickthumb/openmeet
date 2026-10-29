@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fork} from 'node:child_process';
-import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,realpath} from 'node:fs/promises';
 import {once} from 'node:events';
 import path from 'node:path';
 import os from 'node:os';
+import {fakeMuseEnv} from '../scoreboard/testing/fake-muse.js';
 test('real host billboard RPC uses a separate library, unchanged fake preset, image import and undo', {timeout:10000},async t=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'openmeet-billboard-host-'));t.after(()=>rm(root,{recursive:true,force:true}));
- const bin=path.join(root,'bin');await mkdir(bin);await mkdir(path.join(root,'scoreboards'));const sentinel=path.join(root,'scoreboards','untouched.txt');await writeFile(sentinel,'parent scoreboard');
- await writeFile(path.join(bin,'muse'),`#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync('argv.json',JSON.stringify(process.argv.slice(2)));fs.writeFileSync('assets/billboard.svg',fs.readFileSync('assets/billboard.svg','utf8').replace('OpenMeet','Fake sponsor'));fs.writeSync(1,'fake host build\\n');`,{mode:0o755});
- const env={...process.env,PATH:bin+path.delimiter+process.env.PATH};for(const k of Object.keys(env))if(k.startsWith('OPENMEET_'))delete env[k];
+ const bin=path.join(root,'bin');await mkdir(path.join(root,'scoreboards'));const sentinel=path.join(root,'scoreboards','untouched.txt');await writeFile(sentinel,'parent scoreboard');
+ const env=await fakeMuseEnv(bin,`const fs=require('node:fs');fs.writeFileSync('argv.json',JSON.stringify(argv));fs.writeFileSync('assets/billboard.svg',fs.readFileSync('assets/billboard.svg','utf8').replace('OpenMeet','Fake sponsor'));fs.writeSync(1,'fake host build\\n');`);
  const adapter=path.join(root,'adapter.mjs');await writeFile(adapter,`import {EventEmitter} from 'node:events';process.parentPort=new EventEmitter();process.parentPort.postMessage=m=>process.send(m);process.on('message',data=>process.parentPort.emit('message',{data}));await import(${JSON.stringify(new URL('../../app/engine-host.mjs',import.meta.url).href)});`);
  const child=fork(adapter,[root],{env,stdio:['ignore','pipe','pipe','ipc']});child.stdout.resume();child.stderr.resume();
  t.after(async()=>{if(child.exitCode===null){const exit=once(child,'exit');child.kill();await exit;}});
@@ -18,9 +18,10 @@ test('real host billboard RPC uses a separate library, unchanged fake preset, im
  await call('ping');assert.deepEqual(await call('billboard.list'),[]);await call('billboard.create',{name:'art'});
  const before=await call('billboard.read',{name:'art'});const logo=path.join(root,'logo.png');await writeFile(logo,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4uoAAAAASUVORK5CYII=','base64'));
  const asset=await call('billboard.addAsset',{name:'art',path:logo});assert.match((await call('billboard.read',{name:'art',asset})).dataUrl,/data:image\/png;base64,/);
- const result=await call('billboard.agent',{name:'art',request:'Sponsor',preset:'muse'});assert.equal(result.code,0);assert.equal(result.restored,false);assert.ok(events.some(e=>e.event==='billboard.agentOutput'&&e.data.line==='fake host build'));
+ const result=await call('billboard.agent',{name:'art',request:'Sponsor',preset:'muse'});assert.equal(result.code,0,result.error);assert.equal(result.restored,false);assert.ok(events.some(e=>e.event==='billboard.agentOutput'&&e.data.line==='fake host build'));
  assert.match(await readFile(path.join(root,'billboards/art/assets/billboard.svg'),'utf8'),/Fake sponsor/);
- const argv=JSON.parse(await readFile(path.join(root,'billboards/art/argv.json'),'utf8'));assert.deepEqual(argv.slice(0,5),['exec','--workspace',path.join(root,'billboards/art'),'--disable-web-tools','--user-input-auto-resolve']);
+ const argv=JSON.parse(await readFile(path.join(root,'billboards/art/argv.json'),'utf8'));assert.deepEqual(argv.slice(0,5),['exec','--workspace',await realpath(path.join(root,'billboards/art')),'--disable-web-tools','--user-input-auto-resolve']);
+ assert.equal(argv.length,6);assert.match(argv[5],/Operator design request: Sponsor/);
  await call('billboard.restore',{name:'art',snapshotId:result.snapshotId});assert.deepEqual(await call('billboard.read',{name:'art'}),before);
  await assert.rejects(call('billboard.agent',{name:'art',request:'x',preset:'invalid'}),/Unknown billboard agent/);
  assert.equal(await readFile(sentinel,'utf8'),'parent scoreboard');await call('billboard.delete',{name:'art'});assert.deepEqual(await call('billboard.list'),[]);

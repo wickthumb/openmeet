@@ -7,13 +7,14 @@ import ticker from './builtin/results-ticker.js';
 
 const builtins = { classic, 'results-ticker': ticker };
 
-// Upgrade only an exact previous stock Classic; operator edits remain authoritative.
+// Upgrade only the previous stock Classic, allowing checkout CRLF line endings;
+// all other operator edits remain authoritative. Snapshots retain original bytes.
 const previousClassicHashes=new Set(['d5bd065e73a5eb33167e9d0280b22de4960427f3dd8492f1017d7a24e5a9857b']);
 export async function refreshBuiltinTemplate(root,name='classic') {
   if(name!=='classic')return {updated:false};
   const library=await libraryRoot(root),dir=await containedPath(library,name),index=await containedPath(dir,'index.html');
   const previous=await readFile(index,'utf8');
-  if(!previousClassicHashes.has(createHash('sha256').update(previous).digest('hex')))return {updated:false};
+  if(!previousClassicHashes.has(createHash('sha256').update(previous.replace(/\r\n/g,'\n')).digest('hex')))return {updated:false};
   const snapshotId=await snapshot(root,name),temporary=path.join(dir,`.builtin-${randomUUID()}.tmp`);
   try {
     await writeFile(temporary,classic.html,{flag:'wx'});
