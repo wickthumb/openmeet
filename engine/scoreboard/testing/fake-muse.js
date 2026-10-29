@@ -8,7 +8,10 @@ export async function fakeMuseEnv(bin, source) {
   const command = path.join(bin, process.platform === 'win32' ? 'muse.exe' : 'muse');
   await copyFile(process.execPath, command);
   const preload = path.join(bin, 'fake-muse.cjs');
-  await writeFile(preload, `if (require('node:fs').realpathSync(process.execPath) === ${JSON.stringify(await realpath(command))}) {
+  const canonicalCommand=await realpath(command);
+  await writeFile(preload, `const executablePath=require('node:fs').realpathSync.native(process.execPath);
+const fixturePath=${JSON.stringify(canonicalCommand)};
+if ((process.platform==='win32'?executablePath.toLowerCase():executablePath) === (process.platform==='win32'?fixturePath.toLowerCase():fixturePath)) {
 // Node expands its first positional argument as a script path before preloading.
 require('node:assert/strict').equal(process.argv[1], require('node:path').join(process.cwd(), 'exec'));
 const argv = ['exec', ...process.argv.slice(2)];
