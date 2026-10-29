@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const binary = process.argv[2];
 if (!binary) {
-  console.error('Usage: node app/test/smoke-packaged.mjs <path-to-binary>');
+  console.error('Usage: node app/test/smoke-packaged.mjs <path-to-binary> [electron-test-flags...]');
   process.exit(1);
 }
 
@@ -77,6 +77,7 @@ try {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   child = spawn(executable, [
+    ...process.argv.slice(3),
     '--ozone-platform=headless',
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userData}`,

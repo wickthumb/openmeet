@@ -3,6 +3,7 @@ name: Build installers
 on:
   push:
     branches: [main, blueprint-v1, packaging]
+    tags: ['v*-alpha*']
   workflow_dispatch:
 
 permissions:
@@ -25,6 +26,9 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - name: Check public model boundary
         run: node scripts/check-public-boundary.mjs
+      - name: Verify tagged alpha version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node -e "const fs=require('node:fs');const v=process.env.GITHUB_REF_NAME.slice(1);for(const file of ['app/package.json','engine/package.json'])if(JSON.parse(fs.readFileSync(file)).version!==v)throw Error('Tag and package versions differ');"
       - name: Install app dependencies
         working-directory: app
         run: npm ci
@@ -48,6 +52,9 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: app
         run: npm run dist:linux -- --publish never
+      - name: Smoke test packaged Linux engine
+        if: runner.os == 'Linux'
+        run: node app/test/smoke-packaged.mjs app/dist/linux-unpacked/openmeet --no-sandbox
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -59,3 +66,39 @@ jobs:
             app/dist/*.dmg
             app/dist/*.AppImage
             app/dist/*.deb
+
+  release:
+    name: Publish alpha release
+    if: startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-alpha')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download verified installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: OpenMeet-*-installers
+          path: release-assets
+          merge-multiple: true
+      - name: Check installer set and write checksums
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const dir='release-assets',files=fs.readdirSync(dir).sort();
+          if(files.length!==8||files.some(f=>!/\.(exe|dmg|AppImage|deb)$/.test(f)))throw Error('Expected all eight desktop installers');
+          fs.writeFileSync(`${dir}/SHA256SUMS`,files.map(f=>`${createHash('sha256').update(fs.readFileSync(`${dir}/${f}`)).digest('hex')}  ${f}\n`).join(''));
+          JS
+      - name: Publish Alpha with downloads and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          gh release create "$RELEASE_TAG" release-assets/* --verify-tag \
+            --title "OpenMeet Alpha ${version%%-alpha*}" --prerelease --notes-file CHANGELOG.md

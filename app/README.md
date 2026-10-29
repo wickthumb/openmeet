@@ -32,6 +32,8 @@ workflow**, build all three OSes. Download `OpenMeet-Windows-installers`,
 **Artifacts** section within 14 days. Windows installation and RunMeet shared-folder
 interoperability still need hands-on testing on Windows.
 
+An annotated `v*-alpha*` tag builds and checks all three platforms, smoke-tests the packaged Linux engine, then publishes a GitHub prerelease with all eight installers and `SHA256SUMS`. Tag and app/engine versions must match.
+
 ## Toolbar and meet navigation
 
 The scan's camera and selected-column time stay visible. The default toolbar keeps Zoom, Mark, Lanes and Auto timing in reach. Follow live appears during capture; Unzoom appears when zoomed. **More** groups the remaining view, marking and result tools.
