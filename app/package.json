@@ -11,7 +11,7 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/scan-overlays.test.mjs test/front-preview.test.mjs test/foreground-mask.test.mjs test/scan-toolbar.test.mjs test/column-map.test.mjs test/front-occlusion.test.mjs test/private-occlusion.test.mjs test/occlusion-state.test.mjs test/live-follow.test.mjs",
+    "test": "node --test test/scan-overlays.test.mjs test/front-preview.test.mjs test/foreground-mask.test.mjs test/scan-toolbar.test.mjs test/column-map.test.mjs test/front-occlusion.test.mjs test/private-occlusion.test.mjs test/occlusion-state.test.mjs test/live-follow.test.mjs test/replay-sources.test.mjs",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
@@ -32,6 +32,7 @@
       "main.mjs",
       "preload.cjs",
       "engine-host.mjs",
+      "simulation-sources.mjs",
       "private-occlusion.mjs",
       "renderer/**",
       {

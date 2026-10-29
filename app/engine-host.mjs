@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { validateCropResult } from './renderer/column-map.mjs';
 import { occlusionInfo, requestOcclusion } from './private-occlusion.mjs';
+import { SOURCE_TYPES, simulationCatalog, sourceId, readReplayFolder, publicReplay, recordedResults } from './simulation-sources.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const userData = process.argv[2] || here;
@@ -53,15 +54,15 @@ async function writeAtomic(dir, name, text) {
   return final;
 }
 
-// PNG width/height from the IHDR chunk, without decoding the image.
-async function pngSize(p) {
-  const fh = await fsp.open(p, 'r');
-  try { const b = Buffer.alloc(24); await fh.read(b, 0, 24, 0); return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }; } finally { await fh.close(); }
-}
-
 // One camera capture at a time: the simulated camera streams protocol messages into an append-only store,
 // and every chunk is forwarded to the console as it lands. The store, not the console, is the record.
 let active = null;
+let captureStarting = false, captureStartStop = false, sourceChanging = false;
+async function changeSource(fn) {
+  if (active || captureStarting || sourceChanging) throw Error('Stop capture or preview before changing simulation sources');
+  sourceChanging = true;
+  try { return await fn(); } finally { sourceChanging = false; }
+}
 async function runCapture(id, store, gen, preview=false) {
   const prefix=preview?'preview':'capture';
   try {
@@ -130,6 +131,25 @@ async function stripPng(dir, from = 0, to = null, laneGuides = null) {
 
 const settingsPath = path.join(userData, 'openmeet-settings.json');
 async function loadSettings() { try { return JSON.parse(await fsp.readFile(settingsPath, 'utf8')); } catch { return {}; } }
+let settingsWrite = Promise.resolve();
+function saveSettings(patch) {
+  const write = settingsWrite.then(async () => {
+    const s = { ...(await loadSettings()), ...patch };
+    await fsp.mkdir(userData, { recursive: true });
+    const tmp = settingsPath + '.tmp';
+    await fsp.writeFile(tmp, JSON.stringify(s, null, 2));
+    await fsp.rename(tmp, settingsPath);
+    return s;
+  });
+  settingsWrite = write.catch(() => {});
+  return write;
+}
+
+function registerReplay(replay) {
+  for (const heat of replay.heats) for (const source of heat.lineScans) scanSources.set(source.png, source);
+  emit('roots.add', [replay.dir]);
+  return publicReplay(replay);
+}
 
 const startJournals = new Map();
 async function startJournal(dir) {
@@ -158,10 +178,40 @@ const methods = {
   async ping() { return { ok: true, pid: process.pid, core: !!core, node: process.versions.node }; },
   async 'settings.get'() { return loadSettings(); },
   async 'settings.set'({ patch }) {
-    const s = { ...(await loadSettings()), ...patch };
-    await fsp.mkdir(userData, { recursive: true });
-    await fsp.writeFile(settingsPath, JSON.stringify(s, null, 2));
-    return s;
+    if ((active || captureStarting || sourceChanging) && ['simulationSources', 'simulationSourceId', 'demoDir', 'meetDir'].some(k => k in patch)) throw Error('Stop capture or preview before changing simulation sources');
+    return saveSettings(patch);
+  },
+  async 'demo.catalog'() { return simulationCatalog(await loadSettings()); },
+  async 'demo.import'({ dir, type = 'ttp', name }) {
+    return changeSource(async () => {
+      if (!dir || !SOURCE_TYPES.has(type)) throw Error('Choose a TTP simulator or real meet replay folder');
+      const replay = await readReplayFolder(dir, readMeet, type);
+      const catalog = simulationCatalog(await loadSettings());
+      const source = { id: catalog.sources.find(s => s.path === replay.dir)?.id || sourceId(replay.dir), type:replay.type, name: String(name || replay.name), path: replay.dir };
+      const sources=catalog.sources.filter(s=>s.type!=='builtin'),index=sources.findIndex(s=>s.id===source.id);
+      if(index<0)sources.push(source);else sources[index]=source;
+      await saveSettings({ simulationSources: sources });
+      return source;
+    });
+  },
+  async 'demo.load'({ id = null, dir = null, type = 'ttp' } = {}) {
+    return changeSource(async () => {
+      const settings = await loadSettings(), catalog = simulationCatalog(settings);
+      const source = id ? catalog.sources.find(s => s.id === id) : dir ? catalog.sources.find(s=>s.path===path.resolve(dir)) || { id: sourceId(dir), type, name: path.basename(dir), path: path.resolve(dir) } : catalog.sources.find(s => s.id === catalog.selectedId);
+      if (!source || (source.type !== 'builtin' && !SOURCE_TYPES.has(source.type))) throw Error('Unknown simulation source');
+      // Fully validate before replacing the meet watcher or the saved selection.
+      const replay = source.type === 'builtin' ? null : await readReplayFolder(source.path, readMeet, source.type);
+      if(replay){if(!id||source.type!==replay.type)source.name=replay.name;source.type=replay.type;}
+      if (typeof watcher === 'function') await watcher(); else if (watcher) await watcher.close();
+      watcher = null;
+      if (replay) watcher = core?.watchMeetFolder
+        ? core.watchMeetFolder(replay.meet.dir, async change => emit('meet.changed', { dir: replay.meet.dir, ...change, files: (await readMeet(replay.meet.dir)).files }))
+        : watchPlain(replay.meet.dir);
+      const sources=catalog.sources.filter(s=>s.type!=='builtin'),index=sources.findIndex(s=>s.id===source.id);
+      if(replay){if(index<0)sources.push(source);else sources[index]=source;}
+      await saveSettings({ simulationSources: sources, simulationSourceId: source.id, demoDir: source.path, meetDir: replay?.meet.dir || null });
+      return { source, ...(replay ? registerReplay(replay) : { heats: [], meet: null }) };
+    });
   },
   async 'starts.list'({ dir }) { return (await startJournal(dir)).list(); },
   async 'starts.record'({ dir, clockId, timeS, source, captureId, wallTimeMs }) {
@@ -171,6 +221,7 @@ const methods = {
     return (await startJournal(dir)).assign({ heatKey, triggerId, referenceTriggerId });
   },
   async 'meet.open'({ dir }) {
+    if (active || captureStarting || sourceChanging) throw Error('Stop capture or preview before changing the meet folder');
     if (!dir) throw new Error('no folder given');
     emit('roots.add', [dir]);
     const meet = await readMeet(dir);
@@ -195,12 +246,16 @@ const methods = {
   // Captures live in <meet folder>/openmeet/captures/, beside the meet manager's files and never mixed into them.
   async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null, preview = false, cameraId, cameraLabel }) {
     if (!core) throw new Error('engine core missing from this build');
-    if (active) throw new Error('a capture is already running');
+    if (active || captureStarting || sourceChanging) throw new Error('a capture or source change is already running');
+    captureStarting = true;captureStartStop=false;
+    try {
+    const source = scanSources.get(png);
+    sidecar = source?.sidecar ? JSON.parse(await fsp.readFile(source.sidecar,'utf8')) : sidecar;
     const replaySidecar=preview?{...(typeof sidecar==='string'?JSON.parse(await fsp.readFile(sidecar,'utf8')):sidecar),first_column_race_time_s:0}:sidecar;
     const id = `${String(key || 'heat').replace(/[^\w-]/g, '_')}-${Date.now()}`;
     const dir = preview ? null : path.join(meetDir ? path.join(meetDir, 'openmeet', 'captures') : path.join(userData, 'captures'), id);
     if(dir) await fsp.mkdir(dir, { recursive: true });
-    if(dir)await fsp.writeFile(path.join(dir,'source.json'),JSON.stringify({cameraId:cameraId||'sim-camera',label:cameraLabel||'Simulated line-scan',source:'sim-replay',image:png},null,2));
+    if(dir)await fsp.writeFile(path.join(dir,'source.json'),JSON.stringify({cameraId:cameraId||'sim-camera',label:cameraLabel||'Simulated line-scan',source:source?.sourceType==='real'?'real-recorded':'sim-replay',image:png},null,2));
     if (!meetDir && dir) emit('roots.add', [dir]);
     // The front camera's recording belongs to the heat, beside its line-scan: <capture>/front.mp4 + front.json (frame timing).
     let frontRec = null;
@@ -215,20 +270,22 @@ const methods = {
     const pulseMs = Date.now();
     const trigger = meetDir && !preview ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
     if (trigger) (await startJournal(meetDir)).assign({ heatKey: key, triggerId: trigger.id, referenceTriggerId: trigger.id });
-    if(!preview) captures.set(id, { dir, sidecar, trigger, cameraId });
+    if(!preview) captures.set(id, { dir, sidecar, trigger, cameraId, sourceType:source?.sourceType,sourceColumns:source?.size.width,sourceRef:source?{kind:'recorded-results',label:'Recorded results',path:source.sidecar}:null });
     const controller = new AbortController();
-    active = { id, stop: false, controller, preview };
+    active = { id, stop: captureStartStop, controller, preview };
+    if(captureStartStop)controller.abort();
     if(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) active.timer=setTimeout(()=>{ if(active?.id===id) controller.abort(); },timeoutSeconds/speed*1000);
     // The camera runs from the gun (race time 0), like a real line-scan, not just around the finish.
-    active.done=runCapture(id, store, core.simReplay({ png, sidecar:replaySidecar, realtime:true, speed, model:preview?'sim-preview':'sim-render', preRollFrom:preview?undefined:0, holdOpen:true, signal:controller.signal }),preview);
+    active.done=runCapture(id, store, core.simReplay({ png, sidecar:replaySidecar, realtime:true, speed, model:source?.sourceType==='real'?'real-recorded-replay':preview?'sim-preview':'sim-render', preRollFrom:preview?undefined:0, holdOpen:true, signal:controller.signal }),preview);
     return { id, dir, front: frontRec, trigger };
+    } finally { captureStarting = false; }
   },
   async 'preview.start'(params) {return methods['capture.start']({...params,key:'camera-setup',preview:true,timeoutSeconds:null});},
   async 'preview.stop'() {
     const current=active;if(current?.preview){current.stop=true;current.controller.abort();await current.done;}
     return {ok:true};
   },
-  async 'capture.stop'() { if (active) { active.stop = true; active.controller.abort(); } return { ok: true }; },
+  async 'capture.stop'() { if(captureStarting)captureStartStop=true;if (active) { active.stop = true; active.controller.abort(); } return { ok: true }; },
   // Ask the finish model about a finished capture: {captureId, heat: {event, round, heat}, startList: [{lane, id}], laneRows?}.
   // Live mode for services fast enough to call during the race (the stand-in, or a service configured with live: true).
   async 'autotiming.info'() {
@@ -239,6 +296,20 @@ const methods = {
   async 'autotiming.predict'({ captureId, heat, startList, laneRows, fromCol = 0, toCol = null, laneGuides = null }) {
     const cap = captures.get(captureId);
     if (!cap) throw new Error('unknown capture');
+    if(cap.sourceType==='real'&&(await methods['autotiming.info']()).stub){
+      if(!core.loadSimTruth(cap.sidecar).length)throw Error('This recorded replay has no reference timing points. Configure a timing service or mark finishes manually.');
+      const store=core.openCaptureStore(cap.dir,{readOnly:true});
+      try{
+        const total=store.columnCount(),a=Math.max(0,Math.min(fromCol,total)),b=Math.min(total,toCol==null?total:toCol+1);
+        if(b<=a)throw Error('No captured columns in that range yet');
+        const {enforceClosePolicy}=await import(pathToFileURL(locate('engine/autotiming/client.js')).href);
+        const predictions=recordedResults({sidecar:cap.sidecar,firstRaceTime:store.raceTimeOf(a),period:store.meta().columnPeriod,columns:b-a,startList,sourceColumns:cap.sourceColumns});
+        const response={request_id:randomUUID(),model:'recorded-results',stub:true,reference:true,sourceRef:cap.sourceRef,
+          predictions:enforceClosePolicy(predictions),warnings:[],fromCol:a,inputDerived:false};
+        await fsp.appendFile(path.join(cap.dir,'reference-outputs.jsonl'),JSON.stringify(response)+'\n');
+        return response;
+      }finally{await store.close();}
+    }
     const strip = await stripPng(cap.dir, fromCol, toCol,laneGuides);
     const svc = await finishService();
     if (svc.stub) {
@@ -303,35 +374,8 @@ const methods = {
     if(cap){const dir=path.join(cap.dir,'views');await fsp.mkdir(dir,{recursive:true});await fsp.copyFile(png,path.join(dir,source.id+'.png'));await fsp.writeFile(path.join(dir,source.id+'.json'),JSON.stringify({id:source.id,label:source.label,column_period_s:source.meta.column_period_s,first_column_race_time_s:source.meta.first_column_race_time_s,lane_rows:source.meta.lane_rows},null,2));}
     return includePixels?core.decodePng(await fsp.readFile(png)):{ok:true};
   },
-  async 'assets.open'({ dir }) {
-    // A rendered demo meet: meet/ (lynx.*) plus heat-<n>/ (primary.png/json, backup.png/json, front.mp4/json).
-    emit('roots.add', [dir]);
-    const heats = [];
-    for (const name of (await fsp.readdir(dir)).filter(n => /^heat-\d+$/.test(n)).sort((a, b) => parseInt(a.slice(5)) - parseInt(b.slice(5)))) {
-      const hd = path.join(dir, name), files = await fsp.readdir(hd);
-      const json = async f => (files.includes(f) ? JSON.parse(await fsp.readFile(path.join(hd, f), 'utf8')) : null);
-      const primary = files.includes('primary.png') ? path.join(hd, 'primary.png') : null;
-      const lineScans=[];
-      for(const f of files.filter(f=>/^(primary|backup|scan-[\w-]+)\.png$/i.test(f)).sort((a,b)=>(a==='primary.png'?-1:b==='primary.png'?1:a==='backup.png'?-1:b==='backup.png'?1:a.localeCompare(b)))) {
-        const id=f.slice(0,-4),meta=await json(id+'.json');if(!meta)continue;
-        const png=path.join(hd,f);
-        const source={id,label:meta.camera_name||(id==='primary'?'Line-scan A':id==='backup'?'Line-scan B':id.replace(/^scan-/,'Line-scan ')),png,meta,size:await pngSize(png)};
-        lineScans.push(source);scanSources.set(png,source);
-      }
-      let frontFrames=null;
-      if(files.includes('front')) {
-        const names=(await fsp.readdir(path.join(hd,'front'))).filter(n=>/^\d{4,}\.png$/.test(n)).sort();
-        if(names.length&&names.every((n,i)=>parseInt(n,10)===i))frontFrames=names.map(n=>path.join(hd,'front',n));
-      }
-      heats.push({
-        name, dir: hd, lineScans,
-        primary, primarySize: primary ? await pngSize(primary) : null, primaryMeta: await json('primary.json'),
-        backup: files.includes('backup.png') ? path.join(hd, 'backup.png') : null, backupMeta: await json('backup.json'),
-        front: files.includes('front.mp4') ? path.join(hd, 'front.mp4') : null, frontMeta: await json('front.json'), frontFrames,
-      });
-    }
-    const meetDir = path.join(dir, 'meet');
-    return { dir, heats, meet: fs.existsSync(meetDir) ? await readMeet(meetDir) : null };
+  async 'assets.open'({ dir, type = 'ttp' }) {
+    return registerReplay(await readReplayFolder(dir, readMeet, type));
   },
 };
 

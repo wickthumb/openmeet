@@ -48,6 +48,54 @@ Capture stops manually by default. Before a heat, expand **Capture options** to 
 
 Click a finish column, type a roster number, then Enter; multiple digits are supported. Clicking either scan gives it keyboard focus: Left/Right moves one column, Shift+Left/Right moves ten, and flipped views follow screen direction. Drag hairlines to edit, or delete and replace them. **Starts** keeps trigger history and changes the elapsed-time origin without moving finish columns. Save corrected heats again to update LIF files.
 
+## Simulation sources
+
+**Settings**, **Meet Link**, and **Network** share a **Simulation source** selector:
+
+- **Simple built-in** loads the generated sample meet.
+- **TTP simulator** loads a configured local simulator folder and its start lists.
+- **REAL MEET REPLAY** loads a real recorded still timing source and its actual start lists. Several named replay folders can be imported.
+
+Use **Import TTP folder…** or **Import real meet replay…** to choose a folder. Existing `demoDir` settings still load the TTP demo. A real replay manifest identifies itself even when opened through **Open demo meet…**. Missing front/comparison recordings show as absent; no sample camera replaces them. Heats with no recorded scan retain their roster and cannot start capture. Source changes are disabled while any heat records; the engine also rejects changes during capture or preview. Capture continues until the operator stops it, unless an explicit auto-stop mode was chosen.
+
+Folder layout remains `meet/lynx.evt` and `heat-N/primary.png` + `primary.json`. Optional `backup.png/json`, `scan-NAME.png/json`, and `front.mp4/json` use the existing demo format. Each scan sidecar needs a positive `column_period_s` and finite `first_column_race_time_s`. Native image columns and these nominal times enter the existing replay engine unchanged. Sidecar provenance, hardware-counter quantization limitations, and continuous-window selection metadata are retained; a replay clock does not claim hardware-clock verification. Simulator truth and optional recorded reference points stay in the engine. A real replay with `sidecar.truth` uses **RECORDED RESULTS** reference playback when no vision service is configured. It returns the supplied saved columns without the QA HTTP stub's jitter or drops, applies the existing close-finish review policy, and labels responses `stub: true`, `reference: true`, with a `sourceRef`. These references do not measure model accuracy. A configured vision service continues to produce actual predictions. Untimed athletes remain unresolved, with no inferred DNS/DNF or fabricated bibs. Without reference points, configure a timing service or mark finishes manually. Finish API requests use the existing `0` sentinel for a missing competitor ID; the roster and saved results keep it blank.
+
+Each optional `truth` entry may include `{lane, time_s, image_column, source_column, official_seconds}`. `image_column` is zero-based within that heat's current `primary.png`; `source_column` retains the original full-stitch position as provenance and is never used to collapse unrelated time gaps. Recorded reference marks use `image_column` exactly. Without it, the known time maps to the nearest native pixel center. For sidecars whose first time is a pixel boundary, the selected column's center is `first_column_race_time_s + (image_column + 0.5) * column_period_s`. Capture timestamps retain the existing replay engine's grid. Raw saved times and official hundredths remain distinct from that nominal grid.
+
+An optional root **`openmeet-replay.json`** binds recordings to exact EVT heat keys, independently of schedule order:
+
+```json
+{
+  "version": 1,
+  "type": "real-replay",
+  "name": "CSBSJU Invitational — real meet replay",
+  "meet": "meet",
+  "heats": [
+    { "folder": "heat-1", "event": "3", "round": 1, "heat": 1 },
+    { "folder": "heat-2", "event": "4", "round": 1, "heat": 1 },
+    { "folder": "heat-3", "event": "5", "round": 1, "heat": 1 }
+  ]
+}
+```
+
+Use event identifiers exactly as written in `lynx.evt`. `type` may also be `ttp-simulator`; paths are relative to the imported folder. With no manifest, numerically sorted `heat-N` folders bind to laned heats in EVT file order. Use one continuous image window per heat; stitching unrelated time intervals into a constant-period sidecar would misrepresent their timing.
+
+The root `openmeet-settings.json` in Electron's user-data folder stores only local catalog configuration. Operators can preconfigure it without copying data into the app:
+
+```json
+{
+  "simulationSources": [
+    { "id": "ttp", "type": "ttp", "name": "TTP demo", "path": "/absolute/path/to/ttp" },
+    { "id": "csbsju", "type": "real", "name": "CSBSJU Invitational — real meet replay", "path": "/absolute/path/to/replay" }
+  ],
+  "simulationSourceId": "csbsju"
+}
+```
+
+Omitting an ID generates a stable path-based ID on import. The `builtin` ID selects Simple built-in. `demo.catalog`, `demo.import({dir,type,name?})`, and `demo.load({id})` use the existing engine bridge; `assets.open` remains available for camera assets. Recordings, source CSV maps, models, and training data stay external to Git and app bundles.
+
+Run `node app/test/visual-replay-sources.mjs` for the bounded Electron source check. Supply an optional actual replay folder as `node app/test/visual-replay-sources.mjs "$PWD/app" /path/to/replay`; it copies inputs into `/tmp` and verifies every supplied roster, absent camera controls, selection persistence, manual capture beyond the still image, source-change rejection, and literal image bytes and nominal timestamps. Generated fixtures are explicitly test data. Screenshots and captures remain local.
+
 Both camera views have **Lanes ▾** appearance controls. On the line-scan, the dividers in the separate left lane column are always draggable when visible. **Placement → Drag on image** also enables dragging directly over the scan. The adjacent lane heights change while every other edge stays fixed; lines cannot cross. Numbers stay outside the image, centered in each lane row. Old band-based profiles are reconciled into shared boundaries. Lane overlays and the last known native scan height are saved per meet/camera. The gutter and guide lines keep their correct proportions before columns arrive, after preview and restart, and when the workspace height changes. Saved divider coordinates carry their original resolution and scale proportionally for same-view resolution changes. These display settings do not change the private timing service's calibration.
 
 **Overlays behind runners** is on by default. A compact display mask compares incoming pixels with an initial empty-track reference, allowing guides to remain on the background while athletes cover them. The check tolerates small background noise; shadows and lighting changes can also hide guides, and similar foreground/background colors can be missed. This is display processing, not a timing or identity model. Finish hairlines remain visible above the image. Original capture pixels and timestamps are unchanged.

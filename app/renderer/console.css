@@ -217,6 +217,9 @@ svg.i { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-widt
 .card { border: 1px solid var(--rule2); border-radius: var(--radius); padding: 10px; min-width: 0; }
 .card h3 { margin: 0 0 8px; font-size: 13px; }
 .card p { margin: 6px 0; color: var(--muted); }
+#simulationSources label { display:block; min-width:0; }
+#simulationSource { width:100%; min-width:0; }
+#simulationSources .num { overflow-wrap:anywhere; }
 .tbl { width: 100%; border-collapse: collapse; }
 .tbl td, .tbl th { text-align: left; padding: 4px 6px; border-top: 1px solid var(--rule2); white-space: nowrap; }
 .tbl th { color: var(--dim); font: 700 10px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; border-top: 0; }

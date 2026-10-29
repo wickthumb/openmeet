@@ -5,6 +5,7 @@ import { validateCropResult, columnProjection, displayCoordinate, originalCoordi
 import { FrontOverlayOcclusion } from './front-occlusion.mjs';
 import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './occlusion-state.mjs';
 import { LiveFollow } from './live-follow.mjs';
+import { sourceLabel, sourceChoices, replayCameras, replayHeatKey, replayReferenceTiming, replayStartList } from './replay-sources.mjs';
 
 (() => {
 'use strict';
@@ -119,9 +120,10 @@ function paceFor(name) {
 }
 function specFromEvent(e, all) {
   const entries = e.entries.filter(x => x.lane).map(x => ({ lane: +x.lane, id: x.id, first: x.first, last: x.last, affiliation: x.affiliation, status: x.status }));
+  const heatNumbers=all.filter(x=>x.event===e.event&&x.round===e.round).map(x=>x.heat).sort((a,b)=>a-b);
   return {
     ev: e.event, rd: e.round, ht: e.heat, name: e.name || `Event ${e.event}`,
-    of: all.filter(x => x.event === e.event && x.round === e.round).length,
+    of: heatNumbers.every((number,i)=>number===i+1)?heatNumbers.length:null,
     entries, lanes: entries.map(x => x.lane), wind: null, seed: hashStr(`${e.event}-${e.round}-${e.heat}`) % 100000, ...paceFor(e.name || ''),
   };
 }
@@ -178,6 +180,7 @@ const S = {
   meet: null,   // {dir, files} when a real meet folder is open (Electron); null = built-in sample meet
   bview: { linked: true, t0: 0, spp: 0.00125, r0: 0, rv: 1 }, bdrag: null,   // backup line-scan view (race time)
   fview: { s: 1, x: 0, y: 0 },                                               // front camera zoom/pan
+  simulationCatalog: null, simulationSource: null, sourceChanging: false,
 };
 const OM = window.openmeet || null;   // the Electron bridge; absent when this page runs as the static replica
 const occlusionAvailability=OM?new OcclusionAvailability(()=>OM.call('occlusion.info'),()=>{S.occlusionInfo=occlusionAvailability.info;updateModelMaskStatus();invalidate();}):null;
@@ -416,6 +419,7 @@ function renderStrip(h) {
   h.img = c; h.imgSrc = S.source;
 }
 function ensureStrip(h) {
+  if(h.replaySourceType&&!h.asset){if(!h.img)blankStrip(h);return;}
   if (h.asset) { if (!h.img) blankStrip(h); return; }
   if (!h.img || (h.imgSrc !== S.source && (h.state === 'loaded' || h.state === 'armed'))) renderStrip(h);
 }
@@ -482,13 +486,13 @@ const snap = h => JSON.stringify({ marks: h.marks, status: h.status });
 // Final suggestions for the whole capture. Live marks the operator has not touched follow the final answer.
 function applyProposals(h, props, meta = {}) {
   const untouched = h.base === snap(h);
-  h.proposals = props.filter(p=>!h.dismissed?.[p.lane]); h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;
+  h.proposals = props.filter(p=>!h.dismissed?.[p.lane]); h.model = meta.model || 'sim-0'; h.stub = !!meta.stub;h.reference=!!meta.reference;h.sourceRef=meta.sourceRef||null;
   h.inputDerived=!!meta.inputDerived;
   h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
   h.proposals.forEach(p => {
     const mk = h.marks[p.lane];
     if (h.status[p.lane] || h.dismissed?.[p.lane]) return;
-    if (p.decision === 'auto' && (!mk || mk.src === 'auto')) h.marks[p.lane] = { col: p.col, src: 'auto' };
+    if (p.decision === 'auto' && (!mk || mk.src === 'auto')) h.marks[p.lane] = { col: p.col, src: 'auto',...(h.sourceRef?{sourceRef:h.sourceRef}:{}) };
     else if (p.decision === 'review' && mk && mk.src === 'auto') delete h.marks[p.lane];   // a live auto-accept the final pass flags goes back to review
   });
   if(h.hideEmpty&&[...Object.values(h.marks),...h.proposals.filter(p=>!h.status[p.lane]&&!h.dismissed?.[p.lane])].some(m=>displayCoordinate(h.cropProjection,m.col+0.5)==null)){
@@ -500,7 +504,7 @@ function applyProposals(h, props, meta = {}) {
 const predictParams = (h, extra = {}) => ({
   captureId: h.captureId,
   heat: { event: h.ev, round: h.rd, heat: h.ht },
-  startList: h.athletes.filter(a => !['DNS', 'SC'].includes(h.status[a.lane])).map(a => ({ lane: a.lane, id: String(a.id) })),
+  startList: replayStartList(h.athletes.filter(a => !['DNS', 'SC'].includes(h.status[a.lane]))),
   laneRows: h.laneRows ? h.laneRows.map(b => ({ lane: b.lane, top_row: Math.round(b.top), bottom_row: Math.round(b.bottom) })) : null,
   laneGuides: modelLaneGuides(h),
   ...extra,
@@ -524,11 +528,12 @@ function mergeLive(h, props, seenToT) {
   const settledT = seenToT - LIVE_LAG;
   all.forEach(p => {
     if (h.status[p.lane] || h.marks[p.lane] || h.dismissed?.[p.lane]) return;
-    if (p.decision === 'auto' && colTime(h, p.col) + 0.02 <= settledT) h.marks[p.lane] = { col: p.col, src: 'auto' };
+    if (p.decision === 'auto' && colTime(h, p.col) + 0.02 <= settledT) h.marks[p.lane] = { col: p.col, src: 'auto',...(h.sourceRef?{sourceRef:h.sourceRef}:{}) };
   });
 }
 function liveSuggest(h) {
   if (!S.autoMark || !S.apiOnline || h.liveCol < 0) return;
+  if(h.replaySourceType==='real'&&(!S.atInfo||(S.atInfo.stub&&!replayReferenceTiming(h))))return;
   if (h.asset && OM) {
     if (!h.captureId || h.liveBusy || (S.atInfo && !S.atInfo.live)) return;
     if (h.liveTo != null && colTime(h, h.liveCol) - colTime(h, h.liveTo) < LIVE_EVERY) return;
@@ -537,6 +542,7 @@ function liveSuggest(h) {
     h.liveBusy = true; h.req = 'live';
     OM.call('autotiming.predict', predictParams(h, { fromCol, toCol })).then(res => {
       if (h.runVersion !== runVersion || h.state !== 'running') return;
+      h.reference=!!res.reference;h.sourceRef=res.sourceRef||null;
       const seenT = colTime(h, toCol);
       mergeLive(h, toProps(res).filter(p => p.t <= seenT - LIVE_LAG), seenT);
       h.liveTo = toCol; h.model = res.model; h.stub = !!res.stub; h.inputDerived=!!res.inputDerived;
@@ -550,6 +556,7 @@ function liveSuggest(h) {
   }
 }
 function requestProposals(h) {
+  if(h.replaySourceType==='real'&&S.atInfo?.stub&&!replayReferenceTiming(h)){h.req='error';h.reqErr='No reference timing points are available. Configure a timing service, or mark finishes manually';renderUI();return;}
   if (!S.apiOnline) { h.req = 'offline'; renderUI(); return; }
   h.req = 'pending'; h.reqStart = performance.now(); renderUI();
   if (h.asset && OM && h.captureId) {
@@ -566,7 +573,7 @@ function requestProposals(h) {
 
 // Camera setup preview is independent of the official heat and its start journal.
 async function startCameraSetup() {
-  if(runningHeat()||S.cameraSetup?.starting)return;
+  if(runningHeat()||S.sourceChanging||S.cameraSetup?.starting||!replayCameras(cur()).primary)return;
   const source={...cur()};if(source.asset)attachAsset(source,source.asset);ensureStrip(source);
   if(!S.cameraSetup) S.cameraSetup={previousView:{...S.view},previousSelection:{lane:S.selLane,col:S.selCol},mode:'alignment'};
   const setup=S.cameraSetup;
@@ -599,7 +606,7 @@ async function stopCameraSetup(exit=false) {
 }
 function renderSetupSidebar() {
   const setup=S.cameraSetup;
-  $('#ev').innerHTML='<div class="ev-top"><span class="kicker">CAMERA ALIGNMENT</span><span class="tag sim">SIMULATOR</span></div><div class="ev-name">Align cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>';
+  $('#ev').innerHTML=`<div class="ev-top"><span class="kicker">CAMERA ALIGNMENT</span><span class="tag sim">${setup.heat.replaySourceType==='real'?'RECORDED REPLAY':'SIMULATOR'}</span></div><div class="ev-name">Align cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>`;
   const ctl=$('#ctl');ctl.innerHTML='';
   renderCameraRoles(ctl);
   const stop=h_('button','btn primary wide',setup.starting?'Starting preview…':setup.live?'Stop preview':'Start preview');stop.disabled=setup.starting||setup.stopping;stop.onclick=()=>setup.live?stopCameraSetup():startCameraSetup();ctl.append(stop);
@@ -607,7 +614,7 @@ function renderSetupSidebar() {
   ['alignment','overlays'].forEach(mode=>{const b=h_('button','btn sm'+(setup.mode===mode?' primary':''),mode==='alignment'?'Alignment':'Overlays');b.onclick=()=>{setup.mode=mode;renderUI();};modes.append(b);});ctl.append(modes);
   const done=h_('button','btn wide','Return to race');done.disabled=setup.starting||setup.stopping;done.onclick=()=>stopCameraSetup(true);ctl.append(done);
   $('#warn').innerHTML='';
-  $('#list').innerHTML=`<div class="setup-help"><p>${setup.mode==='alignment'?'Use the live image to align the finish-line view. Pan and zoom as needed.':'Open Lanes ▾ on either camera to place and style your lane guides.'}</p><p>You can stop the preview and keep the image visible while adjusting overlays.</p><p class="dimtext">This build uses simulated camera input. Real camera drivers are planned.</p></div>`;
+  $('#list').innerHTML=`<div class="setup-help"><p>${setup.mode==='alignment'?'Use the preview image to align the finish-line view. Pan and zoom as needed.':'Open Lanes ▾ on an available camera to place and style your lane guides.'}</p><p>You can stop the preview and keep the image visible while adjusting overlays.</p><p class="dimtext">${setup.heat.replaySourceType==='real'?'This is recorded camera input. Live camera drivers are planned.':'This build uses simulated camera input. Real camera drivers are planned.'}</p></div>`;
 }
 
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
@@ -626,7 +633,7 @@ function go(i) {
 function arm() { if(S.cameraSetup)return; const h = cur(); if (h.state !== 'loaded') return; ensureStrip(h); h.state = 'armed'; renderUI(); }
 function disarm() { const h = cur(); if (h.state === 'armed') { h.state = 'loaded'; renderUI(); } }
 function fire() {
-  if(S.cameraSetup)return;
+  if(S.cameraSetup||S.sourceChanging||!replayCameras(cur()).primary)return;
   const h = cur();
   if (h.state !== 'armed'||runningHeat()) return;
   S.lastLiveHeat=h;h.runVersion = (h.runVersion || 0) + 1;h.hideEmpty=false;h.cropResult=null;h.cropProjection=null;
@@ -634,7 +641,7 @@ function fire() {
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
   h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {}; h.inputDerived=false;
   if(!h.asset) { h.sampleStrip=h.sampleStrip||h.img; blankStrip(h); }
-  h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';h.learnedForeground=null;h.occlusionAttempt=null;
+  h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';h.reference=false;h.sourceRef=null;h.learnedForeground=null;h.occlusionAttempt=null;
   S.view.user = false; S.view.followZoom=null; S.view.followTransition=null; S.selCol = null;
   if (h.asset && OM) {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
@@ -765,7 +772,7 @@ const resolved = (h, a) => !!(h.marks[a.lane] || h.status[a.lane]);
 function lifRequest(h) {
   const d = h.startTOD, tod = d ? d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000 : null;
   return {
-    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,review:{at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0},
+    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,review:{at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0,...(h.sourceRef?{sourceRef:h.sourceRef}:{})},
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
     results: h.athletes.map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
@@ -808,7 +815,7 @@ function warnings(h) {
   if (h.state === 'armed') return [{ k: 'info', t: 'Armed. Waiting for the start signal.' }];
   if (h.req === 'offline') w.push({ k: 'warn', t: 'Auto-timing is offline. Mark finishes by hand; capture is unaffected.' });
   if (h.req === 'error') w.push({ k: 'warn', t: `Auto-timing failed (${h.reqErr}). Mark finishes by hand, or press Auto-mark to retry.` });
-  if (h.req === 'pending') w.push({ k: 'info', t: 'Timing: AI suggestions are on the way. You can mark by hand meanwhile.' });
+  if (h.req === 'pending') w.push({ k: 'info', t: h.replaySourceType==='real'&&S.atInfo?.stub?'Loading recorded results. You can mark by hand meanwhile.':'Timing: AI suggestions are on the way. You can mark by hand meanwhile.' });
   if (h.req === 'idle' && !h.proposals && h.state === 'review') w.push({ k: 'info', t: 'Capture closed. Mark finishes, or press Auto-mark.' });
   const rev = (h.proposals || []).filter(p => p.decision === 'review' && !h.marks[p.lane] && !h.status[p.lane]);
   if (rev.length) {
@@ -847,7 +854,7 @@ function renderTabs() {
 function renderStatus() {
   // quiet by default: a dot and a word; detail on hover; only a problem gets colour and words
   const chips = [
-    ['Cameras', true, '5 devices on the camera network'],
+    ['Cameras', true, replayCameras(cur()).folder ? 'Local recorded inputs; see Accessories for available cameras' : 'Built-in simulated cameras'],
     [S.meet || !OM ? 'Meet folder' : 'Sample meet', true, S.meet ? 'Watching ' + S.meet.dir : OM ? 'No meet folder open (Meet Link)' : 'Watching C:\\Meets\\2026-10-28-sim\\'],
     ['Internet', true, 'Online'],
     ['Auto-timing', S.apiOnline, S.apiOnline ? 'Reachable' : 'unreachable'],
@@ -864,9 +871,9 @@ function renderSide() {
   const h = cur();
   const stLabel = { loaded: 'LOADED', armed: 'ARMED', running: 'RUNNING', review: 'REVIEW', saved: 'SAVED' }[h.state];
   $('#ev').innerHTML = `
-    <div class="ev-top"><span class="kicker">Event ${h.ev} · Round ${h.rd} · Heat ${h.ht} of ${h.of}</span><span class="state ${h.state}">${stLabel}</span></div>
+    <div class="ev-top"><span class="kicker">Event ${h.ev} · Round ${h.rd} · Heat ${h.ht}${h.of?` of ${h.of}`:''}</span><span class="state ${h.state}">${stLabel}</span></div>
     <div class="ev-name">${h.name}</div>
-    <div class="ev-sub">${S.idx + 1} of ${HEATS.length} in schedule · ${h.athletes.length} athletes</div>`;
+    <div class="ev-sub">${S.idx + 1} of ${HEATS.length} in schedule · ${h.athletes.length} athletes${h.replaySourceType==='real'?' · Real-recorded replay':''}</div>`;
   const active=runningHeat();
   if(active&&active!==h){const back=h_('button','background-capture',`Recording E${active.ev} · H${active.ht} — return to live`);back.onclick=()=>{S.tab='run';go(HEATS.indexOf(active));};$('#ev').append(back);}
   const ctl = $('#ctl'); ctl.innerHTML = '';
@@ -877,11 +884,11 @@ function renderSide() {
   const prev=h_('button','btn sm'),next=h_('button','btn sm');prev.innerHTML=ICON.prev;next.innerHTML=ICON.next;
   prev.title='Previous heat';prev.setAttribute('aria-label','Previous heat');prev.disabled=S.idx===0;prev.onclick=()=>go(S.idx-1);
   next.title='Next heat';next.setAttribute('aria-label','Next heat');next.disabled=S.idx===HEATS.length-1;next.onclick=()=>go(S.idx+1);
-  nav.append(prev,h_('span','dimtext',`Heat ${h.ht} of ${h.of}`),next);ctl.append(nav);
+  nav.append(prev,h_('span','dimtext',`Heat ${h.ht}${h.of?` of ${h.of}`:''}`),next);ctl.append(nav);
   const ready=h.state==='review'&&h.athletes.every(a=>resolved(h,a));
   if(running)btn(h.stopping?'Stopping…':'Stop capture','go wide',stopCapture,h.stopping);
   else if(h.state==='loaded')btn('Arm heat','primary wide',arm);
-  else if(h.state==='armed')btn('Start <span class="tag sim">SIM</span>','go wide',fire,!!runningHeat());
+  else if(h.state==='armed')btn(`Start <span class="tag sim">${h.replaySourceType==='real'?'REPLAY':'SIM'}</span>`,'go wide',fire,!!runningHeat()||S.sourceChanging||!replayCameras(h).primary);
   else if(h.state==='review'&&ready)btn(h.saves?'Save corrected results':'Save results','go wide',save);
   else if(h.state==='review')btn('Review next finish','primary wide',()=>{const a=h.athletes.find(a=>!resolved(h,a));if(a)selectLane(a.lane);});
   else btn('Next heat','primary wide',()=>go(S.idx+1),S.idx===HEATS.length-1);
@@ -902,6 +909,7 @@ function renderSide() {
   if(h.state==='armed'||running){const secondary=h_('button','btn sm',running?'Recall false start':'Disarm');secondary.onclick=running?recall:disarm;opts.querySelector('.capture-secondary').append(secondary);}
   const problems=warnings(h).filter(w=>w.k==='warn'),top=problems[0];
   $('#warn').innerHTML=top?`<div class="sidebar-problem">${ICON.warn}<span>${esc(top.t)}</span></div>`:'';
+  if(h.replaySourceType&&!h.asset)$('#warn').prepend(h_('p','dimtext','No recorded line-scan for this heat. Choose a heat with a recording.'));
   const progress=h_('div','roster-progress');progress.innerHTML=`<div class="roster-order" role="group" aria-label="Athlete list order"><button data-order="lane" aria-pressed="${S.rosterOrder==='lane'}">Lane</button><button data-order="finish" aria-pressed="${S.rosterOrder==='finish'}">Finish</button></div><span>${h.athletes.filter(a=>resolved(h,a)).length} / ${h.athletes.length} resolved</span>`;
   progress.querySelectorAll('[data-order]').forEach(b=>{b.onclick=()=>{S.rosterOrder=b.dataset.order;store.set('rosterOrder',S.rosterOrder);renderSide();};});$('#warn').append(progress);
 
@@ -919,7 +927,7 @@ function renderSide() {
       res = `<span class="tag ${st === 'DQ' ? 'bad' : 'review'}">${st}</span>${st === 'DQ' && mk ? `<span class="sub num">${official(raceTime(h, mk.col))}</span>` : ''}`;
     } else if (mk) {
       const src = { auto: ['AUTO', 'auto'], checked: ['CHECKED', 'info'], edited: ['EDITED', 'info'], manual: ['MANUAL', 'info'] }[mk.src];
-      res = `<span class="t" title="${fmtT(raceTime(h,mk.col))} s">${official(raceTime(h,mk.col))}</span><span class="sub"><span class="num">P${pl[a.lane]}</span><span class="result-source" title="${src[0]}">${mk.src==='auto'?'AI':mk.src==='manual'?'Manual':'Checked'}</span></span>`;
+      res = `<span class="t" title="${fmtT(raceTime(h,mk.col))} s">${official(raceTime(h,mk.col))}</span><span class="sub"><span class="num">P${pl[a.lane]}</span><span class="result-source" title="${h.reference&&mk.src==='auto'?'Recorded results':h.stub&&mk.src==='auto'?'STAND-IN':src[0]}">${mk.src==='auto'?(h.reference?'Recorded':h.stub?'Stand-in':'AI'):mk.src==='manual'?'Manual':'Checked'}</span></span>`;
     } else if (p) {
       res = `<span class="t prop">${official(raceTime(h, p.col))}</span><span class="sub"><span class="tag review">REVIEW</span></span>`;
     } else {
@@ -927,7 +935,7 @@ function renderSide() {
     }
     row.innerHTML = `
       <div class="lane">${a.lane}</div>
-      <div class="who"><div class="nm">${a.last}, ${a.first}</div><div class="sc">${a.team.name} <span class="athlete-id">· #${a.id}</span></div></div>
+      <div class="who"><div class="nm">${a.last}, ${a.first}</div><div class="sc">${a.team.name}${a.id==null||a.id===''?'':` <span class="athlete-id">· #${esc(a.id)}</span>`}</div></div>
       <div class="res">${res}</div>`;
     row.onclick = e => { if (e.target.closest('button,select,input')) return; selectLane(a.lane); };
     if (S.selLane === a.lane) {
@@ -1015,26 +1023,48 @@ function renderSchedule() {
 }
 function renderAcc() {
   const h = cur();
+  const cameras=replayCameras(h),recorded=h.replaySourceType==='real',source=recorded?'real-recorded replay':h.asset?'TTP simulator':'built-in sim';
   const start = { loaded: 'idle', armed: 'armed', running: 'fired', review: 'fired', saved: 'fired' }[h.state];
   const cap = h.state === 'running' ? (h.liveCol >= 0 ? 'capturing' : 'waiting') : 'idle';
   const rows = [
-    ['ok', 'Primary line-scan', '.21', `${h.asset || S.source === 'render' ? 'sim-render' : 'sim-replay'} · ${cap}`],
-    ['ok', 'Backup line-scan', '.22', `sim · ${cap}`],
-    ['ok', 'Front camera', '.30', 'sim · streaming'],
-    ['ok', 'Start system', '.40', `sim · ${start}`],
+    [cameras.primary?'ok':'', h.asset?.mainCameraLabel||'Primary line-scan', '', cameras.primary?`${source} · ${cap}`:'absent'],
+    [cameras.comparison?'ok':'', h.asset?.comparisonCameraLabel||'Backup line-scan', '', cameras.comparison?`${source} · ${cap}`:'absent'],
+    [cameras.front?'ok':'', 'Front camera', '', cameras.front?(cameras.folder?'recording available':'sim · streaming'):'absent'],
+    ['ok', 'Start system', '', `replay clock · ${start}`],
     h.wind == null ? ['', 'Wind gauge', '', 'not connected'] : ['ok', 'Wind gauge', '.41', ['review', 'saved'].includes(h.state) ? `sim · ${windStr(h)}` : 'sim · ready'],
     ['', 'Scoreboard', '', 'not configured'],
   ];
-  $('#acc').innerHTML = `<div class="acc">${rows.map(([d, n, ip, s]) => `<span class="dot ${d}"></span><span class="nm" title="${ip ? '192.168.0' + ip : ''}">${n}</span><span class="st">${s}</span>`).join('')}</div>`;
+  $('#acc').innerHTML = `<div class="acc">${rows.map(([d, n, ip, s]) => `<span class="dot ${d}"></span><span class="nm" title="${ip ? '192.168.0' + ip : ''}">${esc(n)}</span><span class="st">${esc(s)}</span>`).join('')}</div>`;
+}
+
+function renderSimulationSources(body) {
+  const card=h_('div','card');card.id='simulationSources';card.append(h_('h3','','Simulation source'));
+  const label=h_('label'),select=h_('select');select.id='simulationSource';select.setAttribute('aria-label','Simulation source');
+  for(const choice of sourceChoices(S.simulationCatalog)){const o=h_('option','',choice.label);o.value=choice.value;select.append(o);}
+  select.value=S.simulationSource?.id||'builtin';select.disabled=!OM||!!runningHeat()||S.sourceChanging;
+  select.title=sourceLabel(S.simulationSource);
+  select.onchange=()=>select.value.startsWith('import:')?importSimulationSource(select.value.slice(7)):openDemo(null,{id:select.value});
+  label.append(select);card.append(label);
+  const buttons=h_('p');
+  for(const [type,text]of[['ttp','Import TTP folder…'],['real','Import real meet replay…']]){
+    const b=h_('button','btn sm',text);b.id=type==='real'?'importRealSource':'importTtpSource';b.disabled=select.disabled;b.onclick=()=>importSimulationSource(type);buttons.append(b,document.createTextNode(' '));
+  }
+  card.append(buttons);
+  if(S.simulationSource?.path)card.append(h_('p','num',S.simulationSource.path));
+  card.append(h_('p','dimtext',runningHeat()?'Stop capture before changing sources. The current recording stays active.':S.sourceChanging?'Opening source…':S.simulationSource?.type==='real'?'Real-recorded still timing source · original pixels and native column times. Saved reference suggestions are labelled RECORDED RESULTS.':'Simple built-in uses generated sample images. TTP and real meet sources load local folders with their own start lists.'));
+  if(!OM)card.append(h_('p','dimtext','Folder sources are available in the desktop app.'));
+  body.prepend(card);
 }
 function renderProps() {
   if(S.cameraSetup){$('#apiState').textContent='Setup';$('#props').innerHTML='<div class="empty">Timing suggestions are paused during camera setup.</div>';return;}
   const h = cur();
+  const standIn=h.stub||(S.atInfo?.stub&&h.asset&&replayReferenceTiming(h));
+  const reference=h.reference||(h.replaySourceType==='real'&&standIn),badge=standIn?`<span class="tag sim" title="${reference?'Recorded reference playback; no model predictions':'Echoes saved simulator answers; not a model'}">${reference?'RECORDED RESULTS':'STAND-IN'}</span>`:'';
   $('#apiState').innerHTML = !S.apiOnline ? '<span class="dot warn"></span>offline' :
-    h.req === 'pending' ? '<span class="dot warn"></span>timing…' :
+    h.req === 'pending' ? `${badge}<span class="dot warn"></span>${reference?'loading…':'timing…'}` :
     h.req === 'error' ? '<span class="dot warn"></span>failed' :
-    h.req === 'live' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>live` :
-    h.req === 'done' ? `${h.stub ? '<span class="tag sim" title="A contract stand-in that echoes simulator truth. It is not a model.">STAND-IN</span>' : ''}<span class="dot ok"></span>${h.reqMs} ms` : '<span class="dot ok"></span>';
+    h.req === 'live' ? `${badge}<span class="dot ok"></span>live` :
+    h.req === 'done' ? `${badge}<span class="dot ok"></span>${h.reqMs} ms` : `${badge}<span class="dot ok"></span>`;
   if(h.inputDerived) $('#apiState').append(h_('span','tag info','GUIDED INPUT'));
   if(viewHeat().asset?.mainCameraId!==h.asset?.mainCameraId){const source=h_('span','timing-source',h.asset.mainCameraLabel);source.title='Auto-timing uses this recorded camera';$('#apiState').prepend(source);}
   const box = $('#props');
@@ -1043,6 +1073,7 @@ function renderProps() {
     return;
   }
   if (!h.proposals) {
+    if(reference){box.innerHTML='<div class="empty">Recorded results replay saved reference points. Untimed athletes stay unresolved. These are not model detections.</div>';return;}
     box.innerHTML = `<div class="empty">${h.req === 'pending' ? `Timing… ${Math.round((performance.now() - h.reqStart) / 1000)} s. Mark finishes by hand meanwhile; suggestions only fill lanes you have not marked.` : S.autoMark ? 'AI-suggested finish times appear as athletes cross the line, for your review. Finishes within 0.02 s of a neighbour always need a check.' : 'Auto-mark is off. Press Auto-mark on the line-scan bar to ask for suggested times.'}</div>`;
     return;
   }
@@ -1278,32 +1309,19 @@ function renderDrawer() {
   if (S.tab === 'events') { renderMeetNavigator(body); return; }
   if (S.tab === 'starts') { renderStarts(body); return; }
   if (S.tab === 'network') {
-    body.innerHTML = `
-      <div class="card"><h3>Camera network (closed loop)</h3>
-        <p>Static addresses, no gateway. Cameras, start system and accessories live here, never on the internet side.</p>
-        <table class="tbl"><tr><th>Device</th><th>Address</th><th>Driver</th><th>State</th></tr>
-          <tr><td>This computer</td><td class="num">192.168.0.10/24</td><td>Ethernet</td><td><span class="dot ok"></span> up</td></tr>
-          <tr><td>Primary line-scan</td><td class="num">192.168.0.21</td><td id="srcCell"></td><td><span class="dot ok"></span> 800 col/s</td></tr>
-          <tr><td>Backup line-scan</td><td class="num">192.168.0.22</td><td>sim</td><td><span class="dot ok"></span> 800 col/s</td></tr>
-          <tr><td>Front camera</td><td class="num">192.168.0.30</td><td>sim</td><td><span class="dot ok"></span> 30 fps</td></tr>
-          <tr><td>Start system</td><td class="num">192.168.0.40</td><td>sim</td><td><span class="dot ok"></span> ready</td></tr>
-          <tr><td>Wind gauge</td><td class="num">192.168.0.41</td><td>sim</td><td><span class="dot ok"></span> ready</td></tr>
-        </table>
-        <p>The simulated cameras stream like real ones: hello, start pulse, timestamped columns.</p>
-      </div>
-      <div class="card"><h3>Internet uplink</h3>
-        <p>A second connection (Wi-Fi or hotspot). RunMeet is online; it reaches OpenMeet through AthleticLOCAL and the meet folder, not through this connection.</p>
-        <table class="tbl"><tr><th>Service</th><th>State</th></tr>
-          <tr><td>Internet</td><td><span class="dot ok"></span> online</td></tr>
-          <tr><td>Auto-timing API</td><td><span class="dot ${S.apiOnline ? 'ok' : 'warn'}"></span> ${S.apiOnline ? 'reachable' : 'offline'}</td></tr>
-        </table>
-      </div>`;
-    const sel = h_('select');
-    sel.innerHTML = '<option value="replay">sim-replay · web photo finish</option><option value="render">sim-render · TTP simulator</option>';
-    sel.value = S.source;
-    sel.onchange = () => { S.source = sel.value; ensureStrip(cur()); renderUI(); };
-    $('#srcCell').append(sel);
-    const cameras=h_('div','card');cameras.append(h_('h3','','Capture cameras'));renderCameraRoles(cameras);body.prepend(cameras);
+    const h=cur(),cameras=replayCameras(h),period=periodOf(h),real=h.replaySourceType==='real';
+    const row=(name,available,detail)=>`<tr><td>${esc(name)}</td><td>Local</td><td>${available?esc(detail):'absent'}</td></tr>`;
+    body.innerHTML=`<div class="card"><h3>Camera inputs</h3>
+      <p>${real?'Real-recorded still timing source':h.asset?'TTP simulator folder':'Simple built-in simulator'} · replay clock</p>
+      <table class="tbl"><tr><th>Device</th><th>Connection</th><th>State</th></tr>
+      ${row(h.asset?.mainCameraLabel||'Primary line-scan',cameras.primary,`${(1/period).toFixed(1)} columns/s`)}
+      ${row(h.asset?.comparisonCameraLabel||'Backup line-scan',cameras.comparison,h.asset?.backupMeta?`${(1/h.asset.backupMeta.column_period_s).toFixed(1)} columns/s`:'simulated')}
+      ${row('Front camera',cameras.front,h.asset?.front?'recorded video':'simulated')}
+      ${row('Start system',true,'replay clock')}${row('Wind gauge',h.wind!=null,h.wind==null?'absent':windStr(h))}</table>
+      <p class="dimtext">Recorded input is replayed locally. Live camera drivers are planned.</p></div>
+      <div class="card"><h3>Auto-timing service</h3><p>${S.apiOnline?'Enabled':'Simulated offline'}</p></div>`;
+    const camerasCard=h_('div','card');camerasCard.append(h_('h3','','Capture cameras'));renderCameraRoles(camerasCard);body.prepend(camerasCard);
+    renderSimulationSources(body);
   } else if (S.tab === 'meet') {
     const last = S.files[S.files.length - 1], entries = HEATS.reduce((n, h) => n + h.athletes.length, 0);
     const kb = n => (n == null ? '' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' kB');
@@ -1312,7 +1330,7 @@ function renderDrawer() {
       <div class="card"><h3>Meet folder</h3>
         ${S.meet ? `<p class="num">${esc(S.meet.dir)}</p>` : '<p>No meet folder is open, so the built-in sample meet is loaded. Point this at the folder your meet manager (RunMeet through AthleticLOCAL, Hy-Tek, ...) writes lynx.evt to.</p>'}
         <p><button class="btn sm primary" id="openMeet">Open meet folder…</button> <button class="btn sm" id="openDemo">Open demo meet…</button> ${S.meet ? '<button class="btn sm" id="closeMeet">Use the sample meet</button>' : ''}</p>
-        ${S.meet && S.meet.demo ? `<p class="dimtext">Cameras: rendered by the TTP simulator from <span class="num">${esc(S.meet.demo)}</span></p>` : ''}
+        ${S.meet?.demo ? `<p class="dimtext">${esc(sourceLabel(S.simulationSource))} · local recording</p>` : ''}
         ${S.meet ? `<table class="tbl"><tr><th>Input (meet manager writes)</th><th>Size</th><th>Modified</th><th>State</th></tr>${['lynx.evt', 'lynx.ppl', 'lynx.sch'].map(fileRow).join('')}</table>
         <p>${HEATS.length} laned heats, ${entries} entries.</p>
         <p>Results folder: <span class="num">${esc(S.meet.resultsDir || S.meet.dir)}</span>${S.meet.resultsDir ? '' : ' <span class="dimtext">(same as the meet folder)</span>'}
@@ -1341,15 +1359,18 @@ function renderDrawer() {
       };
       if ($('#pickResults')) $('#pickResults').onclick = async () => { const dir = await OM.pickFolder('Results folder (the meet manager reads LIF files here)'); if (dir) setResults(dir); };
       if ($('#sameResults')) $('#sameResults').onclick = () => setResults(null);
-      $('#openDemo').onclick = async () => { const dir = await OM.pickFolder('Open demo meet (rendered heats)'); if (dir) openDemo(dir); };
+      $('#openDemo').onclick = () => importSimulationSource('ttp');
+      for(const id of ['openMeet','openDemo','closeMeet'])if($('#'+id))$('#'+id).disabled=!!runningHeat()||S.sourceChanging;
     }
+    renderSimulationSources(body);
   } else if (S.tab === 'api') {
+    const reference=cur().replaySourceType==='real'&&S.atInfo?.stub&&replayReferenceTiming(cur());
     body.innerHTML = `
       <div class="card"><h3>Auto-timing service</h3>
-        <p>AI-suggested finish times for operator review. The operator approves every result.</p>
+        <p>${reference?'Recorded result references for operator practice. The operator approves every result.':'AI-suggested finish times for operator review. The operator approves every result.'}</p>
         <table class="tbl">
-          <tr><td>Service</td><td>${OM ? 'Stand-in on this computer: echoes simulator truth, not a model' : 'TTP finish model (simulated in this replica)'}</td></tr>
-          <tr><td>Model</td><td class="num">${esc(cur().model || (OM ? 'stub-truth-0' : 'sim-0'))}</td></tr>
+          <tr><td>Service</td><td>${OM ? S.atInfo?.stub ? cur().replaySourceType==='real' ? replayReferenceTiming(cur())?'Recorded results · reference playback, not model detections':'No reference timing points · mark finishes manually' : 'Stand-in on this computer: echoes simulator truth, not a model' : 'Configured timing service' : 'TTP finish model (simulated in this replica)'}</td></tr>
+          <tr><td>${reference?'Source':'Model'}</td><td class="num">${esc(reference?'Recorded results':cur().model || (OM ? 'stub-truth-0' : 'sim-0'))}</td></tr>
           <tr><td>Contract</td><td class="num">POST /v1/finish-predictions</td></tr>
           <tr><td>State</td><td><span class="dot ${S.apiOnline ? 'ok' : 'warn'}"></span> ${S.apiOnline ? 'reachable' : 'offline'}</td></tr>
         </table>
@@ -1357,7 +1378,7 @@ function renderDrawer() {
       </div>
       <div class="card"><h3>How suggestions are used</h3>
         <p>Each finisher gets a suggested time. REVIEW suggestions wait for the operator; nothing is delivered until the heat is saved.</p>
-        <p>AUTO is reserved for suggestions the model is confident in. Today almost everything comes back REVIEW: on unseen meets the auto rule is not yet reliable.</p>
+        <p>${cur().replaySourceType==='real'&&S.atInfo?.stub?'Recorded results use the supplied saved columns without QA jitter or dropped finishes. They are practice references, not a model accuracy test.':'AUTO is reserved for suggestions the model is confident in. Today almost everything comes back REVIEW: on unseen meets the auto rule is not yet reliable.'}</p>
         <p>Finishes within 0.02 s of a neighbour are always REVIEW.</p>
         <p>The operator can override anything; the original suggestion stays in the heat's log.</p>
         <p>Suggestions can take a while on a laptop; the heat stays fully usable and they fill in when ready. Capture never waits on the service, and without it heats are timed by hand.</p>
@@ -1368,7 +1389,8 @@ function renderDrawer() {
       <div class="card"><h3>Display</h3>
         <p>Theme</p><div class="seg" id="themeSeg"><button data-t="dark">Dark</button><button data-t="outdoor">Outdoor (sunlight)</button></div>
       </div>
-      <div class="card"><h3>More settings</h3><p>To be discussed.</p></div>`;
+      `;
+    renderSimulationSources(body);
     body.querySelectorAll('#themeSeg button').forEach(b => {
       b.classList.toggle('on', document.documentElement.dataset.theme === b.dataset.t);
       b.onclick = () => { document.documentElement.dataset.theme = b.dataset.t; store.set('theme', b.dataset.t); readTokens(); renderUI(); };
@@ -1396,7 +1418,7 @@ function boardState() {
     status: h.status[a.lane] || null, time: timeOf(a), place: pl[a.lane] || null,
   }));
   return {
-    meet: { name: S.meet ? (S.meet.demo ? 'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet', logo: null },
+    meet: { name: S.meet ? (S.meet.demo ? S.simulationSource?.name||'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet', logo: null },
     heat: { event: h.ev, round: h.rd, heat: h.ht, of: h.of, name: h.name, state: h.state },
     clock: {
       running: h.state === 'running', speed: SPEED,
@@ -1861,6 +1883,7 @@ function showOverlaySettings(kind, anchor) {
 }
 function updateFrontOverlay() {
   const layer=document.getElementById('frontLaneOverlay');if(!layer)return;
+  if(!replayCameras(viewHeat()).front){layer.hidden=true;return;}
   const o=overlayStyle('front'),lanes=Array.from({length:o.laneCount},(_,i)=>i+1);
   if(!o.enabled||!o.behindRunners)layer.style.maskImage='none';
   layer.hidden=!o.enabled;if(!o.enabled)return;layer.style.opacity=o.opacity;
@@ -1944,7 +1967,7 @@ function showToolbarPopover(kind,anchor) {
     const tools=scanToolStates();
     if(kind==='auto'){
       const toggle=menu.querySelector('[data-auto-toggle]'),run=menu.querySelector('[data-auto-run]');
-      if(toggle){toggle.checked=S.autoMark;toggle.disabled=!!S.cameraSetup;run.disabled=!!S.cameraSetup||!['review','saved'].includes(cur().state)||!S.apiOnline||cur().req==='pending';menu.querySelector('[data-auto-status]').textContent=!S.apiOnline?'Offline':cur().req==='pending'?'Timing…':cur().stub?'Simulator stand-in':'Automatic suggestions as runners finish';}
+      if(toggle){toggle.checked=S.autoMark;toggle.disabled=!!S.cameraSetup;run.disabled=!!S.cameraSetup||!['review','saved'].includes(cur().state)||!S.apiOnline||cur().req==='pending';menu.querySelector('[data-auto-status]').textContent=!S.apiOnline?'Offline':cur().req==='pending'?'Timing…':cur().reference?'Recorded results · reference playback':cur().stub?'Simulator stand-in':'Automatic suggestions as runners finish';}
       return;
     }
     const available=tools.filter(t=>toolbarOverflow.includes(t.id)&&t.when);
@@ -2013,11 +2036,14 @@ function renderTools() {
   invalidate();
   const h=viewHeat(),box=$('#tools');syncLaneGutter(overlayStyle('scan'));
   const tools=scanToolStates(),preferences=toolbarPreferences(store.get('scanToolbar',null));
-  const key=JSON.stringify([box.clientWidth,h.asset?.mainCameraId,h.asset?.mainCameraLabel,h.asset?.comparisonCameraLabel,cur().asset?.mainCameraId,cur().viewLoading,cur().asset?.lineScans?.length,!!overlayMenu?.isConnected,toolbarPopover?.menu.className,preferences,tools.map(t=>[t.id,t.when,t.on,t.disabled,t.label])]);
+  const key=JSON.stringify([box.clientWidth,h.replaySourceType,h.asset?.mainCameraId,h.asset?.mainCameraLabel,h.asset?.comparisonCameraLabel,cur().asset?.mainCameraId,cur().viewLoading,cur().asset?.lineScans?.length,!!overlayMenu?.isConnected,toolbarPopover?.menu.className,preferences,tools.map(t=>[t.id,t.when,t.on,t.disabled,t.label])]);
   if(toolbarRenderKey===key){toolbarPopover?.update();return;}toolbarRenderKey=key;box.innerHTML='';
   const camera=$('#scanCameraLabel');camera.textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';camera.disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;camera.onclick=e=>showSourceMenu('main',e.currentTarget);
   camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:'Choose main line-scan view';
   const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} ▾`:'Backup line-scan';
+  comparisonPicker.disabled=!replayCameras(h).comparison;
+  backupLinkButton.disabled=!replayCameras(h).comparison;
+  frontLaneButton.disabled=!replayCameras(h).front;
   const pinned=h_('div','pinned-scan-tools');box.append(pinned);
   for(const id of preferences.order){const tool=tools.find(t=>t.id===id);if(!preferences.pinned.includes(id)||!tool.when)continue;
     const button=h_('button','tool'+(tool.on?' on':'')+(id==='mark'?' primary-tool':''));button.dataset.tool=id;button.title=tool.help;button.disabled=tool.disabled;
@@ -2074,7 +2100,7 @@ function orderEvents(parsed) {
 function applyMeet(parsed, fresh) {
   const evs = orderEvents(parsed);
   if (fresh) {
-    S.lastLiveHeat=null;HEATS = evs.map(e => buildHeat(specFromEvent(e, evs)));
+    S.lastLiveHeat=null;HEATS = evs.map(e => bindReplayHeat(buildHeat(specFromEvent(e, evs))));
     S.idx = 0; S.files = []; S.selLane = null; S.selCol = null;
     const h = cur(); ensureStrip(h); if (S.autoArm) h.state = 'armed';
     fitView(); renderUI();
@@ -2084,11 +2110,11 @@ function applyMeet(parsed, fresh) {
   const notes = [],selectedKey=JSON.stringify([cur().ev,cur().rd,cur().ht]);
   evs.forEach(e => {
     const spec = specFromEvent(e, evs), i = HEATS.findIndex(h => h.ev === e.event && h.rd === e.round && h.ht === e.heat);
-    if (i < 0) { HEATS.push(buildHeat(spec)); notes.push(`${spec.name} heat ${e.heat} added`); return; }
+    if (i < 0) { HEATS.push(bindReplayHeat(buildHeat(spec))); notes.push(`${spec.name} heat ${e.heat} added`); return; }
     const h = HEATS[i];
     if (JSON.stringify(h.entries) === JSON.stringify(spec.entries)) return;
     if (h.state === 'loaded' || h.state === 'armed') {
-      const nh = buildHeat(spec); nh.state = h.state;
+      const nh = bindReplayHeat(buildHeat(spec)); nh.state = h.state;
       if (h.asset) attachAsset(nh, h.asset);
       ensureStrip(nh); HEATS[i] = nh;
       notes.push(`${spec.name} heat ${e.heat} re-seeded`);
@@ -2102,26 +2128,37 @@ function applyMeet(parsed, fresh) {
   renderUI();
 }
 async function openMeet(dir) {
-  if(runningHeat()){toast('Stop capture before changing the meet folder.',true);return;}
-  if(S.cameraSetup)await stopCameraSetup(true);
+  if(runningHeat()||S.sourceChanging){toast('Stop capture before changing the meet folder.',true);return;}
+  S.sourceChanging=true;renderUI();
   try {
+    if(S.cameraSetup)await stopCameraSetup(true);
+    if(S.cameraSetup)throw Error('Camera preview is still active');
     const r = await OM.call('meet.open', { dir });
     if (!r.parsed || !r.parsed.events.some(e => e.entries.some(x => x.lane))) { toast(`No laned heats found in ${dir} (lynx.evt missing or empty).`, true); return; }
     const s = await OM.call('settings.get').catch(() => ({}));
     S.meet = { dir, files: r.files, resultsDir: s.resultsFor && s.resultsFor[dir] ? s.resultsFor[dir] : null };
+    S.simulationSource=null;scanSourceViews.clear();attemptsByHeat.clear();
     applyMeet(r.parsed, true);
-    OM.call('settings.set', { patch: { meetDir: dir } }).catch(() => {});
+    await OM.call('settings.set', { patch: { meetDir: dir, demoDir:null, simulationSourceId:null } });
     toast(`Opened ${dir}: ${HEATS.length} heats.`);
   } catch (err) { toast('Could not open the meet folder: ' + err.message, true); }
+  finally {S.sourceChanging=false;renderUI();}
 }
-// A rendered demo meet (TTP simulator): meet/lynx.* plus, per heat, the primary line-scan, backup line-scan and front-camera recording.
+function bindReplayHeat(h) {
+  if(!S.meet?.demo)return h;
+  h.replaySourceType=S.simulationSource.type;
+  h.athletes.forEach(a=>{a.truth=null;});
+  const asset=S.meet.replayHeats.find(a=>replayHeatKey(a)===replayHeatKey(h));
+  return asset?attachAsset(h,asset):h;
+}
+// TTP and real-recorded folders share the same native line-scan replay path.
 function attachAsset(h, a) {
   if(a)a=cameraAsset(a,store.get(cameraRoleKey(),{}));
   if (!a || !a.primary || !a.primaryMeta || !a.primarySize) return h;
   const m = a.primaryMeta;
   // the engine's camera streams from the gun: pre-roll columns from race time 0, then the rendered finish window
   const nPre = Math.max(0, Math.round(m.first_column_race_time_s / m.column_period_s));
-  h.asset = a; h.rows = a.primarySize.height || m.rows; h.nCols = nPre + a.primarySize.width;
+  h.asset = a; h.replaySourceType=a.sourceType||'ttp'; h.rows = a.primarySize.height || m.rows; h.nCols = nPre + a.primarySize.width;
   h.tOpen = m.first_column_race_time_s - nPre * m.column_period_s; h.tClose = h.tOpen + h.nCols * m.column_period_s;
   h.laneRows = Array.isArray(m.lane_rows) && m.lane_rows.length ? m.lane_rows.map(x => ({ lane: x.lane, top: x.top_row, bottom: x.bottom_row })) : null;
   rememberScanGeometry(h,{},h===cur());
@@ -2145,29 +2182,40 @@ function renderCameraRoles(container) {
   container.append(box);
   if(['review','saved'].includes(cur().state))box.append(h_('p','dimtext','Changing the view keeps the original recording and finish times. The chosen roles also prepare the next capture.'));
 }
-async function openDemo(dir) {
-  if(runningHeat()){toast('Stop capture before changing the meet folder.',true);return;}
-  scanSourceViews.clear();
+async function importSimulationSource(type) {
+  if(!OM||runningHeat()||S.sourceChanging)return;
+  await openDemo(null,{importType:type});
+}
+async function openDemo(dir, selection = {}) {
+  if(!OM||runningHeat()||S.sourceChanging){toast('Stop capture before changing simulation sources.',true);return false;}
+  S.sourceChanging=true;renderUI();
   try {
-    const r = await OM.call('assets.open', { dir });
-    if (!r.meet || !r.meet.files['lynx.evt']) { toast(`No meet/lynx.evt in ${dir}.`, true); return; }
-    await openMeet(r.meet.dir);
-    if (!S.meet) return;
-    HEATS.forEach((h, i) => attachAsset(h, r.heats[i]));
-    S.meet.demo = dir;
-    const h = cur(); h.img = null; ensureStrip(h); fitView(); renderUI();
-    OM.call('settings.set', { patch: { demoDir: dir } }).catch(() => {});
-    toast(`Demo meet: ${r.heats.length} simulated heats with primary, backup and front cameras.`);
-  } catch (err) { toast('Could not open the demo meet: ' + err.message, true); }
+    if(S.cameraSetup)await stopCameraSetup(true);
+    if(S.cameraSetup)throw Error('Camera preview is still active');
+    let id=selection.id;
+    if(selection.importType){
+      dir=await OM.pickFolder(selection.importType==='real'?'Import real meet replay folder':'Import TTP simulator folder');
+      if(!dir)return false;
+      const source=await OM.call('demo.import',{dir,type:selection.importType});id=source.id;
+    }
+    const r=await OM.call('demo.load',id?{id}:{dir,type:selection.type||'ttp'});
+    const settings=await OM.call('settings.get');
+    S.simulationCatalog=await OM.call('demo.catalog');S.simulationSource=r.source;
+    scanSourceViews.clear();attemptsByHeat.clear();S.lastLiveHeat=null;
+    if(r.source.type==='builtin'){
+      S.meet=null;S.source='replay';HEATS=SPECS.map(buildHeat);S.idx=0;S.files=[];S.selLane=null;S.selCol=null;S.hoverCol=null;
+      const h=cur();ensureStrip(h);if(S.autoArm)h.state='armed';fitView();
+    }else{
+      S.meet={dir:r.meet.dir,files:r.meet.files,demo:r.dir,replayHeats:r.heats,resultsDir:settings.resultsFor?.[r.meet.dir]||null};
+      applyMeet(r.meet.parsed,true);
+    }
+    S.bview.linked=true;Object.assign(S.fview,{s:1,x:0,y:0});applyFrontView();
+    toast(`${sourceLabel(r.source)}${r.meet?`: ${r.heats.length} recorded heats.`:'.'}`);
+    return true;
+  }catch(err){toast('Could not open simulation source: '+err.message,true);return false;}
+  finally {S.sourceChanging=false;renderUI();}
 }
-function closeMeet() {
-  if(runningHeat()){toast('Stop capture before changing the meet folder.',true);return;}
-  if(S.cameraSetup){stopCameraSetup(true).then(closeMeet);return;}
-  S.meet = null;S.lastLiveHeat=null;HEATS = SPECS.map(buildHeat); S.idx = 0; S.files = [];
-  OM.call('settings.set', { patch: { meetDir: null, demoDir: null } }).catch(() => {});
-  const h = cur(); ensureStrip(h); if (S.autoArm) h.state = 'armed';
-  fitView(); renderUI();
-}
+function closeMeet() { return openDemo(null,{id:'builtin'}); }
 
 // ---------------------------------------------------------------- canvases
 let TK = {}, dirty = true;
@@ -2571,7 +2619,7 @@ function drawRuler(g, W, Hc, h, on) {
 // primary's time window; double-click links it back. Hover and click are shared with the primary by time.
 function backupSource(h) {
   const original=h.recordingHeat||h,id=h.viewCompareId||h.asset?.comparisonCameraId;
-  if(id===original.asset?.mainCameraId)return {img:original.img,t:original.tOpen,p:periodOf(original),w:original.nCols,rows:rowsOf(original),own:false,meta:original.asset.primaryMeta};
+  if(original.asset&&id===original.asset.mainCameraId)return {img:original.img,t:original.tOpen,p:periodOf(original),w:original.nCols,rows:rowsOf(original),own:false,meta:original.asset.primaryMeta};
   const descriptor=original.asset?.lineScans?.find(s=>s.id===id),cached=descriptor&&scanSourceViews.get(descriptor.png);if(cached)return {...cached,own:true};
   if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
     const bm = h.asset.backupMeta;
@@ -2609,6 +2657,7 @@ function drawBackup() {
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hh] = fitCanvas(cv), h = viewHeat();
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hh);
+  if(!replayCameras(h).comparison){g.fillStyle=TK.dim;g.font='12px '+TK.sans;g.textAlign='center';g.fillText('No comparison camera recording',W/2,Hh/2);g.textAlign='left';return;}
   const live = h.state === 'running', last = live ? h.liveCol : h.nCols - 1;
   if (!h.img || last < 0 || h.state === 'loaded' || h.state === 'armed') {
     g.fillStyle = TK.dim; g.font = '12px ' + TK.sans; g.textAlign = 'center';
@@ -2737,6 +2786,7 @@ function drawFront() {
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hf] = fitCanvas(cv), h = viewHeat();
   if (syncFront(h,g,W,Hf)) {updateFrontOcclusion(h);return;}
+  if(!replayCameras(h).front){g.fillStyle=TK.scanbg;g.fillRect(0,0,W,Hf);g.fillStyle=TK.dim;g.font='12px '+TK.sans;g.textAlign='center';g.fillText('No front camera recording',W/2,Hf/2);g.textAlign='left';return;}
   const hy = Hf * 0.17, cx = W / 2;
   const grd = g.createLinearGradient(0, 0, 0, hy);
   grd.addColorStop(0, '#1b2740'); grd.addColorStop(1, '#2b3a55');
@@ -2955,7 +3005,7 @@ window.addEventListener('resize', () => { renderTiles(); if (!S.view.zoomed && v
 
 // ---------------------------------------------------------------- backup line-scan input (its own view, shared time)
 const colAtTime = (h, t) => Math.max(0, Math.min(h.nCols - 1, Math.round((t - h.tOpen) / periodOf(h) - 0.5)));
-const backupReady = h => h.img && (h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0));
+const backupReady = h => replayCameras(h).comparison && h.img && (h.state === 'review' || h.state === 'saved' || (h.state === 'running' && h.liveCol >= 0));
 function unlinkBackup(h) {
   if (S.bview.linked) Object.assign(S.bview, backupRange(h), { linked: false });
 }
@@ -3136,6 +3186,6 @@ if (OM) {
   occlusionAvailability.refresh();
   OM.call('autocrop.info').then(info=>{S.cropInfo=info;renderTools();}).catch(()=>{});
   OM.call('autotiming.info').then(i => { S.atInfo = i; }).catch(() => {});
-  OM.call('settings.get').then(s => { if (s.demoDir) openDemo(s.demoDir); else if (s.meetDir) openMeet(s.meetDir); }).catch(() => {});
+  Promise.all([OM.call('settings.get'),OM.call('demo.catalog')]).then(([s,catalog])=>{S.simulationCatalog=catalog;renderDrawer();if(s.demoDir||s.simulationSourceId)openDemo(null,{id:catalog.selectedId});else if(s.meetDir)openMeet(s.meetDir);}).catch(err=>toast('Simulation sources: '+err.message,true));
 }
 })();
