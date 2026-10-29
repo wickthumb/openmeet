@@ -421,6 +421,7 @@ async function ensureScoreboardLibrary() {
       if (!templates.some(template => template.name === 'classic')) {
         await core.createTemplate(scoreboardRoot, 'classic', { from: 'builtin:classic' });
       }
+      await core.refreshBuiltinTemplate(scoreboardRoot,'classic');
     })().catch(err => { scoreboardLibraryReady = null; throw err; });
   }
   return scoreboardLibraryReady;

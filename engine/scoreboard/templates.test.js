@@ -3,13 +3,25 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, mkdir, symlink, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { listTemplates, createTemplate, deleteTemplate, addAsset, snapshot, restore } from './templates.js';
+import { listTemplates, createTemplate, deleteTemplate, addAsset, snapshot, restore, refreshBuiltinTemplate } from './templates.js';
 
 async function temp(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'openmeet-templates-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
+
+test('old stock Classic upgrades once with a restorable snapshot; edited boards stay untouched',async t=>{
+  const root=await temp(t);await createTemplate(root,'classic');
+  const file=path.join(root,'classic/index.html'),latest=await readFile(file,'utf8');
+  const previous=await readFile(new URL('./fixtures/classic-v1.html',import.meta.url),'utf8');
+  await writeFile(file,previous);const result=await refreshBuiltinTemplate(root);
+  assert.equal(result.updated,true);assert.equal(await readFile(file,'utf8'),latest);
+  assert.equal(await readFile(path.join(root,'classic/.history',result.snapshotId,'index.html'),'utf8'),previous);
+  assert.deepEqual(await refreshBuiltinTemplate(root),{updated:false});
+  const edited=previous+'<!-- custom scoreboard -->';await writeFile(file,edited);
+  assert.deepEqual(await refreshBuiltinTemplate(root),{updated:false});assert.equal(await readFile(file,'utf8'),edited);
+});
 
 test('create, list, copy, image import, snapshot and restore round-trip', async t => {
   const root = await temp(t);

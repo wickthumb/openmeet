@@ -1,0 +1,53 @@
+// Actual Electron publisher -> normalized feed -> Classic template review workflow.
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp,mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
+import {replayFixture} from './support/replay-fixture.mjs';
+import {sourceId} from '../simulation-sources.mjs';
+const appDir=path.resolve(process.argv[2]||new URL('..',import.meta.url).pathname),root=await mkdtemp('/tmp/openmeet-board-review-');
+const {dir,meta}=await replayFixture(root);meta.truth=[{lane:1,image_column:55,time_s:.079425},{lane:2,image_column:58,time_s:.083175},{lane:3,image_column:80,time_s:.110675}];
+await writeFile(path.join(dir,'heat-1/primary.json'),JSON.stringify(meta));
+await writeFile(path.join(dir,'meet/lynx.evt'),'5,1,1,Practice 100m\n,,1,First,Ada,Club\n,,2,Second,Bo,Club\n,,3,Third,Cal,Club\n,,4,Unresolved,Dee,Club\n');
+const profile=path.join(root,'profile');await mkdir(profile);
+await writeFile(path.join(profile,'openmeet-settings.json'),JSON.stringify({simulationSources:[{id:sourceId(dir),type:'real',name:'Review fixture',path:dir}],simulationSourceId:sourceId(dir)}));
+const env={...process.env};for(const key of Object.keys(env))if(key.startsWith('OPENMEET_')||key==='ELECTRON_RUN_AS_NODE')delete env[key];
+const child=spawn(path.join(appDir,'node_modules/electron/dist/electron'),[appDir,'--remote-debugging-port=0','--ozone-platform=headless','--user-data-dir='+profile],{env,detached:true,stdio:['ignore','pipe','pipe']});
+let logs='',ws,id=0;const pending=new Map(),errors=[];child.stdout.on('data',d=>logs+=d);child.stderr.on('data',d=>logs+=d);
+const stop=()=>{try{process.kill(-child.pid,'SIGTERM');}catch{}};const timer=setTimeout(stop,45000);
+async function poll(fn,label){for(let i=0;i<150;i++){const r=await fn();if(r)return r;await delay(70);}throw Error('Timed out: '+label);}
+const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const n=++id,t=setTimeout(()=>{pending.delete(n);reject(Error('CDP timeout '+method));},8000);pending.set(n,{resolve,reject,t});ws.send(JSON.stringify({id:n,method,params,...(sessionId?{sessionId}:{})}));});
+const ev=async(expression,contextId)=>{const r=await send('Runtime.evaluate',{expression,contextId,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description);return r.result.value;};
+const click=selector=>ev(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e||e.disabled)throw Error('Missing enabled '+${JSON.stringify(selector)});e.click();})()`);
+const tab=label=>ev(`[...document.querySelectorAll('#tabs button')].find(e=>e.textContent===${JSON.stringify(label)}).click()`);
+try{
+ const port=await poll(()=>logs.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/)?.[1],'DevTools');
+ const page=await poll(async()=>{try{return(await(await fetch('http://127.0.0.1:'+port+'/json/list')).json()).find(p=>p.type==='page'&&p.url.endsWith('/renderer/index.html'));}catch{}},'app page');
+ ws=new WebSocket(page.webSocketDebuggerUrl);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
+ ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);if(p){clearTimeout(p.t);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}}if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description);};
+ await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:1600,height:1000,deviceScaleFactor:1,mobile:false});
+ await poll(()=>ev(`document.querySelector('#ctl .go')?.textContent.includes('Start')&&document.querySelector('#list').textContent.includes('Ada')`),'real fixture');
+ await click('#ctl .go');await poll(()=>ev(`document.querySelectorAll('#props .tag.review').length===2`),'live review proposals');
+ await click('#ctl .go');await poll(()=>ev(`document.querySelector('.state').textContent==='REVIEW'`),'capture stop');await tab('Scoreboard');
+ const boardUrl=await poll(()=>ev(`document.querySelector('#bFrame')?.src||null`),'scoreboard');const base=new URL(boardUrl).origin;
+ const getState=async()=>await(await fetch(base+'/scoreboard/state')).json();
+ await poll(async()=>{const s=await getState();return s.lanes.filter(l=>l.review).length===2;},'pending times published');
+ const initial=await getState();assert.deepEqual(initial.results.map(l=>l.lane),[3]);assert.equal(initial.lanes.find(l=>l.lane===1).place,null);
+ const iframe=await poll(async()=>{const r=await send('Target.getTargets');return r.targetInfos.find(t=>t.type==='iframe'&&t.url.startsWith(base));},'scoreboard target');
+ const {sessionId:frameSession}=await send('Target.attachToTarget',{targetId:iframe.targetId,flatten:true});await send('Runtime.enable',{},frameSession);
+ const rows=async()=>{const r=await send('Runtime.evaluate',{expression:`Array.from(document.querySelectorAll('#rows .row')).map(e=>({lane:+e.dataset.lane,time:e.querySelector('.time').firstChild.textContent,review:!!e.querySelector('.review-label'),label:e.querySelector('.review-label')?.textContent}))`,returnByValue:true},frameSession);if(r.exceptionDetails)throw Error(r.exceptionDetails.text);return r.result.value;};
+ await poll(async()=>{const r=await rows();return r.length===4&&r.filter(v=>v.review).length===2;},'review badges');
+ let visible=await rows();assert.deepEqual(visible.map(r=>r.lane),[3,1,2,4]);assert.equal(visible[1].time,'0.08');assert.equal(visible[1].label,'In review');
+ const captureRoot=path.join(dir,'meet/openmeet/captures'),capture=path.join(captureRoot,(await readdir(captureRoot))[0]);
+ const hashes=async()=>Promise.all(['columns.bin','times.f64'].map(async n=>createHash('sha256').update(await readFile(path.join(capture,n))).digest('hex')));const original=await hashes();
+ const accept=lane=>ev(`(()=>{const row=[...document.querySelectorAll('#props tr')].find(r=>r.cells[0].textContent.trim()==='L${lane}');row.querySelector('button').click();})()`);
+ await accept(1);await poll(async()=>{const r=await rows();return r[0]?.lane===1&&r.filter(v=>v.review).length===1;},'accepted result reorders');
+ assert.deepEqual((await rows()).map(r=>r.lane),[1,3,2,4]);
+ await accept(2);await poll(async()=>{const r=await rows();return r[1]?.lane===2&&r.every(v=>!v.review);},'all accepted');
+ assert.deepEqual((await rows()).map(r=>r.lane),[1,2,3,4]);assert.deepEqual(await hashes(),original);
+ const final=await getState();assert.deepEqual(final.results.map(r=>r.lane),[1,2,3]);assert.equal(final.lanes.find(r=>r.lane===4).time,null);
+ const shot=await send('Page.captureScreenshot',{format:'png'});await writeFile(path.join(root,'accepted.png'),Buffer.from(shot.data,'base64'));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({pass:true,output:root,pending:initial.lanes.filter(l=>l.review).map(l=>({lane:l.lane,time:l.time})),initialOrder:[3,1,2,4],acceptedOrder:[1,2,3,4],rawEvidenceUnchanged:true}));
+}finally{clearTimeout(timer);ws?.close();stop();for(const p of pending.values())clearTimeout(p.t);}

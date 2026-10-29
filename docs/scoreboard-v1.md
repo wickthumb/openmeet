@@ -44,11 +44,16 @@ milliseconds. Strings are plain text, never HTML.
 - `lanes` defaults to `[]`. Each entry has `lane` (positive integer or `null`),
   `id` (string or `null`), `first`, `last`, `affiliation` (default `""`), `status`
   (`null | DNS | DNF | DQ | FS`, case normalized), `time` (nonnegative seconds or
-  `null`), and `place` (positive integer or `null`). A status clears time/place.
+  `null`), `place` (positive integer or `null`), and `review` (boolean, default
+  `false`). A pending suggestion retains its time with `review: true`; it does
+  not receive an accepted place. A status clears time/place and review.
 - `results` defaults to the finishers in `lanes`, filtered to entries with a time,
-  place and no status, sorted by place, then time and lane. An explicit results
+  place, no status and no pending review, sorted by place, then time and lane. An explicit results
   array uses the same validation and can retain the previous heat's results.
   Tied places are preserved; the scoreboard never assigns places itself.
+- Classic shows placed lanes first in place order, then unplaced timed lanes,
+  then untimed lanes. Provisional times show **In review** beside their time.
+  Accepting a suggestion removes the label and moves it into place order.
 - `wind` is a finite number in m/s or `null`. `updatedAt` defaults to `Date.now()`.
 
 ## Template and runtime integration
@@ -189,3 +194,5 @@ scoreboard server and active agents when the utility process disconnects.
 Run `node --test engine/scoreboard` for state, library containment/restore,
 HTTP/SSE/versioning, runtime arithmetic and fake-CLI runner tests. The tests do
 not require Electron, network services, a coding agent install or dependencies.
+
+To check the operator-to-scoreboard review flow in Electron, run `node app/test/visual-scoreboard-review.mjs "$PWD/app"`. It uses disposable generated footage and verifies pending times, place order, acceptance, and unchanged capture pixels/timestamps.

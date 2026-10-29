@@ -1,5 +1,5 @@
 /** @typedef {{running: boolean, startedAtMs: number|null, speed: number, frozenS: number}} ScoreboardClock */
-/** @typedef {{lane: number|null, id: string|null, first: string, last: string, affiliation: string, status: string|null, time: number|null, place: number|null}} ScoreboardLane */
+/** @typedef {{lane: number|null, id: string|null, first: string, last: string, affiliation: string, status: string|null, time: number|null, place: number|null, review: boolean}} ScoreboardLane */
 /**
  * @typedef {object} ScoreboardState
  * @property {{name: string, logo: string|null}} meet
@@ -33,6 +33,7 @@ function lane(input) {
     lane: positiveInt(v.lane), id: id(v.id), first: text(v.first), last: text(v.last),
     affiliation: text(v.affiliation), status: validStatus,
     time: validStatus ? null : seconds(v.time), place: validStatus ? null : positiveInt(v.place),
+    review: !validStatus&&seconds(v.time)!==null&&v.review===true,
   };
 }
 
@@ -47,7 +48,7 @@ export function normalizeState(input) {
   const v = object(input), meet = object(v.meet), heat = object(v.heat), clock = object(v.clock);
   const lanes = Array.isArray(v.lanes) ? v.lanes.map(lane) : [];
   const results = (Array.isArray(v.results) ? v.results.map(lane) : lanes.map(v => ({ ...v })))
-    .filter(v => v.status === null && v.time !== null && v.place !== null)
+    .filter(v => v.status === null && v.time !== null && v.place !== null&&!v.review)
     .sort((a, b) => a.place - b.place || a.time - b.time || (a.lane ?? 0) - (b.lane ?? 0));
   const startedAtMs = seconds(clock.startedAtMs);
   return {
@@ -74,7 +75,10 @@ clock: {running: boolean, startedAtMs: Unix milliseconds or null, speed: nonnega
 frozenS: nonnegative seconds}. Running time is max(0, (Date.now()-startedAtMs)/1000*speed);
 when stopped it is frozenS. Use OpenMeetScoreboard.raceTime(state) in requestAnimationFrame.
 lanes: [{lane: positive integer or null, id: string or null, first: string, last: string,
-affiliation: string, status: null|DNS|DNF|DQ|FS, time: seconds or null, place: positive integer or null}].
-results: finishers with a time and place, no status, sorted by place (same fields as lanes).
+affiliation: string, status: null|DNS|DNF|DQ|FS, time: seconds or null, place: positive integer or null,
+review: boolean (unaccepted suggested time; default false)}].
+results: accepted finishers with a time and place, no status or pending review, sorted by place.
+Classic displays all lanes by supplied place, then unplaced timed entries, then untimed lanes.
+Show provisional times with an In review label; never turn a suggestion into an accepted result.
 wind: metres per second or null. updatedAt: Unix milliseconds.
 Updates are full normalized JSON replacements, not patches. Never invent results.`;

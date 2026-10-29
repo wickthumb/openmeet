@@ -1412,11 +1412,13 @@ const boardUrl = name => `http://127.0.0.1:${B.port}/scoreboard/${name}/`;
 // Live state for every scoreboard (docs/scoreboard-v1.md).
 function boardState() {
   const h = runningHeat()||S.lastLiveHeat||cur(), done = ['review', 'saved'].includes(h.state), { fin, pl } = places(h), win = done ? fin[0] : null;
-  const timeOf = a => (h.marks[a.lane] && (!h.status[a.lane] || h.status[a.lane] === 'DQ') ? ceilTo(raceTime(h, h.marks[a.lane].col), 2) : null);
-  const lanes = [...h.athletes].sort((a, b) => a.lane - b.lane).map(a => ({
-    lane: h.unlaned ? null : a.lane, id: a.id, first: a.first, last: a.last, affiliation: a.team.name,
-    status: h.status[a.lane] || null, time: timeOf(a), place: pl[a.lane] || null,
-  }));
+  const lanes = [...h.athletes].sort((a, b) => a.lane - b.lane).map(a => {
+    const mark=h.marks[a.lane],proposal=!mark&&!h.status[a.lane]&&!h.dismissed?.[a.lane]?h.proposals?.find(p=>p.lane===a.lane):null;
+    const point=mark||proposal;
+    return {lane:h.unlaned?null:a.lane,id:a.id,first:a.first,last:a.last,affiliation:a.team.name,
+      status:h.status[a.lane]||null,time:!h.status[a.lane]&&point&&Number.isFinite(point.col)?ceilTo(raceTime(h,point.col),2):null,
+      place:mark?pl[a.lane]||null:null,review:!!proposal};
+  });
   return {
     meet: { name: S.meet ? (S.meet.demo ? S.simulationSource?.name||'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet', logo: null },
     heat: { event: h.ev, round: h.rd, heat: h.ht, of: h.of, name: h.name, state: h.state },
@@ -1425,7 +1427,7 @@ function boardState() {
       startedAtMs: h.state === 'running' && h.startTOD ? h.startTOD.getTime() : null,
       frozenS: win ? ceilTo(raceTime(h, h.marks[win.lane].col), 2) : null,
     },
-    lanes, results: lanes.filter(l => l.place).sort((a, b) => a.place - b.place),
+    lanes, results: lanes.filter(l => l.place&&!l.review).sort((a, b) => a.place - b.place),
     wind: h.wind == null || !done ? null : h.wind, updatedAt: Date.now(),
   };
 }

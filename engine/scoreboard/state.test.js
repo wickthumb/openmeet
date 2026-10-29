@@ -48,3 +48,12 @@ test('state validates values, preserves ties, sorts finishers and never mutates 
   assert.deepEqual(normalizeState({ ...input, results: [] }).results, []);
   assert.equal(normalizeState({ ...input, results: [{ place: 1, time: 2 }] }).results[0].time, 2);
 });
+
+test('pending times remain visible in lanes without becoming accepted results',()=>{
+  const input={lanes:[{lane:3,time:11.4,place:2},{lane:2,time:11.1,place:null,review:true},{lane:1,time:11.3,place:1},{lane:4,time:11.5,place:3,review:true},{lane:5,status:'DNS',time:12,review:true}]};
+  const state=normalizeState(input);
+  assert.equal(state.lanes[1].time,11.1);assert.equal(state.lanes[1].review,true);assert.equal(state.lanes[1].place,null);
+  assert.equal(state.lanes[4].review,false);assert.equal(state.lanes[4].time,null);
+  assert.deepEqual(state.results.map(v=>v.lane),[1,3]);
+  assert.equal(normalizeState({lanes:[{lane:1,time:11,review:'true'}]}).lanes[0].review,false);
+});
