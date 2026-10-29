@@ -6,7 +6,7 @@ This walkthrough uses the current desktop prototype. Camera inputs are simulated
 
 Open **Meet Link** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied simulator demo meet. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
 
-Choose the top **Camera alignment** tab to preview the simulated camera before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race** or select **Run**. Setup does not start a race, record start triggers or write a race capture.
+Open **Camera setup**, select a camera and choose **Open alignment** to preview simulated input before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race** or select **Run**. Setup does not start a race, record start triggers or write a race capture.
 
 ## 2. Capture without losing control
 
@@ -32,7 +32,7 @@ Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, c
 
 On the line-scan, drag a divider in the left lane column anytime. **Drag on image** optionally enables editing over the scan itself. Only that shared edge moves, resizing the lanes above and below it. **Overlays behind runners** hides guide segments where the image differs from the initial empty-track reference. Compare the toggle on and off; finish markers stay visible. This display feature is separate from the opaque lines optionally included in model-input copies.
 
-In Camera alignment, choose the main and comparison scan sources. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. DNS and vacant lanes are identified in the gutter. With a configured private cropper, More → Hide empty spans shortens the displayed scan with explicit time breaks; Show all columns restores the complete recording. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
+In Camera setup, name each finish location, assign the heat's timing camera, and choose the main and additional views separately. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. DNS and vacant lanes are identified in the gutter. With a configured private cropper, More → Hide empty spans shortens the displayed scan with explicit time breaks; Show all columns restores the complete recording. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
 
 ## 5. Correct an accidental start trigger
 

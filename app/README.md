@@ -23,10 +23,10 @@ The smoke test uses Node's built-in WebSocket and headless Chromium/CDP to call 
 packaged utility-process engine; it fails unless `ping` returns `core: true`.
 The engine ships as `resources/app/engine/` (JS + package.json only). Asar is
 disabled so the utility process can load ESM directly; dev still loads `../engine/`.
-Builds are unsigned, never published, and have no auto-updater. On macOS,
+Alpha installers are available on the [GitHub release page](https://github.com/wickthumb/openmeet/releases). Builds are unsigned and have no auto-updater. Local build commands never publish automatically. On macOS,
 Gatekeeper needs **right-click → Open** on OpenMeet after copying it from the DMG.
 
-Pushes to `blueprint-v1` and `packaging`, and **Actions → Build installers → Run
+Pushes to `main`, `blueprint-v1` and `packaging`, and **Actions → Build installers → Run
 workflow**, build all three OSes. Download `OpenMeet-Windows-installers`,
 `OpenMeet-macOS-installers`, or `OpenMeet-Linux-installers` from the run's
 **Artifacts** section within 14 days. Windows installation and RunMeet shared-folder
@@ -134,7 +134,7 @@ Review a suggested finish directly in the sidebar with **Accept time**; selectio
 
 The compact red **Restart** control stays beside the main race action. During capture it reads **Stop/reset** and offers **Stop capture** or **Stop & restart** in a confirmation dialog. Restart retains the old capture and prepares a new attempt. Earlier attempts can be selected in the Race panel during the session; full capture restoration across app restarts remains future work. Each saved attempt gets a LIF snapshot alongside its raw capture.
 
-Choose **Camera setup → Open alignment view** before a race to stream a preview for alignment and overlay placement. The label follows the terminology in the [FinishLynx Camera Alignment Tools manual](https://support.finishlynx.com/manual/finishlynx/features/additional-features/camera-alignment-tools). Switch between **Alignment** (with a center crosshair) and **Overlays**, or pause the preview to adjust guides on a still image. **Return to race** or the **Run** tab stops preview and restores the selected heat. Preview does not create a capture directory, start trigger or race result, and keeps only a rolling image buffer in memory. This build previews simulated input; physical camera drivers remain planned.
+Choose **Camera setup → select a camera → Open alignment** before a race to stream a preview for alignment and overlay placement. The label follows the terminology in the [FinishLynx Camera Alignment Tools manual](https://support.finishlynx.com/manual/finishlynx/features/additional-features/camera-alignment-tools). Switch between **Alignment** (with a center crosshair) and **Overlays**, or pause the preview to adjust guides on a still image. **Return to race** or the **Run** tab stops preview and restores the selected heat. Preview does not create a capture directory, start trigger or race result, and keeps only a rolling image buffer in memory. This build previews simulated input; physical camera drivers remain planned.
 
 Front-camera overlay setup supports a chosen lane count, first/last placement and perspective sizing, followed by individual refinement. Positions, label size and outline thickness use the video image bounds, including letterboxing, so rearranging or resizing tiles preserves alignment. Dragging and zooming use those same image coordinates. Legacy tile-based positions are converted when first opened. The line-scan overlay has an independent, opt-in **Use guides for auto-timing** switch. This creates a derived image containing horizontal lane boundaries only, records preprocessing in `model-inputs.jsonl`, and leaves original pixels and timestamps untouched. It makes no claim of improved model accuracy.
 

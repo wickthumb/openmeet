@@ -2,6 +2,8 @@
 
 Open-source track-and-field timing and meet operations, with AI assistance and officials in control.
 
+**First release: [Alpha 0.0.1](https://github.com/wickthumb/openmeet/releases/tag/v0.0.1-alpha).** Try the desktop app with simulated inputs, and read the [release notes](CHANGELOG.md) for features and current limits.
+
 OpenMeet is a Track Tools Pro LLC project. The goal is to make finish review, runner identification, and results handling easier to operate so meets can keep moving.
 
 **Status:** working Electron prototype for Windows, macOS and Linux. Run simulated camera captures, review and correct finish marks, exchange start lists and results through a meet folder, and display live scoreboards. Real camera integration and interoperability with AthleticLOCAL still require meet-day validation. The bundled timing stand-in echoes simulator truth; it is labelled in the interface and does not demonstrate model accuracy.

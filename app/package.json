@@ -1,7 +1,7 @@
 {
   "name": "openmeet",
   "productName": "OpenMeet",
-  "version": "0.1.0",
+  "version": "0.0.1-alpha",
   "description": "Open-source track-and-field photo-finish timing",
   "homepage": "https://github.com/wickthumb/openmeet",
   "license": "MIT",

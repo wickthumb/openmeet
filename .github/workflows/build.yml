@@ -2,7 +2,7 @@ name: Build installers
 
 on:
   push:
-    branches: [blueprint-v1, packaging]
+    branches: [main, blueprint-v1, packaging]
   workflow_dispatch:
 
 permissions:
