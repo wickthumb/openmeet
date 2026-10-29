@@ -42,6 +42,32 @@ The scan's camera and selected-column time stay visible. The default toolbar kee
 
 The top **Meet** tab searches events, heats and athletes and filters recorded/upcoming work. Selecting a heat opens it in Run; the Race panel retains its attempt selector. Meet-manager schedule changes update the navigation order while retaining captured work and the selected heat. An active recording continues while another heat is reviewed; the green Return to live control brings it back. Starting a second capture or changing meet folders requires the active capture to stop first. Capture restoration after restarting the app remains separate work.
 
+## Live workspace and setup dialogs
+
+**Run** remains the timing workspace. The other header controls open focused modal
+dialogs over that workspace. **Done** or **Escape** dismisses them; opening and
+closing a dialog never stops race capture. A recording indicator and **Return to
+live** stay available in the dialog header. The engine continues receiving columns,
+keeping timestamps and publishing scoreboard state while a dialog is open.
+
+| Control | When the operator uses it | Interaction |
+| --- | --- | --- |
+| Meet | Before the next heat, or to revisit an earlier result | Search/pick a heat in a dialog; selecting it returns to Run. An existing recording continues. |
+| Camera setup | Connect/check views before the meet; check configuration during it | Dialog for camera roles and designs. Open the alignment workspace to work on the image. Physical alignment is unavailable during official capture. |
+| Scoreboard | Prepare designs before the meet; select/open output during it | Library, creation and AI editing in a large dialog. Live output continues in its own window or network feed. |
+| Network | Check connection state or diagnose a problem | Compact diagnostic dialog; no capture interruption. |
+| Meet Link | Choose shared folders and verify start-list/result exchange | Setup dialog. Folder/source changes remain unavailable during capture. |
+| Auto-Timing | Configure/check the service | Dialog for configuration; live finish review stays in the sidebar and Auto-timing workspace panel. |
+| Starts | Inspect trigger history or correct a heat's start | Dialog; assignment changes elapsed times without moving captured columns. |
+| Settings | Adjust operator preferences | Preferences dialog; the race workspace remains in place behind it. |
+
+Billboard creation and design editing also use a dialog. **Place on scan** closes it
+and shows a small placement toolbar over the camera image. Drag the band and its
+edges directly; **Edit design** returns to the dialog and **Done** ends placement.
+Camera alignment is a workspace activity rather than an image hidden in a modal.
+Opening another setup dialog preserves its live or paused preview. **Run** or
+**Return to race** explicitly exits preview and restores the official heat.
+
 ## Operator controls
 
 Capture stops manually by default. Before a heat, expand **Capture options** to enable timeout or all-runners-marked auto-stop. **Stop capture** is always available during a run. The simulator continues streaming empty-track columns after its prerecorded finish window.
@@ -108,7 +134,7 @@ Review a suggested finish directly in the sidebar with **Accept time**; selectio
 
 The compact red **Restart** control stays beside the main race action. During capture it reads **Stop/reset** and offers **Stop capture** or **Stop & restart** in a confirmation dialog. Restart retains the old capture and prepares a new attempt. Earlier attempts can be selected in the Race panel during the session; full capture restoration across app restarts remains future work. Each saved attempt gets a LIF snapshot alongside its raw capture.
 
-Choose the top **Camera alignment** tab before a race to stream a preview for alignment and overlay placement. The label follows the terminology in the [FinishLynx Camera Alignment Tools manual](https://support.finishlynx.com/manual/finishlynx/features/additional-features/camera-alignment-tools). Switch between **Alignment** (with a center crosshair) and **Overlays**, or pause the preview to adjust guides on a still image. **Return to race** or the **Run** tab stops preview and restores the selected heat. Preview does not create a capture directory, start trigger or race result, and keeps only a rolling image buffer in memory. This build previews simulated input; physical camera drivers remain planned.
+Choose **Camera setup → Open alignment view** before a race to stream a preview for alignment and overlay placement. The label follows the terminology in the [FinishLynx Camera Alignment Tools manual](https://support.finishlynx.com/manual/finishlynx/features/additional-features/camera-alignment-tools). Switch between **Alignment** (with a center crosshair) and **Overlays**, or pause the preview to adjust guides on a still image. **Return to race** or the **Run** tab stops preview and restores the selected heat. Preview does not create a capture directory, start trigger or race result, and keeps only a rolling image buffer in memory. This build previews simulated input; physical camera drivers remain planned.
 
 Front-camera overlay setup supports a chosen lane count, first/last placement and perspective sizing, followed by individual refinement. Positions, label size and outline thickness use the video image bounds, including letterboxing, so rearranging or resizing tiles preserves alignment. Dragging and zooming use those same image coordinates. Legacy tile-based positions are converted when first opened. The line-scan overlay has an independent, opt-in **Use guides for auto-timing** switch. This creates a derived image containing horizontal lane boundaries only, records preprocessing in `model-inputs.jsonl`, and leaves original pixels and timestamps untouched. It makes no claim of improved model accuracy.
 
@@ -120,7 +146,7 @@ Front-camera scrubbing uses available indexed demo frames, a cache of at most 48
 
 ## Multiple line-scan views
 
-Choose **Main line-scan** and **Comparison** in Camera alignment or Network. These are roles assigned to source identities, not fixed first/second hardware slots. The prototype discovers `primary.png/json`, `backup.png/json`, and additional `scan-<name>.png/json` pairs per demo heat. A metadata `camera_name` supplies a readable label. Each source retains its own pixel height, lane profile and column period; overlay placement is saved per camera. New captures record their source identity in `source.json`. Click the camera name directly on the main toolbar or comparison card to change that view. Before a capture, this selects the recording source. During capture/review it changes the viewed evidence while the recording and auto-timing retain their original source; the role also prepares later captures. Alternate images used for review are retained under the capture’s `views/` folder, and saved results include source-specific mark evidence in `review.json`.
+Choose **Main line-scan** and **Comparison** in Camera setup or Network. These are roles assigned to source identities, not fixed first/second hardware slots. The prototype discovers `primary.png/json`, `backup.png/json`, and additional `scan-<name>.png/json` pairs per demo heat. A metadata `camera_name` supplies a readable label. Each source retains its own pixel height, lane profile and column period; overlay placement is saved per camera. New captures record their source identity in `source.json`. Click the camera name directly on the main toolbar or comparison card to change that view. Before a capture, this selects the recording source. During capture/review it changes the viewed evidence while the recording and auto-timing retain their original source; the role also prepares later captures. Alternate images used for review are retained under the capture’s `views/` folder, and saved results include source-specific mark evidence in `review.json`.
 
 The comparison follows the same race-time interval. When both sources have lane/body calibration, linked vertical zoom maps the selected runner or visible runner group, accounting for different heights, body scales and reversed lane order. Sidebar review relinks and centers the runner. Without calibration it falls back to a normalized region; correspondence across camera angles then needs manual adjustment. **Linked / Link views** toggles the link, and independent comparison pan/zoom remains available.
 
@@ -155,3 +181,5 @@ For sensor-height framing and optional front-camera occlusion, run `node app/tes
 For live-follow motion on Linux, run `node app/test/visual-live-follow.mjs "$PWD/app" /path/to/demo`. It creates a disposable `/tmp/openmeet-follow-*` fixture, measures actual canvas motion between camera packets, and checks pause/resume, Flip and exact recorded pixels/timestamps at 640 rows/800 columns per second and 2000 rows/6000 columns per second. Reports separate frame cadence from motion correctness; headless measurements are not a guarantee for every display or physical camera. The harness uses GNU `timeout` to bound its own test processes.
 
 For default selection and reconnection, run `OPENMEET_OCCLUSION_COMMAND='<your private JSON argv>' node app/test/visual-occlusion-recovery.mjs "$PWD/app" /path/to/demo /tmp/openmeet-recovery-check`. It simulates failed startup health probes, verifies settings recover and generate an actual private model mask, preserves explicit Simple choices and raw evidence, and confirms a transient paint failure does not stop the operator clock.
+
+For live modal workflows, run `node app/test/visual-scoreboard-review.mjs "$PWD/app"`. It uses generated local data and checks every header dialog during an active capture, native Escape, Return to live, unchanged start history and timestamp prefixes, and the default scoreboard review flow. No private service is used.

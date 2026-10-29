@@ -1,7 +1,7 @@
 # Line-scan billboards: first pass
 
 Open **Camera setup → Billboards**, or **⋯ → Billboards** on the scan toolbar.
-There is no separate top-level billboard tab. Camera setup can stream an independent
+Billboard creation and editing open in a modal over the timing workspace. There is no separate top-level billboard tab. Camera setup can stream an independent
 preview without starting a race. The toolbar shortcut opens the same editor over
 the current race view without starting or stopping capture.
 
@@ -20,7 +20,7 @@ Custom artwork can also be deleted separately with an inline confirmation.
 
 Placement is saved per meet and scan camera. **Pattern offset** and **Repeat width**
 use original source-time seconds, before start corrections; top and height use
-native sensor rows. With the editor open, drag the selected band directly on the scan. Its top and bottom handles resize it; the repeat size scales with its height. No drag-mode switch is required. Compact handles remain available outside the editor. Arrow keys move a
+native sensor rows. **Place on scan** closes the editor dialog so the selected band can be dragged directly on the scan. A small placement toolbar provides **Edit design** and **Done**. Its top and bottom handles resize it; the repeat size scales with its height. No drag-mode switch is required. Compact handles remain available outside the editor. Arrow keys move a
 focused handle by one source column/row; Shift moves ten. **Bring into view** brings the band into the visible rows without changing its size. Scrolling, zoom, Flip and height
 framing only change its projection. The pattern flips with the source image.
 Hidden spans preserve the pattern phase from original source columns and retain

@@ -69,8 +69,8 @@ export function billboardCacheOffset(cache,v){return -(v.c0-cache.c0)*v.zx*(v.fl
 export function reusableBillboardCache(cache,key,v){return cache?.key===key&&Math.abs(billboardCacheOffset(cache,v))<BILLBOARD_PAD*.75;}
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 export class BillboardConsole {
-  constructor({bridge,store,context,changed,toast}) {
-    Object.assign(this,{bridge,store,context,changed,toast});this.images=new Map();this.list=[];this.busy=false;this.log='';this.snapshots=new Map();this.paintCaches=new Map();
+  constructor({bridge,store,context,changed,toast,place,finishPlacing,open}) {
+    Object.assign(this,{bridge,store,context,changed,toast,place,finishPlacing,open});this.images=new Map();this.list=[];this.busy=false;this.log='';this.snapshots=new Map();this.paintCaches=new Map();
     this.editor=document.querySelector('#billboardEditor');
     bridge?.on('billboard.agentOutput',d=>{if(d.name===this.building){this.log=(this.log+'\n'+d.line).slice(-16000);const box=document.querySelector('#billboardLog');if(box)box.textContent=this.log;}});
   }
@@ -92,9 +92,15 @@ export class BillboardConsole {
   image(name,asset){const key=name+'/'+asset;if(!this.images.has(key)&&this.bridge)this.loadImage(name,asset);return this.images.get(key);}
   paint(g,view,columnsAt){
     const selected=this.settings();if(selected)this.syncEditor(selected,billboardPieces(selected,view),view);else this.editor.hidden=true;
+    this.renderPlacementTools(selected,view);
     const status=document.querySelector('#billboardMaskStatus');if(status)status.textContent=view.maskStatus;
     this.updatePreview();
     for(const b of this.collection().items)this.paintOne(g,view,columnsAt,b);
+  }
+  renderPlacementTools(b,view){
+    if(!this.placementTools){const bar=el('div',null,'billboard-placement-tools');bar.id='billboardPlacementTools';bar.onkeydown=e=>e.stopPropagation();this.placementTitle=el('span');bar.append(this.placementTitle);
+      for(const [label,action]of [['Edit design',()=>this.open?.()],['Done',()=>this.finishPlacing?.()]]){const button=el('button',label,'btn sm');button.dataset.placement=label==='Done'?'done':'edit';button.onclick=action;bar.append(button);}this.editor.parentNode.append(bar);this.placementTools=bar;}
+    this.placementTools.hidden=!b||!this.context().placing||view.framing;this.placementTitle.textContent=b?`Positioning: ${b.label}`:'';
   }
   textureFor(b){
     const texture=document.createElement('canvas');texture.width=1200;texture.height=160;const t=texture.getContext('2d');
@@ -147,7 +153,7 @@ export class BillboardConsole {
     for(const key of ['time','duration','row','height']){const input=document.getElementById('billboard-'+key);if(input&&input!==document.activeElement)input.value=+b[key].toFixed(key==='time'||key==='duration'?6:2);}
     this.editor.hidden=!b.enabled||view.framing||!rects.length;
     if(this.dragging)return;
-    const editing=!!document.querySelector('#drawer.open #billboard-list');
+    const editing=!!this.context().placing;
     const signature=JSON.stringify([b,rects,view.framing,editing]);if(signature===this.editorSignature)return;this.editorSignature=signature;
     const focused=this.editor.contains(document.activeElement)?document.activeElement.className:null;this.editor.replaceChildren();
     const resized=(base,dr,top=false)=>{const bottom=base.row+base.height,row=top?Math.max(0,Math.min(bottom-1,base.row+dr)):base.row,height=top?bottom-row:Math.max(1,Math.min(view.rows-row,base.height+dr));return {...base,row,height,duration:Math.max(view.period*4,base.duration*height/base.height)};};
@@ -184,8 +190,9 @@ export class BillboardConsole {
     const card=el('div',null,'card billboard-card');const heading=el('div',null,'billboard-heading'),label=el('input');label.id='billboard-label';label.value=b.label;label.maxLength=80;label.setAttribute('aria-label','Billboard name');label.onchange=()=>{this.save({...this.settings(),label:label.value.trim()||'Billboard'});this.renderList();};heading.append(label);card.append(heading);
     const preview=el('canvas');preview.id='billboard-preview';preview.className='billboard-preview';preview.setAttribute('aria-label','Repeating billboard preview');card.append(preview);
     const field=(label,input,parent=card)=>{const row=el('label');row.append(el('span',label),input);parent.append(row);return input;};
-    const placementHint=el('div',null,'billboard-placement-hint');placementHint.append(el('span','Drag the band below. Pull its top or bottom edge to resize.'));
-    const center=el('button','Bring into view','btn sm');center.id='billboard-center';center.onclick=()=>{const c=this.context(),current=this.settings();this.save({...current,row:Math.max(0,Math.min(c.rows-current.height,c.centerRow-current.height/2))});this.refresh(body);};placementHint.append(center);card.append(placementHint);
+    const placementHint=el('div',null,'billboard-placement-hint');placementHint.append(el('span','Position the billboard directly on the camera image.'));
+    const place=el('button','Place on scan','btn sm primary');place.id='billboard-place';place.onclick=()=>this.place?.();placementHint.append(place);
+    const center=el('button','Bring into view','btn sm');center.id='billboard-center';center.onclick=()=>{const c=this.context(),current=this.settings();this.save({...current,row:Math.max(0,Math.min(c.rows-current.height,c.centerRow-current.height/2))});this.refresh(body);this.place?.();};placementHint.append(center);card.append(placementHint);
     if(b.mode==='basic'){
       const text=el('input');text.id='billboard-text';text.value=b.text||this.context().meetName||'Track meet';text.maxLength=240;text.oninput=()=>this.save({...this.settings(),text:text.value});field('Text',text);
       const logo=el('button','Change logo…','btn sm');logo.id='billboard-logo';logo.disabled=!this.bridge;logo.onclick=()=>this.action(async()=>{const file=await this.bridge.pickFile('Billboard logo','image');if(!file)return;let name=this.settings().logo?.name;if(!name){name='logos-'+Date.now();await this.bridge.call('billboard.create',{name});}const asset=await this.bridge.call('billboard.addAsset',{name,path:file});await this.loadImage(name,asset);this.save({...this.settings(),logo:{name,asset}});});card.append(logo);

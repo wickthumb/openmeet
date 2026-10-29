@@ -48,7 +48,7 @@ try {
  const heatCount=readdirSync(meetDir).filter(name=>/^heat-\d+$/.test(name)).length;
  for(let heat=1;heat<=heatCount;heat++){
   for(const camera of ['primary','backup']){
-   await click('Camera setup');await sleep(150);
+   await click('Camera setup');await click('Open alignment view');await sleep(150);
    if(!await ev(`!!document.querySelector('select[aria-label="Main line-scan"]')`))throw Error('Demo cameras were not restored after reopening');
    const current=await ev(`document.querySelector('select[aria-label="Main line-scan"]').value`);
    if(current!==camera)await ev(`(()=>{const s=document.querySelector('select[aria-label="Main line-scan"]');s.value=${JSON.stringify(camera)};s.dispatchEvent(new Event('change'));})()`);

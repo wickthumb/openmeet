@@ -214,6 +214,22 @@ svg.i { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-widt
 .drawer.open { display: flex; }
 .drawer .ph { cursor: default; }
 .drawer .pb { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-content: start; }
+.setup-dialog { --dialog-width:1200px;--dialog-height:700px;width:min(var(--dialog-width),calc(100vw - 48px));height:min(var(--dialog-height),calc(100vh - 72px));max-width:calc(100vw - 32px);max-height:calc(100vh - 48px);padding:0;border:1px solid var(--rule);border-radius:5px;background:var(--panel);color:var(--paper);box-shadow:0 20px 80px #0009; }
+.setup-dialog[data-surface=board],.setup-dialog[data-surface=billboards] { --dialog-width:1440px;--dialog-height:800px; }
+.setup-dialog[data-surface=events] { --dialog-width:1100px;--dialog-height:680px; }
+.setup-dialog[data-surface=alignment] { --dialog-width:1000px;--dialog-height:340px; }
+.setup-dialog[data-surface=network] { --dialog-width:1000px;--dialog-height:580px; }
+.setup-dialog[data-surface=api] { --dialog-width:1040px;--dialog-height:640px; }
+.setup-dialog[data-surface=settings] { --dialog-width:1000px;--dialog-height:600px; }
+.setup-dialog:not([open]) { display:none; }
+.setup-dialog::backdrop { background:#03071175; }
+.setup-dialog .drawer { position:static;inset:auto;width:100%;height:100%;border:0; }
+.setup-dialog .ph { min-height:44px;padding:10px 16px; }
+.setup-dialog .pb { padding:16px; }
+.dialog-live { display:flex;align-items:center;gap:12px;color:var(--mint);font-size:12px; }
+.dialog-live[hidden] { display:none; }
+.dialog-live [role=status]::before { content:'';display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:var(--mint); }
+.dialog-live button { color:var(--paper); }
 .card { border: 1px solid var(--rule2); border-radius: var(--radius); padding: 10px; min-width: 0; }
 .card h3 { margin: 0 0 8px; font-size: 13px; }
 .card p { margin: 6px 0; color: var(--muted); }
@@ -733,6 +749,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer
 .billboard-log { white-space:pre-wrap; max-height:180px; overflow:auto; font-size:12px; }
 .billboard-editor { position:absolute; inset:0 0 22px; overflow:hidden; pointer-events:none; z-index:3; }
 .billboard-editor[hidden] { display:none; }
+.billboard-placement-tools { position:absolute;left:12px;top:10px;z-index:5;display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid var(--blue);border-radius:var(--radius);background:var(--panel);color:var(--paper);font-size:12px; }
+.billboard-placement-tools[hidden] { display:none; }
 .billboard-placement { position:absolute; }
 .billboard-placement.direct-drag { outline:1px dashed #7ce0ff;pointer-events:auto;touch-action:none;cursor:grab; }
 .billboard-placement.direct-drag:active { cursor:grabbing; }

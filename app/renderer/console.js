@@ -6,6 +6,7 @@ import { FrontOverlayOcclusion } from './front-occlusion.mjs';
 import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './occlusion-state.mjs';
 import { BillboardConsole } from './billboard.mjs';
 import { logoMarkup,LOGO_WIDTH,LOGO_HEIGHT } from './openmeet-logo.mjs';
+import { SetupDialog } from './setup-dialog.mjs';
 import { LiveFollow } from './live-follow.mjs';
 import { sourceLabel, sourceChoices, replayCameras, replayHeatKey, replayReferenceTiming, replayStartList } from './replay-sources.mjs';
 
@@ -561,7 +562,7 @@ async function startCameraSetup() {
   const source={...cur()};if(source.asset)attachAsset(source,source.asset);ensureStrip(source);
   if(!S.cameraSetup) S.cameraSetup={previousView:{...S.view},previousSelection:{lane:S.selLane,col:S.selCol},mode:'alignment'};
   const setup=S.cameraSetup;
-  S.tab='alignment';
+  S.tab='run';
   setup.heat={...source,preview:true,state:'running',marks:{},status:{},proposals:[],img:null,stripTiles:[],recvCols:0,liveCol:-1,nCols:1,
     tOpen:source.asset?.primaryMeta.first_column_race_time_s||0,tClose:0,tNow:0,startPerf:performance.now(),startTOD:null,startCorrection:0,frontRec:null};
   setup.sample=source.sampleStrip||source.img;setup.starting=true;setup.live=false;setup.id=null;setup.failed=false;
@@ -824,13 +825,12 @@ const TABS = [['run', 'Run'], ['events', 'Meet'], ['alignment', 'Camera setup'],
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
-    const b = h_('button', 'tab' + (S.tab === k ? ' on' : ''), label);
-    b.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping)||(k==='alignment'&&!!runningHeat());
-    if(k==='alignment'&&!!runningHeat())b.title='Stop race capture before entering camera alignment';
+    const b = h_('button', 'tab' + (S.tab === k || k==='alignment'&&S.cameraSetup&&S.tab==='run' ? ' on' : ''), label);
+    b.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping);
+    if(k!=='run'){b.setAttribute('aria-haspopup','dialog');b.setAttribute('aria-expanded',String(S.tab===k));}
     b.onclick = async () => {
       S.billboardPanel=false;
-      if(k==='alignment'){if(!S.cameraSetup)await startCameraSetup();else {S.tab=k;renderUI();}return;}
-      if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;}
+      if(k==='run'){S.billboardPlacing=false;if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;}}
       S.tab=k;renderUI();
     };
     n.append(b);
@@ -1284,15 +1284,25 @@ function renderMeetNavigator(body) {
 
 function renderDrawer() {
   const d = $('#drawer');
-  $('#drawerClose').textContent=S.billboardPanel?'Done':'Back to race';
-  d.classList.toggle('open', !!S.billboardPanel || S.tab !== 'run' && S.tab !== 'alignment');
+  $('#drawerClose').textContent='Done';
+  setupDialog.dialog.dataset.surface=S.billboardPanel?'billboards':S.tab;
+  setupDialog.updateLive(runningHeat(),!!S.cameraSetup?.live);
+  d.classList.toggle('open', !!S.billboardPanel || S.tab !== 'run');
   const body=$('#drawerBody');body.classList.toggle('billboardbody',!!S.billboardPanel);
   if(S.billboardPanel){$('#drawerTitle').textContent='Camera setup · Billboards';body.classList.remove('boardbody');billboards.render(body);return;}
-  if (S.tab === 'run' || S.tab === 'alignment') return;
+  if (S.tab === 'run') return;
   $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)[1];
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
+  if(S.tab==='alignment'){
+    body.innerHTML='<div class="card"><h3>Camera views</h3><div id="cameraSetupRoles"></div></div><div class="card"><h3>Alignment & overlays</h3><p>Align the finish line and position overlays on the camera image.</p><p><button id="openAlignment" class="btn primary">Open alignment view</button> <button id="openBillboards" class="btn">Billboards…</button></p><p id="alignmentAvailability" class="dimtext"></p></div>';
+    renderCameraRoles(body.querySelector('#cameraSetupRoles'));
+    const align=body.querySelector('#openAlignment');align.disabled=!!runningHeat();align.textContent=S.cameraSetup?'Return to camera image':'Open alignment view';
+    body.querySelector('#alignmentAvailability').textContent=runningHeat()?'Alignment is available after race capture stops. Designs can still be edited.':S.cameraSetup?.live?'Camera preview continues while this dialog is open.':'';
+    align.onclick=async()=>{if(S.cameraSetup){S.tab='run';renderUI();}else await startCameraSetup();};
+    body.querySelector('#openBillboards').onclick=()=>{S.billboardPanel=true;renderUI();};return;
+  }
   if (S.tab === 'events') { renderMeetNavigator(body); return; }
   if (S.tab === 'starts') { renderStarts(body); return; }
   if (S.tab === 'network') {
@@ -2474,10 +2484,13 @@ function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache
   return h[cache]={key,canvas,c0:v.c0};
 }
 
-const billboards=new BillboardConsole({bridge:OM,store,toast,changed:invalidate,context:()=>{
+const billboards=new BillboardConsole({bridge:OM,store,toast,changed:invalidate,
+  place:()=>{S.billboardPlacing=true;S.billboardPanel=false;S.tab='run';renderUI();},
+  finishPlacing:()=>{S.billboardPlacing=false;renderUI();},
+  open:()=>{S.billboardPanel=true;renderUI();},context:()=>{
   const h=viewHeat(),v=S.view,period=periodOf(h),width=scanW(),height=scanH();
   const center=billboardSourcePoint(width/2,height/2);
-  return {scope:`${S.meet?.dir||'sample'}:${h.asset?.mainCameraId||'primary'}`,meetName:meetDisplayName(),rows:rowsOf(h),period,timeOrigin:h.tOpen,count:h.nCols,
+  return {scope:`${S.meet?.dir||'sample'}:${h.asset?.mainCameraId||'primary'}`,placing:!!S.billboardPlacing,meetName:meetDisplayName(),rows:rowsOf(h),period,timeOrigin:h.tOpen,count:h.nCols,
     centerTime:center.time,centerRow:center.row,visibleDuration:width/v.zx*period,visibleRows:height/v.zy};
 }});
 function billboardSourcePoint(x,y){const h=viewHeat(),v=S.view;return {time:h.tOpen+toOriginal(h,v.c0+unflipX(x)/v.zx)*periodOf(h),row:v.r0+y/v.zy};}
@@ -3024,7 +3037,9 @@ window.addEventListener('keydown', e => {
     renderUI();
   }
 });
-$('#drawerClose').onclick = () => { if(S.billboardPanel){S.billboardPanel=false;if(S.cameraSetup?.mode==='billboards')S.cameraSetup.mode='overlays';}else S.tab='run';renderUI(); };
+function closeSetupDialog(){S.billboardPanel=false;S.tab='run';renderUI();}
+const setupDialog=new SetupDialog({drawer:$('#drawer'),onDismiss:closeSetupDialog,onReturnLive:()=>{const h=runningHeat();closeSetupDialog();if(h&&!S.cameraSetup)go(HEATS.indexOf(h));}});
+$('#drawerClose').onclick = closeSetupDialog;
 window.addEventListener('resize', () => { renderTiles(); if (!S.view.zoomed && viewHeat().state !== 'running') fitView(); invalidate(); });
 
 // ---------------------------------------------------------------- backup line-scan input (its own view, shared time)

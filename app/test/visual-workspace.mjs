@@ -78,7 +78,7 @@ try {
  await ev(`document.querySelector('.pnl[data-p="front"] .ph button.btn').click()`);assert(await ev(`!!document.querySelector('.overlay-settings [data-key="fontSize"]')`),'Front camera lost its label size control');await closeSettings();
  const normalizedEdges=()=>ev(`(()=>{const height=document.querySelector('#scan').clientHeight-22;return [...document.querySelectorAll('.lane-divider')].map(e=>({key:e.dataset.boundary,fraction:(parseFloat(e.style.top)+6)/height}));})()`);
  const emptyBefore=await normalizedEdges();
- await click('Camera setup');await sleep(500);await click('Stop preview');await sleep(100);
+ await click('Camera setup');await click('Open alignment view');await sleep(500);await click('Stop preview');await sleep(100);
  await ev(`document.querySelector('#workspaceSplit').focus()`);await key('Home');await sleep(100);await click('Return to race');await sleep(100);
  const emptyAfter=await normalizedEdges();console.log('EMPTY_CAMERA_GEOMETRY',JSON.stringify({before:emptyBefore,after:emptyAfter}));
  assert(emptyBefore.length===emptyAfter.length&&emptyBefore.every((e,i)=>Math.abs(e.fraction-emptyAfter[i].fraction)<.002),'Empty camera geometry changed after preview/resize; race start required to repair it');

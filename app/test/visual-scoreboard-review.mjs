@@ -1,7 +1,7 @@
 // Actual Electron publisher -> normalized feed -> Classic template review workflow.
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdtemp,mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,stat} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -30,6 +30,24 @@ try{
  await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:1600,height:1000,deviceScaleFactor:1,mobile:false});
  await poll(()=>ev(`document.querySelector('#ctl .go')?.textContent.includes('Start')&&document.querySelector('#list').textContent.includes('Ada')`),'real fixture');
  await click('#ctl .go');await poll(()=>ev(`document.querySelectorAll('#props .tag.review').length===2`),'live review proposals');
+ // Every configuration dialog leaves the engine's active capture running.
+ const liveRoot=path.join(dir,'meet/openmeet/captures'),liveCapture=path.join(liveRoot,(await readdir(liveRoot))[0]);
+ const startLog=()=>ev(`window.openmeet.call('starts.list',{dir:${JSON.stringify(path.join(dir,'meet'))}})`),triggers=(await startLog()).triggers.length;
+ const timePrefix=await readFile(path.join(liveCapture,'times.f64'));
+ const modalChecks=[];await send('Emulation.setDeviceMetricsOverride',{width:1080,height:680,deviceScaleFactor:1,mobile:false});
+ for(const label of ['Meet','Camera setup','Scoreboard','Network','Meet Link','Auto-Timing','Starts','Settings']){
+   const before=(await stat(path.join(liveCapture,'columns.bin'))).size;await tab(label);await poll(()=>ev(`document.querySelector('#setupDialog').open`),label+' dialog');
+   assert.equal(await ev(`document.querySelector('#setupDialog').matches(':modal')`),true);
+   if(label==='Camera setup')assert.equal(await ev(`document.querySelector('#openAlignment').disabled`),true);
+   await poll(async()=>(await stat(path.join(liveCapture,'columns.bin'))).size>before,label+' background columns');
+   assert.equal(await ev(`document.querySelector('.state').textContent`),'RUNNING');
+   const fit=await ev(`(()=>{const r=document.querySelector('#setupDialog').getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;})()`);assert.equal(fit,true);
+   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'4',code:'Digit4'});assert.equal(await ev(`document.querySelector('#entryNumber').hidden`),true);
+   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27,nativeVirtualKeyCode:27});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27,nativeVirtualKeyCode:27});await poll(()=>ev(`!document.querySelector('#setupDialog').open`),'Escape dismisses '+label);
+   assert.equal(await ev(`document.querySelector('.state').textContent`),'RUNNING');modalChecks.push(label);
+ }
+ await send('Emulation.setDeviceMetricsOverride',{width:1600,height:1000,deviceScaleFactor:1,mobile:false});assert.equal((await startLog()).triggers.length,triggers);assert.deepEqual((await readFile(path.join(liveCapture,'times.f64'))).subarray(0,timePrefix.length),timePrefix);
+ await tab('Network');await poll(()=>ev(`document.querySelector('#setupDialog').open`),'return to live dialog');await click('.dialog-live button');await poll(()=>ev(`!document.querySelector('#setupDialog').open`),'return to live');assert.equal(await ev(`document.querySelector('.state').textContent`),'RUNNING');
  await click('#ctl .go');await poll(()=>ev(`document.querySelector('.state').textContent==='REVIEW'`),'capture stop');await tab('Scoreboard');
  const boardUrl=await poll(()=>ev(`document.querySelector('#bFrame')?.src||null`),'scoreboard');const base=new URL(boardUrl).origin;
  const getState=async()=>await(await fetch(base+'/scoreboard/state')).json();
@@ -49,5 +67,5 @@ try{
  assert.deepEqual((await rows()).map(r=>r.lane),[1,2,3,4]);assert.deepEqual(await hashes(),original);
  const final=await getState();assert.deepEqual(final.results.map(r=>r.lane),[1,2,3]);assert.equal(final.lanes.find(r=>r.lane===4).time,null);
  const shot=await send('Page.captureScreenshot',{format:'png'});await writeFile(path.join(root,'accepted.png'),Buffer.from(shot.data,'base64'));
- assert.deepEqual(errors,[]);console.log(JSON.stringify({pass:true,output:root,pending:initial.lanes.filter(l=>l.review).map(l=>({lane:l.lane,time:l.time})),initialOrder:[3,1,2,4],acceptedOrder:[1,2,3,4],rawEvidenceUnchanged:true}));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({pass:true,output:root,pending:initial.lanes.filter(l=>l.review).map(l=>({lane:l.lane,time:l.time})),initialOrder:[3,1,2,4],acceptedOrder:[1,2,3,4],rawEvidenceUnchanged:true,liveDialogs:modalChecks}));
 }finally{clearTimeout(timer);ws?.close();stop();for(const p of pending.values())clearTimeout(p.t);}
