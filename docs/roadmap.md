@@ -55,7 +55,7 @@ Explore one logical meet recording with an indexed start-trigger journal and rac
 
 ## Optional custom line-scan background
 
-Requested for a later iteration; not implemented yet.
+A first pass is available in **Camera setup → Billboards**, with a **⋯ → Billboards** shortcut on the scan: multiple repeating bands, the shared OpenMeet logo and meet name, static SVG import, and a local coding-agent asset library. See [billboard-v1.md](billboard-v1.md) for placement, masking, verification and remaining limits. Animated designs and independent real-camera accuracy/performance validation remain future work.
 
 A stationary line-scan scene repeats nearly the same column over time. Estimate that scene from empty-track columns, allowing for sensor noise, shadows, sun and cloud changes. Separate passing athletes from the baseline and optionally show a custom design behind them.
 

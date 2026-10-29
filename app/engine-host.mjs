@@ -404,7 +404,6 @@ port.on('message', async e => {
   try { port.postMessage({ id, result: await fn(params || {}) }); }
   catch (err) { port.postMessage({ id, error: err.message || String(err) }); }
 });
-emit('engine.ready', { core: !!core });
 
 // ==================== SCOREBOARD V1 (engine-owned service) ====================
 const scoreboardRoot = path.join(userData, 'scoreboards');
@@ -499,3 +498,9 @@ port.on('close', () => { closeScoreboards().catch(() => {}); });
 process.once('disconnect', () => { closeScoreboards().catch(() => {}); });
 process.once('exit', () => { for (const controller of scoreboardAgents) controller.abort(); });
 // ========================== END SCOREBOARD V1 ================================
+
+// ==================== BILLBOARD (separate display artwork library) ============
+await (await import('./billboard-host.mjs')).registerBillboards({
+  methods,userData,emit,port,enginePath:locate('engine/billboard/index.js'),
+});
+emit('engine.ready', { core: !!core });

@@ -4,6 +4,8 @@ import { SCAN_TOOLS, toolbarPreferences, moveToolbarTool } from './scan-toolbar.
 import { validateCropResult, columnProjection, displayCoordinate, originalCoordinate, visibleColumnPieces } from './column-map.mjs';
 import { FrontOverlayOcclusion } from './front-occlusion.mjs';
 import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './occlusion-state.mjs';
+import { BillboardConsole } from './billboard.mjs';
+import { logoMarkup,LOGO_WIDTH,LOGO_HEIGHT } from './openmeet-logo.mjs';
 import { LiveFollow } from './live-follow.mjs';
 import { sourceLabel, sourceChoices, replayCameras, replayHeatKey, replayReferenceTiming, replayStartList } from './replay-sources.mjs';
 
@@ -58,28 +60,9 @@ function rng(seed) {
 }
 
 // ---------------------------------------------------------------- pixel wordmark (TTP logo geometry: 7x8 glyphs, 1px gap)
-const GLYPH = {
-  O: ['.#####.', '#######', '##...##', '##...##', '##...##', '##...##', '#######', '.#####.'],
-  P: ['######.', '#######', '##...##', '#######', '######.', '##.....', '##.....', '##.....'],
-  E: ['#######', '#######', '##.....', '######.', '######.', '##.....', '#######', '#######'],
-  N: ['##...##', '###..##', '####.##', '#######', '##.####', '##..###', '##...##', '##...##'],
-  M: ['##...##', '###.###', '#######', '##.#.##', '##...##', '##...##', '##...##', '##...##'],
-  T: ['#######', '#######', '..###..', '..###..', '..###..', '..###..', '..###..', '..###..'],
-};
 function wordmark() {
-  const el = $('#wordmark'), word = 'OPENMEET', u = 2;
-  el.setAttribute('width', (word.length * 8 - 1) * u);
-  el.setAttribute('height', 8 * u);
-  el.setAttribute('viewBox', `0 0 ${word.length * 8 - 1} 8`);
-  el.setAttribute('shape-rendering', 'crispEdges');
-  let out = '';
-  [...word].forEach((ch, i) => {
-    const fill = i < 4 ? 'var(--logo)' : 'var(--mint)';
-    GLYPH[ch].forEach((row, y) => [...row].forEach((px, x) => {
-      if (px === '#') out += `<rect x="${i * 8 + x}" y="${y}" width="1" height="1" fill="${fill}"/>`;
-    }));
-  });
-  el.innerHTML = out;
+  const el=$('#wordmark');el.setAttribute('width',LOGO_WIDTH*2);el.setAttribute('height',LOGO_HEIGHT*2);
+  el.setAttribute('viewBox',`0 0 ${LOGO_WIDTH} ${LOGO_HEIGHT}`);el.setAttribute('shape-rendering','crispEdges');el.innerHTML=logoMarkup();
 }
 
 // ---------------------------------------------------------------- meet data (the meet manager's lynx.evt / .ppl / .sch)
@@ -186,6 +169,7 @@ const OM = window.openmeet || null;   // the Electron bridge; absent when this p
 const occlusionAvailability=OM?new OcclusionAvailability(()=>OM.call('occlusion.info'),()=>{S.occlusionInfo=occlusionAvailability.info;updateModelMaskStatus();invalidate();}):null;
 const windStr = h => (h.wind == null ? '—' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1) + ' m/s');
 const cur = () => HEATS[S.idx];
+function meetDisplayName(){return S.meet ? (S.meet.demo ? S.simulationSource?.name||'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet';}
 const runningHeat = () => HEATS.find(h=>h.state==='running')||null;
 const scanSourceViews=new Map();
 const viewHeat = () => S.cameraSetup?.heat || scanPresentation(cur());
@@ -600,21 +584,21 @@ async function stopCameraSetup(exit=false) {
     if(OM&&setup.id)await OM.call('preview.stop');
     setup.live=false;setup.heat.state='review';setup.heat.nCols=Math.max(1,setup.heat.recvCols||1);setup.heat.liveCol=(setup.heat.recvCols||0)-1;
     S.selCol=setup.heat.liveCol>=0?setup.heat.liveCol:null;S.hoverCol=null;
-    if(exit){S.cameraSetup=null;if(S.tab==='alignment')S.tab='run';S.view={...setup.previousView};S.selLane=setup.previousSelection.lane;S.selCol=setup.previousSelection.col;}
+    if(exit){S.billboardPanel=false;S.cameraSetup=null;if(S.tab==='alignment')S.tab='run';S.view={...setup.previousView};S.selLane=setup.previousSelection.lane;S.selCol=setup.previousSelection.col;}
   }catch(err){toast('Could not stop preview: '+err.message,true);}
   finally {setup.stopping=false;renderUI();}
 }
 function renderSetupSidebar() {
   const setup=S.cameraSetup;
-  $('#ev').innerHTML=`<div class="ev-top"><span class="kicker">CAMERA ALIGNMENT</span><span class="tag sim">${setup.heat.replaySourceType==='real'?'RECORDED REPLAY':'SIMULATOR'}</span></div><div class="ev-name">Align cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>`;
+  $('#ev').innerHTML=`<div class="ev-top"><span class="kicker">CAMERA SETUP</span><span class="tag sim">${setup.heat.replaySourceType==='real'?'RECORDED REPLAY':'SIMULATOR'}</span></div><div class="ev-name">Cameras & overlays</div><div class="ev-sub">Preview only · no race start or results</div>`;
   const ctl=$('#ctl');ctl.innerHTML='';
   renderCameraRoles(ctl);
   const stop=h_('button','btn primary wide',setup.starting?'Starting preview…':setup.live?'Stop preview':'Start preview');stop.disabled=setup.starting||setup.stopping;stop.onclick=()=>setup.live?stopCameraSetup():startCameraSetup();ctl.append(stop);
   const modes=h_('div','setup-modes wide');
-  ['alignment','overlays'].forEach(mode=>{const b=h_('button','btn sm'+(setup.mode===mode?' primary':''),mode==='alignment'?'Alignment':'Overlays');b.onclick=()=>{setup.mode=mode;renderUI();};modes.append(b);});ctl.append(modes);
+  ['alignment','overlays','billboards'].forEach(mode=>{const b=h_('button','btn sm'+(setup.mode===mode?' primary':''),mode==='alignment'?'Alignment':mode==='overlays'?'Lane overlays':'Billboards');b.onclick=()=>{setup.mode=mode;S.billboardPanel=mode==='billboards';renderUI();};modes.append(b);});ctl.append(modes);
   const done=h_('button','btn wide','Return to race');done.disabled=setup.starting||setup.stopping;done.onclick=()=>stopCameraSetup(true);ctl.append(done);
   $('#warn').innerHTML='';
-  $('#list').innerHTML=`<div class="setup-help"><p>${setup.mode==='alignment'?'Use the preview image to align the finish-line view. Pan and zoom as needed.':'Open Lanes ▾ on an available camera to place and style your lane guides.'}</p><p>You can stop the preview and keep the image visible while adjusting overlays.</p><p class="dimtext">${setup.heat.replaySourceType==='real'?'This is recorded camera input. Live camera drivers are planned.':'This build uses simulated camera input. Real camera drivers are planned.'}</p></div>`;
+  $('#list').innerHTML=setup.mode==='billboards'?'':`<div class="setup-help"><p>${setup.mode==='alignment'?'Use the preview image to align the finish-line view. Pan and zoom as needed.':'Open Lanes ▾ on an available camera to place and style your lane guides.'}</p><p>You can stop the preview and keep the image visible while adjusting overlays.</p><p class="dimtext">${setup.heat.replaySourceType==='real'?'This is recorded camera input. Live camera drivers are planned.':'This build uses simulated camera input. Real camera drivers are planned.'}</p></div>`;
 }
 
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
@@ -836,7 +820,7 @@ function warnings(h) {
 }
 
 // ---------------------------------------------------------------- header + sidebar
-const TABS = [['run', 'Run'], ['events', 'Meet'], ['alignment', 'Camera alignment'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
+const TABS = [['run', 'Run'], ['events', 'Meet'], ['alignment', 'Camera setup'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
@@ -844,6 +828,7 @@ function renderTabs() {
     b.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping)||(k==='alignment'&&!!runningHeat());
     if(k==='alignment'&&!!runningHeat())b.title='Stop race capture before entering camera alignment';
     b.onclick = async () => {
+      S.billboardPanel=false;
       if(k==='alignment'){if(!S.cameraSetup)await startCameraSetup();else {S.tab=k;renderUI();}return;}
       if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;}
       S.tab=k;renderUI();
@@ -1299,10 +1284,12 @@ function renderMeetNavigator(body) {
 
 function renderDrawer() {
   const d = $('#drawer');
-  d.classList.toggle('open', S.tab !== 'run' && S.tab !== 'alignment');
+  $('#drawerClose').textContent=S.billboardPanel?'Done':'Back to race';
+  d.classList.toggle('open', !!S.billboardPanel || S.tab !== 'run' && S.tab !== 'alignment');
+  const body=$('#drawerBody');body.classList.toggle('billboardbody',!!S.billboardPanel);
+  if(S.billboardPanel){$('#drawerTitle').textContent='Camera setup · Billboards';body.classList.remove('boardbody');billboards.render(body);return;}
   if (S.tab === 'run' || S.tab === 'alignment') return;
   $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)[1];
-  const body = $('#drawerBody');
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
@@ -1420,7 +1407,7 @@ function boardState() {
       place:mark?pl[a.lane]||null:null,review:!!proposal};
   });
   return {
-    meet: { name: S.meet ? (S.meet.demo ? S.simulationSource?.name||'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet', logo: null },
+    meet: { name: meetDisplayName(), logo: null },
     heat: { event: h.ev, round: h.rd, heat: h.ht, of: h.of, name: h.name, state: h.state },
     clock: {
       running: h.state === 'running', speed: SPEED,
@@ -1942,6 +1929,7 @@ function scanToolStates() {
     delete:{icon:ICON.clear,disabled:!!S.cameraSetup||!!S.frameEditor||!captured||S.selLane==null,action:deleteSelectedFinish},
     flip:{icon:ICON.flip,on:S.flip,disabled:false,action:()=>{S.flip=!S.flip;store.set('flip',S.flip);renderTools();}},
     lanes:{icon:ICON.lanes,on:overlayStyle('scan').enabled,disabled:false,action:anchor=>showOverlaySettings('scan',anchor)},
+    billboard:{icon:ICON.info,on:billboards.hasEnabled(),disabled:false,action:()=>{S.billboardPanel=true;renderUI();}},
     auto:{icon:ICON.auto,on:S.autoMark,disabled:!!S.cameraSetup,action:anchor=>showToolbarPopover('auto',anchor)},
     hideEmpty:{icon:ICON.zoom,when:!!h.captureId&&review&&!!(S.cropInfo?.configured||h.cropResult),label:h.hideEmpty?'Show all columns':h.cropBusy?'Finding empty spans…':'Hide empty spans',on:!!h.hideEmpty,disabled:!!h.cropBusy,action:toggleEmptyColumns},
     autoRun:{icon:ICON.auto,disabled:!review||!S.apiOnline||h.req==='pending',action:()=>requestProposals(cur())},
@@ -2104,7 +2092,7 @@ function applyMeet(parsed, fresh) {
   if (fresh) {
     S.lastLiveHeat=null;HEATS = evs.map(e => bindReplayHeat(buildHeat(specFromEvent(e, evs))));
     S.idx = 0; S.files = []; S.selLane = null; S.selCol = null;
-    const h = cur(); ensureStrip(h); if (S.autoArm) h.state = 'armed';
+    const h = cur(); rememberScanGeometry(h); ensureStrip(h); if (S.autoArm) h.state = 'armed';
     fitView(); renderUI();
     return;
   }
@@ -2486,6 +2474,38 @@ function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache
   return h[cache]={key,canvas,c0:v.c0};
 }
 
+const billboards=new BillboardConsole({bridge:OM,store,toast,changed:invalidate,context:()=>{
+  const h=viewHeat(),v=S.view,period=periodOf(h),width=scanW(),height=scanH();
+  const center=billboardSourcePoint(width/2,height/2);
+  return {scope:`${S.meet?.dir||'sample'}:${h.asset?.mainCameraId||'primary'}`,meetName:meetDisplayName(),rows:rowsOf(h),period,timeOrigin:h.tOpen,count:h.nCols,
+    centerTime:center.time,centerRow:center.row,visibleDuration:width/v.zx*period,visibleRows:height/v.zy};
+}});
+function billboardSourcePoint(x,y){const h=viewHeat(),v=S.view;return {time:h.tOpen+toOriginal(h,v.c0+unflipX(x)/v.zx)*periodOf(h),row:v.r0+y/v.zy};}
+function billboardForegroundColumns(h,x0,x1) {
+  if(!projectionOf(h))return foregroundColumns(h,x0,x1);
+  const v=S.view,d0=v.c0+unflipX(x0)/v.zx,d1=v.c0+unflipX(x1)/v.zx,source=h.displaySource,model=h.activeOcclusionMask,result=[];
+  // Query each kept footprint separately. A display pixel at a time break must
+  // never scan thousands of removed columns or mask with their hidden runners.
+  for(const piece of displayPieces(h,Math.min(d0,d1),Math.max(d0,d1))){
+    const a=source?(h.tOpen+piece.start*periodOf(h)-source.t)/source.p:piece.start,b=source?(h.tOpen+piece.end*periodOf(h)-source.t)/source.p:piece.end;
+    const limit=source?source.w-1:h.state==='running'?h.liveCol:h.nCols-1;
+    for(let c=Math.max(0,Math.floor(a)-1);c<=Math.min(limit,Math.ceil(b)+1);c++){
+      const mask=model?.bits||source?.mask||h.sampleForeground||h.foregroundTiles?.[Math.floor(c/STRIP_TILE)];
+      if(mask)result.push({mask,column:model||source||h.sampleForeground?c:c%STRIP_TILE});
+    }
+  }
+  return result;
+}
+function drawBillboard(g,h,W,Hi,captured) {
+  const v=S.view,previous=h.activeOcclusionMask,method=overlayStyle('scan').occlusionMethod;
+  h.activeOcclusionMask=method==='learned'?learnedMask(h):null;
+  if(billboards.hasEnabled()&&captured){sampleForeground(h);maybeLearnedMask(h,{enabled:true,behindRunners:true,occlusionMethod:method});}
+  billboards.paint(g,{...v,width:W,height:Hi,rows:rowsOf(h),period:periodOf(h),timeOrigin:h.tOpen,count:h.nCols,
+    map:projectionOf(h),flip:S.flip,maskLast:h.recvCols||h.nCols,revision:[h.captureId,h.ev,h.rd,h.ht,h.asset?.primary,h.displaySource?.id,h.recvCols,h.activeOcclusionMask?.requestId],last:captured?(h.state==='running'?h.liveCol+1:h.nCols):0,framing:!!S.frameEditor,
+    maskStatus:h.activeOcclusionMask?'Learned preview ready':method==='simple'?'Simple':h.state==='running'?'Simple while recording':'Simple fallback'},(a,z)=>billboardForegroundColumns(h,a,z));
+  h.activeOcclusionMask=previous;
+}
+
 function drawLaneGuides(g,h,W,Hi) {
   const v=S.view;
   // Decorative lane guides can be adjusted without changing the model's lane geometry.
@@ -2539,6 +2559,7 @@ function drawScan() {
   renderHeightFrame(h);
   renderLaneGutter(h);
   if (!captured) {
+    drawBillboard(g,h,W,Hi,false);
     drawLaneGuides(g,h,W,Hi);
     g.fillStyle = TK.dim; g.font = '600 13px ' + TK.sans; g.textAlign = 'center';
     const msg = { loaded: 'Heat loaded. Arm to receive the start.', armed: 'Armed. The capture streams here after the start.', running: 'Running. Capture opens as the field reaches the line.' }[h.state];
@@ -2561,6 +2582,7 @@ function drawScan() {
     }else drawStrip(g,h,piece.start,v.r0,piece.end-piece.start,Hi/v.zy,dx,0,dw,Hi);
   }
   g.restore();
+  drawBillboard(g,h,W,Hi,true);
   drawTimeBreaks(g,h,W,Hi,c=>unflipX((c-v.c0)*v.zx));
   if (live) { g.fillStyle = TK.blue; g.fillRect(xOf(last) - 1, 0, 2, Hi); }
 
@@ -2952,7 +2974,7 @@ scanCv.addEventListener('dblclick', e => {
 });
 window.addEventListener('keydown', e => {
   if(S.frameEditor){if(e.key==='Escape'){e.preventDefault();finishHeightFrame();}return;}
-  if(e.target instanceof Element&&e.target.closest('#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings,.scan-tool-menu,.scan-toolbar-dialog'))return;
+  if(e.target instanceof Element&&e.target.closest('#billboardEditor,#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings,.scan-tool-menu,.scan-toolbar-dialog'))return;
   if (document.querySelector('.race-reset-dialog[open],.scan-toolbar-dialog[open]')) return;
   if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable=true]')) return;
   if (S.cameraSetup)return;
@@ -3002,7 +3024,7 @@ window.addEventListener('keydown', e => {
     renderUI();
   }
 });
-$('#drawerClose').onclick = () => { S.tab = 'run'; renderUI(); };
+$('#drawerClose').onclick = () => { if(S.billboardPanel){S.billboardPanel=false;if(S.cameraSetup?.mode==='billboards')S.cameraSetup.mode='overlays';}else S.tab='run';renderUI(); };
 window.addEventListener('resize', () => { renderTiles(); if (!S.view.zoomed && viewHeat().state !== 'running') fitView(); invalidate(); });
 
 // ---------------------------------------------------------------- backup line-scan input (its own view, shared time)

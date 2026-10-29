@@ -8,6 +8,7 @@ export const SCAN_TOOLS = [
   { id:'delete', label:'Delete mark', group:'Marking', shortcut:'Delete', help:'Remove the selected finish. The original recording is retained.' },
   { id:'flip', label:'Flip', group:'View', help:'Mirror the scan. Column timestamps and results stay the same.' },
   { id:'lanes', label:'Lanes', group:'View', help:'Show and style lane overlays. Left-column dividers are always draggable.' },
+  { id:'billboard', label:'Billboards', group:'View', help:'Manage repeating logo and meet-name bands behind runners. Add, edit or remove each billboard.' },
   { id:'auto', label:'Auto timing', group:'Timing', help:'Turn automatic suggestions on or off, or request suggestions now.' },
   { id:'hideEmpty', label:'Hide empty spans', group:'View', help:'Hide empty time spans using the private cropper. Original columns remain stored; breaks mark skipped time.' },
   { id:'autoRun', label:'Auto-mark', group:'Timing', help:'Request finish suggestions now for the captured race.' },

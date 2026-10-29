@@ -31,6 +31,7 @@ The Meta agent and the custom finish model have different roles: the custom mode
 - [Draft finish-model API contract](docs/finish-model-api.md)
 - [First prototype roadmap](docs/roadmap.md)
 - [Three-minute demo script](docs/demo-script.md)
+- [Line-scan billboards: text, logos and AI artwork](docs/billboard-v1.md)
 
 ## Development setup
 

@@ -48,11 +48,11 @@ try {
  const heatCount=readdirSync(meetDir).filter(name=>/^heat-\d+$/.test(name)).length;
  for(let heat=1;heat<=heatCount;heat++){
   for(const camera of ['primary','backup']){
-   await click('Camera alignment');await sleep(150);
+   await click('Camera setup');await sleep(150);
    if(!await ev(`!!document.querySelector('select[aria-label="Main line-scan"]')`))throw Error('Demo cameras were not restored after reopening');
    const current=await ev(`document.querySelector('select[aria-label="Main line-scan"]').value`);
    if(current!==camera)await ev(`(()=>{const s=document.querySelector('select[aria-label="Main line-scan"]');s.value=${JSON.stringify(camera)};s.dispatchEvent(new Event('change'));})()`);
-   await sleep(3000);await click('Overlays');await click('Stop preview');await sleep(150);
+   await sleep(3000);await click('Lane overlays');await click('Stop preview');await sleep(150);
    await ev(`(()=>{[...document.querySelectorAll('#tools button')].find(b=>/Lanes/.test(b.textContent)).click();const m=document.querySelector('.overlay-settings');for(const k of ['enabled','behindRunners']){const e=m.querySelector('[data-key='+k+']');if(!e.checked)e.click();}for(const[k,value]of[['lineColor','#00ff00'],['opacity',1],['thickness',1]]){const e=m.querySelector('[data-key='+k+']');e.value=value;e.dispatchEvent(new Event('input'));}m.querySelector('[data-close]').click();})()`);await sleep(100);
    await shot(`mask-heat-${heat}-${camera}`);
    await click('Flip');await sleep(80);await shot(`mask-heat-${heat}-${camera}-flipped`);await click('Flip');
