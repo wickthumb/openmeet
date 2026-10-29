@@ -171,6 +171,32 @@ Each adapter advertises its capabilities instead of relying on a camera's brand:
 
 **Storage and starts.** Original evidence is append-only. Zoom, overlays and derived scans are reversible recipes; no view operation removes pixels. Start triggers remain meet-wide events and can be reassigned without rewriting source times. Continuous all-day recording and compression are under separate research; no storage ceiling is promised. Hardware packet details, discovery and controls will be bound to these contracts once the camera/scoreboard integration breakdown is available.
 
+### Camera identity, positions and race views (planned)
+
+The current prototype records one active replay stream. The following is the target architecture, not a claim that all-camera recording or location-aware race assignment is already implemented.
+
+**A camera is a device, not a permanent primary or backup.** Keep these concepts separate:
+
+| Concept | Meaning |
+| --- | --- |
+| Camera | Stable source/device identity, readable name and supported sensor modes. |
+| Finish location | A named physical finish plane, such as Home finish or Backstraight finish. A distance label is optional; event distance alone does not identify the finish when races change direction. |
+| Camera setup revision | That device's location, inside/outside/custom side, orientation, calibration and native geometry during a particular time interval. |
+| Heat assignment | The finish location, start reference and timing source used for a particular race. |
+| Review view | The image currently displayed, plus any additional views. Selecting a view does not turn other recorders off. |
+
+For example, two devices at Home finish may provide inside and outside views of the same finish. A third at Backstraight finish may be the timing source for a different heat. It is not a backup for the Home finish race merely because it is the second available camera. An operator can use a single device at both locations at different times.
+
+**Camera setup UI.** Start with an inventory showing each camera's name, current location/side and actual recording/connection status. Selecting an item reveals its setup, alignment and **Move camera** action. Keep technical resolution/clock details available on demand. The heat's finish-location choice determines which cameras are relevant; use plain location names rather than asking a novice to configure track coordinates. Saved race setups can handle normal and reverse-direction sessions without silently guessing from “100 m” or “200 m.”
+
+**During the race.** A clear main-view selector chooses what the operator is examining. Additional views at the same finish are offered first; other finish locations remain separately labelled. Linked zoom and synchronized timing comparisons require both the same finish plane and a verified time relationship. A different view may provide manual review evidence, with source/setup provenance, without silently changing already accepted marks or the source used by automatic timing. If no ready camera covers the heat's selected finish, show that problem clearly while continuing to retain available recordings.
+
+**Recording policy.** The intended default records every connected/enabled camera while meet recording is active, including cameras at finish locations not used by the current heat. View selection, navigating older heats and opening setup dialogs are independent of those recorders. Continuous capture between races belongs to the separate full-day recording work. Show actual per-camera recorder health and any gaps; do not infer “all cameras recording” from a selected view or connected socket. Independent native clocks and start observations need a verified relationship before times can be compared. A shared logical start journal references each camera's clock mapping rather than inventing a different official start for every recorder.
+
+**Moving a camera.** Preserve its device ID and end the previous setup revision at the change. Mark it Moving/Needs alignment, assign its new finish location/side, restore or adjust calibration for that position, then make the new revision available for following heats. Recording can continue where the transport allows; disconnections and mode changes remain explicit gaps/epochs. A reported setup change during a race creates a setup-change review flag rather than altering earlier frames or pretending they came from the new position. Overlay/lane calibration and orientation belong to the setup revision, so moving to the opposite side does not reuse the wrong lane geometry.
+
+The engine needs independent recorder sessions per source, durable setup-revision snapshots and race windows into those recordings. Throughput and storage estimates must include every camera's height, rate and channel depth. Recording extra views preserves evidence; it does not establish clock synchronization or guarantee that a model can time them.
+
 ## 5. Screen layout
 
 The replica is in `docs/mockup/`.

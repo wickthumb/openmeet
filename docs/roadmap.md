@@ -80,3 +80,27 @@ Planned for a later integration phase; see [the hardware setup blueprint](bluepr
 - [ ] Verify camera discovery, received images, stored capture and start/timestamp alignment as separate capabilities.
 - [ ] Save working profiles and source-backed setup instructions for reuse.
 - [ ] Keep unknown equipment unverified until its adapter passes actual hardware tests; provide a specification/draft path for adding support.
+
+## Camera inventory, movable setups and recording all views
+
+Planned engine/UI work; the current replay engine records one active stream. See [camera identity and race views](blueprint.md#camera-identity-positions-and-race-views-planned).
+
+- [ ] Give every device a stable identity, independent of main/additional viewing roles.
+- [ ] Define named finish locations with inside/outside or custom camera positions. Bind the heat to its finish location instead of deriving it from event distance.
+- [ ] Keep a versioned, timestamped placement/calibration history when a camera moves, changes direction or changes sensor mode. Earlier recordings retain their original setup.
+- [ ] Record every connected/enabled camera during meet recording, regardless of the selected view or the finish location currently in use. Report each recorder's actual state, gaps and clock health.
+- [ ] Select the heat's timing camera separately from other review views. Offer cameras at the same finish first; label other finish locations clearly and avoid automatic timing comparisons across unrelated finishes.
+- [ ] Support a single camera moved between races: select its new location, align/check it, and use that setup for following heats without rewriting earlier work. Mark mid-race setup changes for review while preserving recording.
+- [ ] Verify shared starts, per-camera clocks, simultaneous throughput and aggregate storage before claiming reliable multi-camera timing or full-day capacity.
+
+## Optional meet records and athlete images
+
+Planned work, not implemented. Keep **Meet → Records** optional: an operator can run the meet without configuring records.
+
+- [ ] Enter existing records by event/category, with optional holder and date.
+- [ ] Flag a potential record during finish review, then let the operator confirm it against the accepted result and any applicable eligibility conditions before updating the record.
+- [ ] Optionally display **Meet record** in that athlete's lane, behind the runner using the occlusion layer. This is a lane-specific celebration rather than a repeating billboard.
+- [ ] Create a separate athlete image/meet keepsake with the record annotation, athlete, official mark and meet context. A later hosted-results feature could attach it to the result.
+- [ ] Preserve the original recording, timestamps and timing evidence. Decoration and image export remain optional derivatives; proprietary masks stay in their separate service.
+
+Across Meet, Records and the other setup dialogs, organize around the operator's next task: a clear default path, plain labels, and optional or advanced tools revealed when needed. Keep live timing controls immediately available to experienced coaches without making first-time operators read technical settings.
