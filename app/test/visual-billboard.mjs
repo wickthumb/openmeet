@@ -67,12 +67,14 @@ try{
  const info=await ev(`(()=>{const c=document.querySelector('#scan');return {width:c.width,height:c.height,dpr:devicePixelRatio};})()`);
  let changed=0,protectedRed=0;for(let i=0;i<original.length;i+=4){if(original[i]===240&&original[i+1]===30&&original[i+2]===30){assert.deepEqual(decorated.slice(i,i+4),original.slice(i,i+4));protectedRed++;}if(original[i]!==decorated[i]||original[i+1]!==decorated[i+1])changed++;}
  assert.ok(changed>1000);assert.ok(protectedRed>50);await shot('03-masked-lanes-off');
+ assert.equal(await ev(`document.querySelector('#billboardEditor').hidden&&document.querySelector('#billboardEditor').children.length===0`),true);
  await panel();await set('billboard-enabled',false);await tab('Run');await delay(100);assert.deepEqual(await pixels(),original);
  // Position handles are independent of timing-marker drag handlers.
  await panel();await set('billboard-enabled',true);await set('billboard-time',.06);await set('billboard-duration',.2);await set('billboard-row',25);await set('billboard-height',40);await click('#billboard-place');await poll(()=>ev(`!document.querySelector('#setupDialog').open`),'placement outside dialog');await delay(100);assert.equal(await ev(`!!document.querySelector('#billboard-edit')`),false);
  let a=await config();await drag('.billboard-placement.direct-drag',35,10);let z=await config();assert.ok(z.time>a.time);assert.ok(z.row>a.row);
  await ev(`document.querySelector('.billboard-move').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));`);await delay(80);assert.ok((await config()).row>z.row);
  a=await config();await drag('.billboard-resize',30,10);z=await config();assert.ok(z.duration>a.duration);assert.ok(z.height>a.height);
+ await click('[data-placement="done"]');await delay(80);assert.equal(await ev(`document.querySelector('#billboardEditor').hidden&&document.querySelector('#billboardEditor').children.length===0`),true);
  // Flip and zoom reproject placement while the saved source coordinates stay fixed.
  const saved=await config();await tab('Run');await tool('flip');await delay(100);assert.deepEqual(await config(),saved);
  await ev(`(()=>{const c=document.querySelector('#scan'),r=c.getBoundingClientRect();c.dispatchEvent(new WheelEvent('wheel',{clientX:r.x+r.width/2,clientY:r.y+20,deltaY:-90,ctrlKey:true,bubbles:true,cancelable:true}));})()`);await delay(100);assert.deepEqual(await config(),saved);await shot('04-flip-zoom-placement');
@@ -99,9 +101,9 @@ try{
  assert.deepEqual(await Promise.all(['columns.bin','times.f64'].map(hash)),before);assert.equal(createHash('sha256').update(await readFile(input)).digest('hex'),modelInputBefore);
  await ev(`document.querySelector('#billboard-ai').open=true`);await click('#billboard-delete-art');await click('#billboard-delete-art');await poll(async()=>(await config()).name==='','artwork deletion');
  const final=await config();await ev(`document.querySelector('[data-billboard="${final.id}"] [aria-label^="Remove"]').click()`);assert.equal((await collection()).items.length,0);await tab('Run');await panel();assert.equal((await collection()).items.length,0);
- await tab('Camera setup');await click('#openAlignment');await poll(()=>ev(`document.querySelector('#ctl').textContent.includes('Stop preview')`),'camera setup preview');await ev(`[...document.querySelectorAll('.setup-modes button')].find(b=>b.textContent==='Billboards').click()`);assert.equal(await ev(`document.querySelector('#drawer').classList.contains('open')`),true);assert.equal((await collection()).items.length,0);await click('#drawerClose');await tab('Run');assert.equal((await readdir(captures)).length,1);assert.equal(await ev(`document.querySelector('.state').textContent`),'REVIEW');
+ await tab('Camera setup');await click('#cameraAlign');await poll(()=>ev(`document.querySelector('#ctl').textContent.includes('Stop preview')`),'camera setup preview');await ev(`[...document.querySelectorAll('.setup-modes button')].find(b=>b.textContent==='Billboards').click()`);assert.equal(await ev(`document.querySelector('#drawer').classList.contains('open')`),true);assert.equal((await collection()).items.length,0);await click('#drawerClose');await tab('Run');assert.equal((await readdir(captures)).length,1);assert.equal(await ev(`document.querySelector('.state').textContent`),'REVIEW');
  assert.deepEqual(await savedLanePrefs(),lanePrefs);
  assert.equal(await ev(`document.querySelector('#list').innerText`),marks);assert.deepEqual(errors,[]);
  console.log(JSON.stringify({pass:true,output:root,changedPixels:changed,protectedRunnerPixels:protectedRed,sourcePixelsTimesAndModelInputUnchanged:true,actualProvidersUsed:false,canvas:info,panStats,liveMetrics}));
-}catch(error){console.error(logs.slice(-5000));throw error;}
+}catch(error){console.error(logs.slice(-5000));console.error(JSON.stringify({errors,ui:await ev('document.body.innerText').catch(()=>null)}));throw error;}
 finally{clearTimeout(timer);ws?.close();stop();for(const p of pending.values())clearTimeout(p.t);}

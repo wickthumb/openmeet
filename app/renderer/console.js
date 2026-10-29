@@ -7,6 +7,8 @@ import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './o
 import { BillboardConsole } from './billboard.mjs';
 import { logoMarkup,LOGO_WIDTH,LOGO_HEIGHT } from './openmeet-logo.mjs';
 import { SetupDialog } from './setup-dialog.mjs';
+import { CameraSetupConsole } from './camera-setup.mjs';
+import { heatCameraKey,cameraProfileToken,sameFinish,cameraViewLabel } from './camera-state.mjs';
 import { LiveFollow } from './live-follow.mjs';
 import { sourceLabel, sourceChoices, replayCameras, replayHeatKey, replayReferenceTiming, replayStartList } from './replay-sources.mjs';
 
@@ -178,7 +180,7 @@ function scanPresentation(h) {
   if(!h.asset)return h;
   const main=h.viewCameraId||h.asset.mainCameraId,comparison=h.viewCompareId||h.asset.comparisonCameraId;
   if(main===h.asset.mainCameraId&&comparison===h.asset.comparisonCameraId)return h;
-  const selected=cameraAsset(h.asset,{main,comparison}),source=scanSourceViews.get(selected.primary);
+  const selected=cameraAsset(h.asset,{main,comparison}),source=scanSourceViews.get(scanCacheKey(h,{png:selected.primary}));
   if(main!==h.asset.mainCameraId&&!source)return h;
   const p=h.presentation||(h.presentation=Object.create(h));
   p.recordingHeat=h;p.displaySource=main===h.asset.mainCameraId?null:source;p.displayMeta=p.displaySource?.meta||h.asset.primaryMeta;
@@ -186,15 +188,16 @@ function scanPresentation(h) {
   p.asset={...h.asset,mainCameraId:selected.mainCameraId,mainCameraLabel:selected.mainCameraLabel,comparisonCameraId:selected.comparisonCameraId,comparisonCameraLabel:selected.comparisonCameraLabel,backup:selected.backup,backupMeta:selected.backupMeta};
   return p;
 }
+const scanCacheKey=(h,descriptor)=>`${h.captureId||'source'}:${descriptor.png}`;
 async function loadScanSource(h,descriptor) {
-  let source=scanSourceViews.get(descriptor.png);
+  let source=scanSourceViews.get(scanCacheKey(h,descriptor));
   if(source){if(h.captureId&&!source.saved.has(h.captureId)){await OM.call('camera.image',{png:descriptor.png,captureId:h.captureId,includePixels:false});source.saved.add(h.captureId);}return source;}
   const image=await OM.call('camera.image',{png:descriptor.png,captureId:h.captureId}),canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
   const g=canvas.getContext('2d'),rgba=g.createImageData(image.width,image.height),channels=image.channels;
   for(let i=0;i<image.width*image.height;i++){rgba.data[i*4]=image.data[i*channels];rgba.data[i*4+1]=image.data[i*channels+(channels>2?1:0)];rgba.data[i*4+2]=image.data[i*channels+(channels>2?2:0)];rgba.data[i*4+3]=255;}g.putImageData(rgba,0,0);
   const pixels={...image,layout:'rows'},mask=new Uint8Array(Math.ceil(image.width*image.height/8));writeForegroundMask(mask,0,pixels,scanBackground(pixels));
   source={img:canvas,mask,rows:image.height,w:image.width,t:descriptor.meta.first_column_race_time_s,p:descriptor.meta.column_period_s,meta:descriptor.meta,id:descriptor.id,label:descriptor.label,saved:new Set(h.captureId?[h.captureId]:[])};
-  scanSourceViews.set(descriptor.png,source);return source;
+  scanSourceViews.set(scanCacheKey(h,descriptor),source);return source;
 }
 async function chooseScanView(role,id) {
   const h=cur(),scans=h.asset?.lineScans;if(!scans?.some(s=>s.id===id)||h.viewLoading)return;
@@ -203,7 +206,6 @@ async function chooseScanView(role,id) {
   const selected=cameraAsset(h.asset,{main,comparison:main===comparison?previous.asset.mainCameraId:comparison});
   overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;
   if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;await chooseScanView(role,id);await startCameraSetup();return;}
-  if(['loaded','armed'].includes(h.state)){store.set(cameraRoleKey(),{main:selected.mainCameraId,comparison:selected.comparisonCameraId});for(const heat of HEATS)if(heat.asset&&['loaded','armed'].includes(heat.state)){heat.viewCameraId=null;heat.viewCompareId=null;attachAsset(heat,heat.asset);}ensureStrip(h);fitView();renderUI();return;}
   h.viewLoading=true;renderTools();
   try {
     for(const cameraId of [selected.mainCameraId,selected.comparisonCameraId])if(cameraId&&cameraId!==h.asset.mainCameraId)await loadScanSource(h,scans.find(s=>s.id===cameraId));
@@ -222,9 +224,9 @@ function showSourceMenu(role,anchor) {
   const close=(restore=true)=>{menu.remove();window.removeEventListener('pointerdown',outside);anchor.setAttribute('aria-expanded','false');if(sourceMenu===menu)sourceMenu=null;if(restore&&anchor.isConnected)anchor.focus();};
   const outside=e=>{if(!menu.contains(e.target)&&!anchor.contains(e.target))close(false);};menu.close=close;
   anchor.setAttribute('aria-expanded','true');
-  for(const source of scans){
+  for(const source of [...scans].sort((a,b)=>Number(!cameraPairCompatible(h,h.asset.mainCameraId,a.id))-Number(!cameraPairCompatible(h,h.asset.mainCameraId,b.id)))){
     if(role==='comparison'&&source.id===h.asset.mainCameraId)continue;
-    const b=h_('button','',source.label);b.setAttribute('role','menuitemradio');
+    const b=h_('button','',cameraLabel(h,source.id));b.setAttribute('role','menuitemradio');
     b.setAttribute('aria-checked',String(source.id===(role==='main'?h.asset.mainCameraId:h.asset.comparisonCameraId)));
     b.onclick=()=>{close();chooseScanView(role,source.id);};menu.append(b);
   }
@@ -294,8 +296,8 @@ const laneTop = j => 168 + 302 * Math.pow(j / 8, 0.92);            // lane bound
 const laneFeet = k => (laneTop(k - 1) + laneTop(k)) / 2;
 const laneHt = k => 95 + (k - 1) * 7.5;                             // runner height in rows
 const rowsOf = h => h.rows || h.asset?.primarySize?.height || h.asset?.primaryMeta?.rows || (h.asset && store.get(scanGeometryKey(h.asset.mainCameraId), {}).rows) || IMG_H;
-function scanGeometryKey(camera='primary') { return `camera-geometry:${S.meet?.dir || 'sample'}:${camera}`; }
-function scanFrameKey(h=viewHeat(),camera=h.asset?.mainCameraId||'simulated') { return `scan-framing:${S.meet?.dir||'sample'}:${camera}`; }
+function scanGeometryKey(camera='primary',h=viewHeat()) { return `camera-geometry:${S.meet?.dir || 'sample'}:${cameraProfileToken(S.cameraConfig,h,camera)}`; }
+function scanFrameKey(h=viewHeat(),camera=h.asset?.mainCameraId||'simulated') { return `scan-framing:${S.meet?.dir||'sample'}:${cameraProfileToken(S.cameraConfig,h,camera)}`; }
 function cameraFrame(h,camera) {
   const value=store.get(scanFrameKey(h,camera),null),top=Number(value?.top),bottom=Number(value?.bottom);
   return value&&Number.isFinite(top)&&Number.isFinite(bottom)&&top>=0&&bottom<=1&&bottom-top>=0.049999?{top,bottom}:{top:0,bottom:1};
@@ -318,7 +320,7 @@ function toggleHeightFrame() {
   requestAnimationFrame(()=>document.querySelector('#scanHeightEditor [data-edge="top"]')?.focus({preventScroll:true}));
 }
 function rememberScanGeometry(h, observed={}, persist=true) {
-  const camera=h.asset?.mainCameraId || 'simulated',key=scanGeometryKey(camera),previous=store.get(key,{});
+  const camera=h.asset?.mainCameraId || 'simulated',key=scanGeometryKey(camera,h),previous=store.get(key,{});
   const rows=Number.isInteger(observed.rows)&&observed.rows>0?observed.rows:rowsOf(h);
   let bands=h.laneRows;
   if(bands&&h.rows&&h.rows!==rows)bands=bands.map(b=>({...b,top:b.top*rows/h.rows,bottom:b.bottom*rows/h.rows}));
@@ -559,7 +561,7 @@ function requestProposals(h) {
 // Camera setup preview is independent of the official heat and its start journal.
 async function startCameraSetup() {
   if(runningHeat()||S.sourceChanging||S.cameraSetup?.starting||!replayCameras(cur()).primary)return;
-  const source={...cur()};if(source.asset)attachAsset(source,source.asset);ensureStrip(source);
+  const source={...cur(),...scanPresentation(cur()),recordingHeat:null,displaySource:null,cameraSetups:null,cameraLocations:null,captureId:null};if(source.asset)attachAsset(source,source.asset,{main:source.asset.mainCameraId,comparison:source.asset.comparisonCameraId});ensureStrip(source);
   if(!S.cameraSetup) S.cameraSetup={previousView:{...S.view},previousSelection:{lane:S.selLane,col:S.selCol},mode:'alignment'};
   const setup=S.cameraSetup;
   S.tab='run';
@@ -617,10 +619,13 @@ function go(i) {
 }
 function arm() { if(S.cameraSetup)return; const h = cur(); if (h.state !== 'loaded') return; ensureStrip(h); h.state = 'armed'; renderUI(); }
 function disarm() { const h = cur(); if (h.state === 'armed') { h.state = 'loaded'; renderUI(); } }
-function fire() {
+async function fire() {
   if(S.cameraSetup||S.sourceChanging||!replayCameras(cur()).primary)return;
   const h = cur();
-  if (h.state !== 'armed'||runningHeat()) return;
+  if (h.state !== 'armed'||runningHeat()||h.starting) return;
+  if(h.asset&&OM&&!S.cameraConfig){h.starting=true;await cameraSetupConsole.load();h.starting=false;if(!S.cameraConfig){toast('Camera configuration could not load. Capture has not started.',true);return;}}
+  if(h!==cur()||h.state!=='armed'||runningHeat()||S.cameraSetup||S.sourceChanging)return;
+  h.cameraSetups=structuredClone(S.cameraConfig?.setups||{});h.cameraLocations=structuredClone(S.cameraConfig?.locations||[]);
   S.lastLiveHeat=h;h.runVersion = (h.runVersion || 0) + 1;h.hideEmpty=false;h.cropResult=null;h.cropProjection=null;
   h.stopMode=S.autoStop; h.stopAfter=S.stopAfter; h.stopping=false;
   h.state = 'running'; h.startPerf = performance.now(); h.startTOD = new Date(); h.liveCol = -1; h.tNow = 0;
@@ -632,10 +637,11 @@ function fire() {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
     OM.call('capture.start', {
       timeoutSeconds:h.stopMode==='timeout'?h.stopAfter:null,
+      cameraSources:h.asset.lineScans.map(s=>({id:s.id,png:s.png,label:s.label})),
       key: `${h.ev}-${h.rd}-${h.ht}`, png: h.asset.primary, sidecar: h.asset.primaryMeta, speed: SPEED, meetDir: S.meet && S.meet.dir,cameraId:h.asset.mainCameraId,cameraLabel:h.asset.mainCameraLabel,
       front: h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta, frames:h.asset.frontFrames } : null,
     })
-      .then(r => { h.captureId = r.id; h.captureDir = r.dir; if (r.trigger) { h.startReference = r.trigger; h.startCorrection = 0; h.startTOD = new Date(r.trigger.wallTimeMs); } if (r.front) h.frontRec = r.front; })
+      .then(r => { if(r.cameraSetups)h.cameraSetups=r.cameraSetups;else if(r.cameras)h.cameraSetups=Object.fromEntries(r.cameras.filter(c=>c.setup).map(c=>[c.id,c.setup]));if(r.cameras)S.cameraRecorders={captureId:r.id,cameras:r.cameras};h.captureId = r.id; h.captureDir = r.dir; if (r.trigger) { h.startReference = r.trigger; h.startCorrection = 0; h.startTOD = new Date(r.trigger.wallTimeMs); } if (r.front) h.frontRec = r.front; })
       .catch(err => { S.pendingCapture = null; h.state = 'armed'; toast('The camera did not start: ' + err.message, true); renderUI(); });
   }
   if (!h.asset && OM && S.meet) {
@@ -662,7 +668,7 @@ function prepareRestart(h) {
   h.attemptNumber ||= attempts.indexOf(h)+1;
   const next={...h,attemptNumber:attempts.length+1,state:'armed',marks:{},status:{},proposals:null,req:'idle',img:null,
     stripTiles:null,recvCols:0,liveCol:-1,tNow:0,startPerf:0,startTOD:null,startReference:null,startTriggerId:null,startCorrection:0,
-    captureId:null,captureDir:null,frontRec:null,saves:0,lif:null,base:null,allProps:null,liveTo:null,liveBusy:false,dismissed:{},
+    captureId:null,captureDir:null,cameraSetups:null,cameraLocations:null,cameraSetupChanged:false,frontRec:null,saves:0,lif:null,base:null,allProps:null,liveTo:null,liveBusy:false,dismissed:{},
     stopping:false,restartAfterStop:false,hideEmpty:false,cropResult:null,cropProjection:null,cropBusy:false,runVersion:(h.runVersion||0)+1};
   next.athletes.forEach(a=>{if(a.pre)next.status[a.lane]=a.pre;});
   if(next.asset)attachAsset(next,next.asset);
@@ -757,7 +763,7 @@ const resolved = (h, a) => !!(h.marks[a.lane] || h.status[a.lane]);
 function lifRequest(h) {
   const d = h.startTOD, tod = d ? d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000 : null;
   return {
-    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,review:{at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0,...(h.sourceRef?{sourceRef:h.sourceRef}:{})},
+    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,review:{at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,cameraSetups:h.cameraSetups||null,cameraLocations:h.cameraLocations||null,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0,...(h.sourceRef?{sourceRef:h.sourceRef}:{})},
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
     results: h.athletes.map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
@@ -795,7 +801,8 @@ async function save() {
 const andList = a => (a.length < 2 ? String(a[0]) : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
 function warnings(h) {
   const w = [];
-  if (h.state === 'running') return [{ k: 'info', t: S.autoMark ? 'Capturing. Suggested times appear as athletes finish; you can mark as they come in.' : 'Capturing. You can mark finishes as they come in.' }];
+  if(h.cameraSetupChanged)w.push({k:'warn',t:'Camera setup changed during capture. Check this race before saving.'});
+  if (h.state === 'running') return [...w,{ k: 'info', t: S.autoMark ? 'Capturing. Suggested times appear as athletes finish; you can mark as they come in.' : 'Capturing. You can mark finishes as they come in.' }];
   if (h.state === 'loaded') return [{ k: 'info', t: 'Heat loaded from lynx.evt. Arm when the starter is ready.' }];
   if (h.state === 'armed') return [{ k: 'info', t: 'Armed. Waiting for the start signal.' }];
   if (h.req === 'offline') w.push({ k: 'warn', t: 'Auto-timing is offline. Mark finishes by hand; capture is unaffected.' });
@@ -1011,9 +1018,10 @@ function renderAcc() {
   const cameras=replayCameras(h),recorded=h.replaySourceType==='real',source=recorded?'real-recorded replay':h.asset?'TTP simulator':'built-in sim';
   const start = { loaded: 'idle', armed: 'armed', running: 'fired', review: 'fired', saved: 'fired' }[h.state];
   const cap = h.state === 'running' ? (h.liveCol >= 0 ? 'capturing' : 'waiting') : 'idle';
+  const facts=h.captureId&&S.cameraRecorders?.captureId===h.captureId?S.cameraRecorders.cameras:[];
+  const scans=h.asset?.lineScans||[];
   const rows = [
-    [cameras.primary?'ok':'', h.asset?.mainCameraLabel||'Primary line-scan', '', cameras.primary?`${source} · ${cap}`:'absent'],
-    [cameras.comparison?'ok':'', h.asset?.comparisonCameraLabel||'Backup line-scan', '', cameras.comparison?`${source} · ${cap}`:'absent'],
+    ...(scans.length?scans.map(scan=>{const fact=facts.find(c=>c.id===scan.id),state=fact?.state||'available';return [state==='error'?'warn':'ok',cameraLabel(h,scan.id),'',fact?`${state} · ${fact.columns||0} columns`:`${source} · available`];}):[['ok','Simulated line-scan','',`built-in sim · ${cap}`]]),
     [cameras.front?'ok':'', 'Front camera', '', cameras.front?(cameras.folder?'recording available':'sim · streaming'):'absent'],
     ['ok', 'Start system', '', `replay clock · ${start}`],
     h.wind == null ? ['', 'Wind gauge', '', 'not connected'] : ['ok', 'Wind gauge', '.41', ['review', 'saved'].includes(h.state) ? `sim · ${windStr(h)}` : 'sim · ready'],
@@ -1288,21 +1296,15 @@ function renderDrawer() {
   setupDialog.dialog.dataset.surface=S.billboardPanel?'billboards':S.tab;
   setupDialog.updateLive(runningHeat(),!!S.cameraSetup?.live);
   d.classList.toggle('open', !!S.billboardPanel || S.tab !== 'run');
-  const body=$('#drawerBody');body.classList.toggle('billboardbody',!!S.billboardPanel);
+  const body=$('#drawerBody');body.classList.toggle('billboardbody',!!S.billboardPanel);body.classList.toggle('camera-setup-body',S.tab==='alignment'&&!S.billboardPanel);
   if(S.billboardPanel){$('#drawerTitle').textContent='Camera setup · Billboards';body.classList.remove('boardbody');billboards.render(body);return;}
   if (S.tab === 'run') return;
   $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)[1];
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
-  if(S.tab==='alignment'){
-    body.innerHTML='<div class="card"><h3>Camera views</h3><div id="cameraSetupRoles"></div></div><div class="card"><h3>Alignment & overlays</h3><p>Align the finish line and position overlays on the camera image.</p><p><button id="openAlignment" class="btn primary">Open alignment view</button> <button id="openBillboards" class="btn">Billboards…</button></p><p id="alignmentAvailability" class="dimtext"></p></div>';
-    renderCameraRoles(body.querySelector('#cameraSetupRoles'));
-    const align=body.querySelector('#openAlignment');align.disabled=!!runningHeat();align.textContent=S.cameraSetup?'Return to camera image':'Open alignment view';
-    body.querySelector('#alignmentAvailability').textContent=runningHeat()?'Alignment is available after race capture stops. Designs can still be edited.':S.cameraSetup?.live?'Camera preview continues while this dialog is open.':'';
-    align.onclick=async()=>{if(S.cameraSetup){S.tab='run';renderUI();}else await startCameraSetup();};
-    body.querySelector('#openBillboards').onclick=()=>{S.billboardPanel=true;renderUI();};return;
-  }
+  if(S.tab==='alignment'){body.classList.add('camera-setup-body');cameraSetupConsole.render(body);return;}
+  body.classList.remove('camera-setup-body');
   if (S.tab === 'events') { renderMeetNavigator(body); return; }
   if (S.tab === 'starts') { renderStarts(body); return; }
   if (S.tab === 'network') {
@@ -1317,7 +1319,7 @@ function renderDrawer() {
       ${row('Start system',true,'replay clock')}${row('Wind gauge',h.wind!=null,h.wind==null?'absent':windStr(h))}</table>
       <p class="dimtext">Recorded input is replayed locally. Live camera drivers are planned.</p></div>
       <div class="card"><h3>Auto-timing service</h3><p>${S.apiOnline?'Enabled':'Simulated offline'}</p></div>`;
-    const camerasCard=h_('div','card');camerasCard.append(h_('h3','','Capture cameras'));renderCameraRoles(camerasCard);body.prepend(camerasCard);
+    const camerasCard=h_('div','card');camerasCard.append(h_('h3','','Camera views'));renderCameraRoles(camerasCard);body.prepend(camerasCard);
     renderSimulationSources(body);
   } else if (S.tab === 'meet') {
     const last = S.files[S.files.length - 1], entries = HEATS.reduce((n, h) => n + h.athletes.length, 0);
@@ -1537,7 +1539,7 @@ const reviewHighlightDefaults = { pendingColor:'#ffd43b', pendingOpacity:0.32, p
 const inactiveLaneDefaults = { shadeInactive:true, inactiveColor:'#98a0ab', inactiveOpacity:0.35 };
 const overlayDefaults = { fontSize:16, weight:700, thickness:1, textColor:'#ffffff', lineColor:'#6ba5e7', opacity:0.65, edit:false, positions:{} };
 function overlayKey(kind) { return `overlay:${S.meet?.dir || 'sample'}:${kind}`; }
-function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${camera}`:overlayKey(kind);}
+function cameraOverlayKey(kind,camera=viewHeat().asset?.mainCameraId||'primary'){return kind==='scan'?`${overlayKey(kind)}:${cameraProfileToken(S.cameraConfig,viewHeat(),camera)}`:overlayKey(kind);}
 function frontImageRect() {
   const h=viewHeat(),pb=$('#front').parentNode,meta=h.frontRec?.meta||h.asset?.frontMeta;
   return containedImageRect(pb.clientWidth,pb.clientHeight,meta?.width||vidEl?.videoWidth||pb.clientWidth,meta?.height||vidEl?.videoHeight||pb.clientHeight);
@@ -2038,9 +2040,9 @@ function renderTools() {
   const tools=scanToolStates(),preferences=toolbarPreferences(store.get('scanToolbar',null));
   const key=JSON.stringify([box.clientWidth,h.replaySourceType,h.asset?.mainCameraId,h.asset?.mainCameraLabel,h.asset?.comparisonCameraLabel,cur().asset?.mainCameraId,cur().viewLoading,cur().asset?.lineScans?.length,!!overlayMenu?.isConnected,toolbarPopover?.menu.className,preferences,tools.map(t=>[t.id,t.when,t.on,t.disabled,t.label])]);
   if(toolbarRenderKey===key){toolbarPopover?.update();return;}toolbarRenderKey=key;box.innerHTML='';
-  const camera=$('#scanCameraLabel');camera.textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';camera.disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;camera.onclick=e=>showSourceMenu('main',e.currentTarget);
-  camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:`${h.asset?.mainCameraLabel||'Main scan'} · Choose main line-scan view`;
-  const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} ▾`:'Backup line-scan';
+  const camera=$('#scanCameraLabel');camera.textContent=(cameraLabel(h,h.asset?.mainCameraId)||'Main scan')+' ▾';camera.disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;camera.onclick=e=>showSourceMenu('main',e.currentTarget);
+  camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:`${cameraLabel(h,h.asset?.mainCameraId)||'Main scan'} · Choose main line-scan view`;
+  const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${cameraLabel(h,h.asset.comparisonCameraId)} ▾`:'Backup line-scan';
   comparisonPicker.disabled=!replayCameras(h).comparison;
   backupLinkButton.disabled=!replayCameras(h).comparison;
   frontLaneButton.disabled=!replayCameras(h).front;
@@ -2137,7 +2139,7 @@ async function openMeet(dir) {
     if (!r.parsed || !r.parsed.events.some(e => e.entries.some(x => x.lane))) { toast(`No laned heats found in ${dir} (lynx.evt missing or empty).`, true); return; }
     const s = await OM.call('settings.get').catch(() => ({}));
     S.meet = { dir, files: r.files, resultsDir: s.resultsFor && s.resultsFor[dir] ? s.resultsFor[dir] : null };
-    S.simulationSource=null;scanSourceViews.clear();attemptsByHeat.clear();
+    S.simulationSource=null;S.cameraConfig=null;S.cameraRecorders=null;scanSourceViews.clear();attemptsByHeat.clear();
     applyMeet(r.parsed, true);
     await OM.call('settings.set', { patch: { meetDir: dir, demoDir:null, simulationSourceId:null } });
     toast(`Opened ${dir}: ${HEATS.length} heats.`);
@@ -2152,8 +2154,9 @@ function bindReplayHeat(h) {
   return asset?attachAsset(h,asset):h;
 }
 // TTP and real-recorded folders share the same native line-scan replay path.
-function attachAsset(h, a) {
-  if(a)a=cameraAsset(a,store.get(cameraRoleKey(),{}));
+function attachAsset(h, a, roles=null) {
+  const assignment=S.cameraConfig?.heats?.[heatCameraKey(h)];
+  if(a)a=cameraAsset(a,roles||{main:assignment?.timingCameraId||a.mainCameraId||a.lineScans?.[0]?.id,comparison:store.get(cameraRoleKey(),{}).comparison});
   if (!a || !a.primary || !a.primaryMeta || !a.primarySize) return h;
   const m = a.primaryMeta;
   // the engine's camera streams from the gun: pre-roll columns from race time 0, then the rendered finish window
@@ -2168,19 +2171,35 @@ function attachAsset(h, a) {
   if (a.backup && a.backupMeta) { const im = new Image(); im.onload = invalidate; im.src = OM.fileUrl(a.backup); h.backupImg = im; }
   return h;
 }
+function cameraLabel(h,id){const source=h.asset?.lineScans?.find(s=>s.id===id);return source?cameraViewLabel(S.cameraConfig,h,source):h.asset?.mainCameraLabel;}
+function cameraPairCompatible(h,a=h.asset?.mainCameraId,b=h.asset?.comparisonCameraId){return sameFinish(S.cameraConfig,h,a,b);}
+function applyCameraConfig(config,reason){
+  const previous=S.cameraConfig;
+  for(const h of HEATS)if(['running','review','saved'].includes(h.state)&&!h.cameraSetups){h.cameraSetups=structuredClone(previous?.setups||config.setups);h.cameraLocations=structuredClone(previous?.locations||config.locations);}
+  // A renamed device keeps the calibration; a moved/reoriented device gets a new profile.
+  for(const [id,next]of Object.entries(config.setups)){
+    const before=previous?.setups?.[id];if(!before||before.revision===next.revision||before.locationId!==next.locationId||before.side!==next.side||before.direction!==next.direction)continue;
+    const a=before.revision>1?`${id}@${before.revision}`:id,b=next.revision>1?`${id}@${next.revision}`:id;
+    for(const prefix of [`overlay:${S.meet?.dir||'sample'}:scan:`,`scan-framing:${S.meet?.dir||'sample'}:`,`camera-geometry:${S.meet?.dir||'sample'}:`,`billboard:${S.meet?.dir||'sample'}:`]){const value=store.get(prefix+a,null);if(value!=null&&store.get(prefix+b,null)==null)store.set(prefix+b,value);}
+  }
+  S.cameraConfig=config;const beforeCamera=cur().asset?.mainCameraId;
+  for(const h of HEATS)if(h.asset&&['loaded','armed'].includes(h.state))attachAsset(h,h.asset);
+  if(['loaded','armed'].includes(cur().state)){ensureStrip(cur());if(beforeCamera!==cur().asset?.mainCameraId||reason==='heat'||reason==='setup')fitView();}
+  invalidate();renderTools();if(S.tab==='alignment')cameraSetupConsole.render($('#drawerBody'));renderSide();
+}
 function cameraRoleKey(){return `camera-roles:${S.meet?.dir||'sample'}`;}
 function renderCameraRoles(container) {
   const asset=cur().asset,scans=asset?.lineScans;if(!scans?.length)return;
   const roles=store.get(cameraRoleKey(),{}),selected=cameraAsset(asset,roles),box=h_('div','camera-role-fields wide');
-  for(const [key,label,value]of[['main','Main line-scan',selected.mainCameraId],['comparison','Comparison',selected.comparisonCameraId]]) {
+  for(const [key,label,value]of[['main','Main view',viewHeat().asset?.mainCameraId||selected.mainCameraId],['comparison','Additional view',viewHeat().asset?.comparisonCameraId||selected.comparisonCameraId]]) {
     const row=h_('label'),select=h_('select');select.setAttribute('aria-label',label);
-    scans.filter(s=>key==='main'||s.id!==selected.mainCameraId).forEach(s=>{const option=h_('option','',s.label);option.value=s.id;select.append(option);});
-    select.value=value||'';select.disabled=cur().state==='running'||S.cameraSetup?.starting||S.cameraSetup?.stopping||select.options.length<2;
+    scans.filter(s=>key==='main'||s.id!==viewHeat().asset?.mainCameraId).forEach(s=>{const option=h_('option','',cameraLabel(viewHeat(),s.id));option.value=s.id;select.append(option);});
+    select.value=value||'';select.disabled=S.cameraSetup?.starting||S.cameraSetup?.stopping||select.options.length<2;
     select.onchange=()=>chooseScanView(key,select.value);
     row.append(h_('span','',label),select);box.append(row);
   }
   container.append(box);
-  if(['review','saved'].includes(cur().state))box.append(h_('p','dimtext','Changing the view keeps the original recording and finish times. The chosen roles also prepare the next capture.'));
+  box.append(h_('p','dimtext','Viewing is independent of recording. Choose the heat’s timing camera in Camera setup.'));
 }
 async function importSimulationSource(type) {
   if(!OM||runningHeat()||S.sourceChanging)return;
@@ -2200,7 +2219,7 @@ async function openDemo(dir, selection = {}) {
     }
     const r=await OM.call('demo.load',id?{id}:{dir,type:selection.type||'ttp'});
     const settings=await OM.call('settings.get');
-    S.simulationCatalog=await OM.call('demo.catalog');S.simulationSource=r.source;
+    S.simulationCatalog=await OM.call('demo.catalog');S.simulationSource=r.source;S.cameraConfig=null;S.cameraRecorders=null;
     scanSourceViews.clear();attemptsByHeat.clear();S.lastLiveHeat=null;
     if(r.source.type==='builtin'){
       S.meet=null;S.source='replay';HEATS=SPECS.map(buildHeat);S.idx=0;S.files=[];S.selLane=null;S.selCol=null;S.hoverCol=null;
@@ -2209,6 +2228,7 @@ async function openDemo(dir, selection = {}) {
       S.meet={dir:r.meet.dir,files:r.meet.files,demo:r.dir,replayHeats:r.heats,resultsDir:settings.resultsFor?.[r.meet.dir]||null};
       applyMeet(r.meet.parsed,true);
     }
+    if(r.source.type!=='builtin')await cameraSetupConsole.load();
     S.bview.linked=true;Object.assign(S.fview,{s:1,x:0,y:0});applyFrontView();
     toast(`${sourceLabel(r.source)}${r.meet?`: ${r.heats.length} recorded heats.`:'.'}`);
     return true;
@@ -2373,7 +2393,7 @@ function sampleForeground(h) {
   writeForegroundMask(h.sampleForeground,0,image,h.overlayBackground);
 }
 const maskTarget=h=>h.displaySource||h.recordingHeat||h;
-const maskRequestKey=h=>`${h.captureId}:${h.asset?.mainCameraId||'primary'}`;
+const maskRequestKey=h=>`${h.captureId}:${h.asset?.mainCameraId||'primary'}:${S.occlusionInfo?.model?.id||'unknown'}`;
 let occlusionJob=null;
 function learnedMask(h) {
   const mask=maskTarget(h).learnedForeground;return mask?.key===maskRequestKey(h)?mask:null;
@@ -2490,7 +2510,7 @@ const billboards=new BillboardConsole({bridge:OM,store,toast,changed:invalidate,
   open:()=>{S.billboardPanel=true;renderUI();},context:()=>{
   const h=viewHeat(),v=S.view,period=periodOf(h),width=scanW(),height=scanH();
   const center=billboardSourcePoint(width/2,height/2);
-  return {scope:`${S.meet?.dir||'sample'}:${h.asset?.mainCameraId||'primary'}`,placing:!!S.billboardPlacing,meetName:meetDisplayName(),rows:rowsOf(h),period,timeOrigin:h.tOpen,count:h.nCols,
+  return {scope:`${S.meet?.dir||'sample'}:${cameraProfileToken(S.cameraConfig,h,h.asset?.mainCameraId||'primary')}`,placing:!!S.billboardPlacing,meetName:meetDisplayName(),rows:rowsOf(h),period,timeOrigin:h.tOpen,count:h.nCols,
     centerTime:center.time,centerRow:center.row,visibleDuration:width/v.zx*period,visibleRows:height/v.zy};
 }});
 function billboardSourcePoint(x,y){const h=viewHeat(),v=S.view;return {time:h.tOpen+toOriginal(h,v.c0+unflipX(x)/v.zx)*periodOf(h),row:v.r0+y/v.zy};}
@@ -2657,7 +2677,7 @@ function drawRuler(g, W, Hc, h, on) {
 function backupSource(h) {
   const original=h.recordingHeat||h,id=h.viewCompareId||h.asset?.comparisonCameraId;
   if(original.asset&&id===original.asset.mainCameraId)return {img:original.img,t:original.tOpen,p:periodOf(original),w:original.nCols,rows:rowsOf(original),own:false,meta:original.asset.primaryMeta};
-  const descriptor=original.asset?.lineScans?.find(s=>s.id===id),cached=descriptor&&scanSourceViews.get(descriptor.png);if(cached)return {...cached,own:true};
+  const descriptor=original.asset?.lineScans?.find(s=>s.id===id),cached=descriptor&&scanSourceViews.get(scanCacheKey(original,descriptor));if(cached)return {...cached,own:true};
   if (h.backupImg && h.backupImg.complete && h.backupImg.naturalWidth) {
     const bm = h.asset.backupMeta;
     return { img: h.backupImg, t: bm.first_column_race_time_s, p: bm.column_period_s, w: h.backupImg.naturalWidth, rows: h.backupImg.naturalHeight, own: true,meta:bm };
@@ -2665,7 +2685,7 @@ function backupSource(h) {
   return { img: h.img, t: h.tOpen, p: periodOf(h), w: h.nCols, rows: rowsOf(h), own: false };
 }
 function backupRange(h) {
-  if (S.bview.linked) {
+  if (S.bview.linked&&cameraPairCompatible(h)) {
     const period=periodOf(h),pieces=displayPieces(h,Math.max(0,S.view.c0),Math.min(displayCount(h),S.view.c0+scanW()/S.view.zx)),src=backupSource(h);
     const finishes=[...Object.entries(h.marks).map(([lane,m])=>({lane:+lane,col:m.col})),...(h.proposals||[])];
     const finishLanes=[...new Set(finishes.filter(m=>pieces.some(p=>m.col>=p.start&&m.col<p.end)).map(m=>m.lane))];
@@ -2673,6 +2693,7 @@ function backupRange(h) {
     if(!S.view.zoomed||S.frameEditor){const frame=cameraFrame(h,h.asset?.comparisonCameraId||'backup');range.r0=frame.top;range.rv=frame.bottom-frame.top;}
     return {...range,projection:projectionOf(h),origin:h.tOpen,period};
   }
+  if(!cameraPairCompatible(h)){const src=backupSource(h);if(S.bview.independentSource!==h.asset?.comparisonCameraId){Object.assign(S.bview,{independentSource:h.asset?.comparisonCameraId,t0:src.t,spp:src.w*src.p/Math.max(1,backupCv.clientWidth),r0:0,rv:1});}return {...S.bview,projection:null};}
   return S.bview;
 }
 const backupCv = document.getElementById('backup');backupCv.tabIndex=0;backupCv.setAttribute('aria-label','Comparison line-scan image');
@@ -2689,7 +2710,7 @@ const bX=(t,r,W)=>{const x=bUnflippedX(t,r);return S.flip?W-x:x;};
 const bT=(x,r,W)=>{const t=bAxisTime(x,r,W);return r.projection?r.origin+originalCoordinate(r.projection,(t-r.origin)/r.period)*r.period:t;};
 function drawBackup() {
   const cv = backupCv;
-  backupLinkButton.textContent=S.bview.linked?'Linked':'Link views';backupLinkButton.setAttribute('aria-pressed',String(S.bview.linked));
+  const compatible=cameraPairCompatible(viewHeat());backupLinkButton.disabled=!compatible;backupLinkButton.textContent=!compatible?'Different finish':S.bview.linked?'Linked':'Link views';backupLinkButton.setAttribute('aria-pressed',String(S.bview.linked));
   backupLinkButton.title=S.bview.linked?'Comparison follows the main view; click to move it independently':'Relink the comparison to the main view';
   if (!cv.isConnected || !cv.clientWidth) return;
   const [g, W, Hh] = fitCanvas(cv), h = viewHeat();
@@ -2698,7 +2719,7 @@ function drawBackup() {
   const live = h.state === 'running', last = live ? h.liveCol : h.nCols - 1;
   if (!h.img || last < 0 || h.state === 'loaded' || h.state === 'armed') {
     g.fillStyle = TK.dim; g.font = '12px ' + TK.sans; g.textAlign = 'center';
-    g.fillText('Backup capture follows the primary.', W / 2, Hh / 2); g.textAlign = 'left';
+    g.fillText('The additional view follows the main view.', W / 2, Hh / 2); g.textAlign = 'left';
     return;
   }
   const src=backupSource(h),r=backupRange(h),period=periodOf(h),origin=h.tOpen;
@@ -2715,9 +2736,9 @@ function drawBackup() {
   g.restore();
   drawTimeBreaks(g,h,W,Hh,c=>{const px=(origin+c*period-r.t0)/r.spp;return S.flip?W-px:px;});
   // marks, then the shared hover and selected hairlines
-  drawFinishMarkers(g,h,W,Hh,col=>bX(colTime(h,col),r,W));
-  if (S.hoverCol != null) { g.fillStyle = 'rgba(247,248,250,0.5)'; g.fillRect(Math.round(bX(colTime(h, S.hoverCol), r, W)), 0, 1, Hh); }
-  if (S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bX(colTime(h, S.selCol), r, W)), 0, 1, Hh); }
+  if(compatible)drawFinishMarkers(g,h,W,Hh,col=>bX(colTime(h,col),r,W));
+  if (compatible&&S.hoverCol != null) { g.fillStyle = 'rgba(247,248,250,0.5)'; g.fillRect(Math.round(bX(colTime(h, S.hoverCol), r, W)), 0, 1, Hh); }
+  if (compatible&&S.selCol != null) { g.fillStyle = TK.finish; g.fillRect(Math.round(bX(colTime(h, S.selCol), r, W)), 0, 1, Hh); }
   const d = S.bdrag;
   if (d && d.mode === 'zoom' && d.moved) {
     g.strokeStyle = TK.blue; g.lineWidth = 1; g.setLineDash([4, 3]);
@@ -3037,6 +3058,7 @@ window.addEventListener('keydown', e => {
     renderUI();
   }
 });
+const cameraSetupConsole=new CameraSetupConsole({bridge:OM,toast,changed:invalidate,context:()=>({meetDir:S.meet?.dir||null,heatKey:heatCameraKey(cur()),heatName:cur().name,scans:cur().asset?.lineScans||[],timingId:cur().asset?.mainCameraId,viewId:viewHeat().asset?.mainCameraId,captureId:(runningHeat()||cur()).captureId,recording:!!runningHeat(),started:['running','review','saved'].includes(cur().state),preview:!!S.cameraSetup,sourceType:cur().replaySourceType}),applyConfig:applyCameraConfig,billboards:async id=>{await chooseScanView('main',id);S.billboardPanel=true;renderUI();},chooseView:id=>chooseScanView('main',id),align:async id=>{if(runningHeat())return;await chooseScanView('main',id);if(!S.cameraSetup)await startCameraSetup();else {S.tab='run';renderUI();}}});
 function closeSetupDialog(){S.billboardPanel=false;S.tab='run';renderUI();}
 const setupDialog=new SetupDialog({drawer:$('#drawer'),onDismiss:closeSetupDialog,onReturnLive:()=>{const h=runningHeat();closeSetupDialog();if(h&&!S.cameraSetup)go(HEATS.indexOf(h));}});
 $('#drawerClose').onclick = closeSetupDialog;
@@ -3091,7 +3113,7 @@ window.addEventListener('mouseup', () => {
       const st = d.start, ta = bAxisTime(d.x0, st, r.width), tb = bAxisTime(d.x1, st, r.width);
       Object.assign(S.bview, { linked: false, t0: Math.min(ta, tb), spp: Math.abs(tb - ta) / r.width, r0: st.r0 + Math.min(d.y0, d.y1) / r.height * st.rv, rv: hh / r.height * st.rv });
     }
-  } else if (!d.moved) {
+  } else if (!d.moved&&cameraPairCompatible(h)) {
     S.selCol = colAtTime(h, bT(d.x0, backupRange(h), r.width));     // select by time: Enter marks it, as on the primary
     renderUI();
   }
@@ -3100,13 +3122,13 @@ window.addEventListener('mouseup', () => {
 backupCv.addEventListener('mousemove', e => {
   if (S.bdrag && S.bdrag.moved) return;
   const h = viewHeat();
-  if (!backupReady(h)) return;
+  if (!backupReady(h)||!cameraPairCompatible(h)) return;
   const r = backupCv.getBoundingClientRect(), col = colAtTime(h, bT(e.clientX - r.left, backupRange(h), r.width));
   const lim = h.state === 'running' ? h.liveCol : h.nCols - 1;
   S.hoverCol = Math.min(col, lim); invalidate(); updateTs();
 });
 backupCv.addEventListener('mouseleave', () => { if (S.hoverCol != null) { S.hoverCol = null; invalidate(); updateTs(); } });
-backupCv.addEventListener('dblclick', () => { S.bview.linked = true; invalidate(); });
+backupCv.addEventListener('dblclick', () => { if(!cameraPairCompatible(viewHeat()))return;S.bview.linked = true; invalidate(); });
 backupCv.title = 'Wheel: scroll · Ctrl+wheel: zoom · Drag: pan · Shift+drag: zoom · Click: select · Double-click: link to the primary';
 
 // ---------------------------------------------------------------- front camera zoom and pan (for context; the recording itself is untouched)
@@ -3188,7 +3210,7 @@ function frame(now) {
     tickClock();
   } else if (h.req === 'pending' && now - lastLiveRender > 1000) { lastLiveRender = now; renderProps(); }   // "Timing… N s"
   const sec = Math.floor(Date.now() / 1000);
-  if (sec !== lastSec) { lastSec = sec; tickTod(); }
+  if (sec !== lastSec) { lastSec = sec; tickTod();if(OM&&S.meet&&cur().asset)cameraSetupConsole.refreshRecorders().then(facts=>{if(facts){S.cameraRecorders=facts;renderAcc();}}); }
   if (dirty || h.state === 'running' || S.cameraSetup?.live) { dirty = false; drawScan(); drawBackup(); drawFront(); }
 }
 
@@ -3221,6 +3243,8 @@ if (OM) {
     invalidate();
   });
   OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
+  OM.on('camera.recorders',d=>{S.cameraRecorders=d;cameraSetupConsole.updateRecorders(d);const h=capHeat(d.captureId);if(h&&d.setupChanges?.length&&!h.cameraSetupChanged){h.cameraSetupChanged=true;toast('Camera setup changed during capture. Review this race.',true);renderSide();}renderAcc();});
+  OM.on('camera.recorder.error',d=>toast('Camera recorder error: '+d.message,true));
   OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
   occlusionAvailability.refresh();
   OM.call('autocrop.info').then(info=>{S.cropInfo=info;renderTools();}).catch(()=>{});

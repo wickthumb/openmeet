@@ -14,6 +14,8 @@ OpenMeet is a Track Tools Pro LLC project. The goal is to make finish review, ru
 4. Save results and move to the next heat.
 5. Present the live race and results on a customizable scoreboard.
 
+Camera setup keeps finish locations and per-heat timing sources separate from the view on screen. During replay capture, every registered line-scan records at its native height and sampling rate; earlier races retain their setup snapshots.
+
 The camera clock supplies measurements. Suggested marks require operator review. Start-trigger history and original captured columns are retained when timing is corrected. See the [working demo walkthrough](docs/demo-script.md) for an honest tour of the prototype and its current limits.
 
 ## Open app, proprietary model API

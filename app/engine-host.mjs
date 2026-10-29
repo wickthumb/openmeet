@@ -15,7 +15,8 @@ import { SOURCE_TYPES, simulationCatalog, sourceId, readReplayFolder, publicRepl
 const here = path.dirname(fileURLToPath(import.meta.url));
 const userData = process.argv[2] || here;
 const port = process.parentPort;
-const emit = (event, data) => port.postMessage({ event, data });
+let portClosed = false;
+const emit = (event, data) => { if (!portClosed) port.postMessage({ event, data }); };
 
 // The engine core library (engine/) lives beside the app; load it if this build includes it.
 let core = null;
@@ -54,10 +55,10 @@ async function writeAtomic(dir, name, text) {
   return final;
 }
 
-// One camera capture at a time: the simulated camera streams protocol messages into an append-only store,
-// and every chunk is forwarded to the console as it lands. The store, not the console, is the record.
+// One logical capture (or one bounded preview) at a time. Each registered replay
+// camera has its own append-only native store; primary events keep their legacy shape.
 let active = null;
-let captureStarting = false, captureStartStop = false, sourceChanging = false;
+let captureStarting = false, captureStartStop = false, captureStartingPreview = false, sourceChanging = false;
 async function changeSource(fn) {
   if (active || captureStarting || sourceChanging) throw Error('Stop capture or preview before changing simulation sources');
   sourceChanging = true;
@@ -88,6 +89,17 @@ async function runCapture(id, store, gen, preview=false) {
 // Capture id -> {dir, sidecar}. The simulator's truth stays here in the engine: the console never receives it.
 const captures = new Map();
 const scanSources = new Map();
+const recorderGroups = new Map();
+let latestCaptureId = null;
+const cameraEnginePath = [path.join(here, '..', 'engine', 'cameras', 'index.js'), path.join(here, 'engine', 'cameras', 'index.js')].find(p => fs.existsSync(p));
+const cameraEngine = cameraEnginePath ? await import(pathToFileURL(cameraEnginePath).href) : null;
+const cameraConfig = cameraEngine?.createCameraConfig({
+  sampleDir: path.join(userData, 'sample'),
+  cameras: () => [...new Map([...scanSources.values()].map(source => [source.id, source])).values()],
+  onSetupChange(change) {
+    if (active?.group && active.configFile === change.file) active.group.noteSetupChange(change);
+  },
+});
 
 // Auto-timing: the configured TTP finish service, or the labelled stand-in (simulator truth echo) on loopback.
 const locate = rel => [path.join(here, '..', rel), path.join(here, rel)].find(p => fs.existsSync(p));
@@ -146,7 +158,11 @@ function saveSettings(patch) {
 }
 
 function registerReplay(replay) {
-  for (const heat of replay.heats) for (const source of heat.lineScans) scanSources.set(source.png, source);
+  scanSources.clear();
+  for (const heat of replay.heats) {
+    const group = heat.lineScans.map(source => ({ ...source, heatKey: `${heat.event}|${heat.round}|${heat.heat}` }));
+    for (const source of group) { source.group = group; scanSources.set(source.png, source); }
+  }
   emit('roots.add', [replay.dir]);
   return publicReplay(replay);
 }
@@ -210,6 +226,7 @@ const methods = {
       const sources=catalog.sources.filter(s=>s.type!=='builtin'),index=sources.findIndex(s=>s.id===source.id);
       if(replay){if(index<0)sources.push(source);else sources[index]=source;}
       await saveSettings({ simulationSources: sources, simulationSourceId: source.id, demoDir: source.path, meetDir: replay?.meet.dir || null });
+      if (!replay) scanSources.clear();
       return { source, ...(replay ? registerReplay(replay) : { heats: [], meet: null }) };
     });
   },
@@ -242,50 +259,107 @@ const methods = {
     const p = await core.writeLifAtomic(dir, name, text);
     return { path: p, name, text };
   },
-  // Start the simulated camera on a rendered line-scan: {key, png, sidecar, speed, meetDir}.
-  // Captures live in <meet folder>/openmeet/captures/, beside the meet manager's files and never mixed into them.
-  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null, preview = false, cameraId, cameraLabel }) {
-    if (!core) throw new Error('engine core missing from this build');
+  async 'camera.config.get'(params) { return cameraConfig.get(params); },
+  async 'camera.location.save'(params) { return cameraConfig.saveLocation(params); },
+  async 'camera.setup.save'(params) { return cameraConfig.saveSetup(params); },
+  async 'camera.heat.assign'(params) { return cameraConfig.assignHeat(params); },
+  async 'camera.recorders'({ captureId } = {}) {
+    const id = captureId || latestCaptureId;
+    if (captureId && !recorderGroups.has(captureId)) throw Error('Unknown capture');
+    const group = recorderGroups.get(id);
+    if (!group) return { captureId: null, cameras: [] };
+    const config = cameraConfig.get({ meetDir: group.meetDir });
+    return { ...group.snapshot(), nextAssignment: config.heats[group.assignmentKey] || null };
+  },
+  // Record every registered replay camera in the primary source's heat. Selection
+  // determines the compatible primary layout/events, never which cameras record.
+  async 'capture.start'({ key, png, sidecar, speed = 1, meetDir, front, timeoutSeconds = null, preview = false, cameraId, cameraLabel, cameraSources }) {
+    if (!core || !cameraEngine) throw new Error('engine core missing from this build');
     if (active || captureStarting || sourceChanging) throw new Error('a capture or source change is already running');
-    captureStarting = true;captureStartStop=false;
+    captureStarting = true; captureStartStop = false; captureStartingPreview = preview;
     try {
-    const source = scanSources.get(png);
-    sidecar = source?.sidecar ? JSON.parse(await fsp.readFile(source.sidecar,'utf8')) : sidecar;
-    const replaySidecar=preview?{...(typeof sidecar==='string'?JSON.parse(await fsp.readFile(sidecar,'utf8')):sidecar),first_column_race_time_s:0}:sidecar;
-    const id = `${String(key || 'heat').replace(/[^\w-]/g, '_')}-${Date.now()}`;
-    const dir = preview ? null : path.join(meetDir ? path.join(meetDir, 'openmeet', 'captures') : path.join(userData, 'captures'), id);
-    if(dir) await fsp.mkdir(dir, { recursive: true });
-    if(dir)await fsp.writeFile(path.join(dir,'source.json'),JSON.stringify({cameraId:cameraId||'sim-camera',label:cameraLabel||'Simulated line-scan',source:source?.sourceType==='real'?'real-recorded':'sim-replay',image:png},null,2));
-    if (!meetDir && dir) emit('roots.add', [dir]);
-    // The front camera's recording belongs to the heat, beside its line-scan: <capture>/front.mp4 + front.json (frame timing).
-    let frontRec = null;
-    if (front && front.path && !preview) {
-      const vp = path.join(dir, 'front' + path.extname(front.path));
-      await fsp.copyFile(front.path, vp);
-      await fsp.writeFile(path.join(dir, 'front.json'), JSON.stringify({ ...(front.meta || {}), heat: key }, null, 2));
-      frontRec = { path: vp, meta: front.meta || null, frames: front.frames || null };
-    }
-    let previewColumns=0;
-    const store = preview ? { append(msg){if(msg.type==='columns')previewColumns+=msg.count;},columnCount(){return previewColumns;},async close(){} } : core.openCaptureStore(dir);
-    const pulseMs = Date.now();
-    const trigger = meetDir && !preview ? (await startJournal(meetDir)).record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000, wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) : null;
-    if (trigger) (await startJournal(meetDir)).assign({ heatKey: key, triggerId: trigger.id, referenceTriggerId: trigger.id });
-    if(!preview) captures.set(id, { dir, sidecar, trigger, cameraId, sourceType:source?.sourceType,sourceColumns:source?.size.width,sourceRef:source?{kind:'recorded-results',label:'Recorded results',path:source.sidecar}:null });
-    const controller = new AbortController();
-    active = { id, stop: captureStartStop, controller, preview };
-    if(captureStartStop)controller.abort();
-    if(Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) active.timer=setTimeout(()=>{ if(active?.id===id) controller.abort(); },timeoutSeconds/speed*1000);
-    // The camera runs from the gun (race time 0), like a real line-scan, not just around the finish.
-    active.done=runCapture(id, store, core.simReplay({ png, sidecar:replaySidecar, realtime:true, speed, model:source?.sourceType==='real'?'real-recorded-replay':preview?'sim-preview':'sim-render', preRollFrom:preview?undefined:0, holdOpen:true, signal:controller.signal }),preview);
-    return { id, dir, front: frontRec, trigger };
-    } finally { captureStarting = false; }
+      const source = scanSources.get(png);
+      if (!source) throw Error('Open this registered camera source first');
+      if (cameraId && cameraId !== source.id) throw Error('Camera id does not match its registered source PNG');
+      if (!(Number.isFinite(speed) && speed > 0)) throw Error('Replay speed must be positive');
+      if (cameraSources != null) {
+        if (!Array.isArray(cameraSources)) throw Error('cameraSources must be an array of registered sources');
+        const seen = new Set();
+        for (const requested of cameraSources) {
+          const registered = scanSources.get(requested?.png);
+          if (!registered || registered.id !== requested.id || registered.group !== source.group || seen.has(requested.id)) throw Error('Camera source must be registered in this heat with its matching id and PNG');
+          seen.add(requested.id);
+        }
+      }
+      sidecar = JSON.parse(await fsp.readFile(source.sidecar, 'utf8'));
+      const id = `${String(key || 'heat').replace(/[^\w-]/g, '_')}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      if (preview) {
+        let columns = 0;
+        const store = { append(msg) { if (msg.type === 'columns') columns += msg.count; }, columnCount() { return columns; }, async close() {} };
+        const controller = new AbortController();
+        active = { id, stop: captureStartStop, controller, preview: true };
+        if (captureStartStop) controller.abort();
+        active.done = runCapture(id, store, core.simReplay({ png,
+          sidecar: { ...sidecar, first_column_race_time_s: 0 }, realtime: true, speed,
+          model: source.sourceType === 'real' ? 'real-recorded-replay' : 'sim-preview',
+          holdOpen: true, signal: controller.signal }), true);
+        return { id, dir: null, front: null, trigger: null };
+      }
+      const config = cameraConfig.get({ meetDir });
+      const assignmentKey = Object.hasOwn(config.heats, key) ? key : source.heatKey;
+      const heatAssignment = config.heats[assignmentKey] || { locationId: config.setups[source.id].locationId, timingCameraId: source.id };
+      if (!source.group.some(item => item.id === heatAssignment.timingCameraId)) throw Error('Heat timing camera is not registered in this heat');
+      if (config.setups[heatAssignment.timingCameraId]?.locationId !== heatAssignment.locationId) throw Error('Heat timing camera must match the selected finish location');
+      if (heatAssignment.timingCameraId !== source.id) throw Error('Primary camera must match the heat timing camera assignment');
+      const dir = path.join(meetDir ? path.join(meetDir, 'openmeet', 'captures') : path.join(userData, 'captures'), id);
+      await fsp.mkdir(dir, { recursive: true });
+      if (!meetDir) emit('roots.add', [dir]);
+      let frontRec = null;
+      if (front?.path) {
+        const vp = path.join(dir, 'front' + path.extname(front.path));
+        await fsp.copyFile(front.path, vp);
+        await fsp.writeFile(path.join(dir, 'front.json'), JSON.stringify({ ...(front.meta || {}), heat: key }, null, 2));
+        frontRec = { path: vp, meta: front.meta || null, frames: front.frames || null };
+      }
+      const pulseMs = Date.now();
+      const journal = meetDir ? await startJournal(meetDir) : null;
+      const trigger = journal?.record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000,
+        wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) || null;
+      if (trigger) journal.assign({ heatKey: key || source.heatKey, triggerId: trigger.id, referenceTriggerId: trigger.id });
+      captures.set(id, { dir, sidecar, trigger, cameraId: source.id, sourceType: source.sourceType,
+        cameraSources: source.group.map(item => ({ id: item.id, png: item.png })),
+        sourceColumns: source.size.width, sourceRef: { kind: 'recorded-results', label: 'Recorded results', path: source.sidecar } });
+      const group = new cameraEngine.ReplayRecorderGroup({ id, dir, primaryId: source.id, core, speed, emit, trigger, heatKey: source.heatKey, heatAssignment,
+        sources: source.group.map(item => ({ ...item, sidecar: item === source ? sidecar : item.sidecar, sidecarFile: item.sidecar, setup: config.setups[item.id] })) });
+      group.meetDir = meetDir; group.assignmentKey = assignmentKey;
+      recorderGroups.set(id, group); latestCaptureId = id;
+      const current = active = { id, stop: captureStartStop, controller: group.controller, preview: false, group,
+        configFile: cameraConfig.fileFor(meetDir) };
+      if (captureStartStop) group.controller.abort();
+      if (Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) current.timer = setTimeout(() => group.controller.abort(), timeoutSeconds / speed * 1000);
+      current.done = group.start().then(snapshot => {
+        clearTimeout(current.timer);
+        if (active === current) active = null;
+        const primary = snapshot.cameras.find(camera => camera.id === source.id);
+        emit('capture.end', { id, columns: primary.columns });
+      });
+      await group.ready;
+      return { id, dir, front: frontRec, trigger, ...group.snapshot() };
+    } finally { captureStarting = false; captureStartingPreview = false; }
   },
-  async 'preview.start'(params) {return methods['capture.start']({...params,key:'camera-setup',preview:true,timeoutSeconds:null});},
+  async 'preview.start'(params) { return methods['capture.start']({ ...params, key: 'camera-setup', preview: true, timeoutSeconds: null }); },
   async 'preview.stop'() {
-    const current=active;if(current?.preview){current.stop=true;current.controller.abort();await current.done;}
-    return {ok:true};
+    if (captureStarting && captureStartingPreview) captureStartStop = true;
+    const current = active;
+    if (current?.preview) { current.stop = true; current.controller.abort(); await current.done; }
+    return { ok: true };
   },
-  async 'capture.stop'() { if(captureStarting)captureStartStop=true;if (active) { active.stop = true; active.controller.abort(); } return { ok: true }; },
+  async 'capture.stop'() {
+    if (captureStarting) captureStartStop = true;
+    const current = active;
+    if (current) { current.stop = true; current.controller.abort(); await current.done; }
+    return { ok: true };
+  },
   // Ask the finish model about a finished capture: {captureId, heat: {event, round, heat}, startList: [{lane, id}], laneRows?}.
   // Live mode for services fast enough to call during the race (the stand-in, or a service configured with live: true).
   async 'autotiming.info'() {
@@ -350,7 +424,7 @@ const methods = {
     if(active?.id===captureId)throw Error('Stop capture before requesting the model mask');
     let png,width,height,camera=cap.cameraId||'primary';
     const checkSize=()=>{if(width>32768||height>32768||width*height>16*1024*1024)throw Error('This capture exceeds the model preview size limit; Simple remains available');};
-    if(viewPng){const source=scanSources.get(viewPng);if(!source)throw Error('Open this camera source first');width=source.size.width;height=source.size.height;checkSize();png=await fsp.readFile(source.png);camera=source.id;}
+    if(viewPng){const source=cap.cameraSources.find(item=>item.png===viewPng);if(!source)throw Error('Camera source does not belong to this capture');png=await fsp.readFile(path.join(cap.dir,'views',`${source.id}.png`));width=png.readUInt32BE(16);height=png.readUInt32BE(20);checkSize();camera=source.id;}
     else{const record=core.openCaptureStore(cap.dir,{readOnly:true});try{width=record.columnCount();height=record.meta().rows;checkSize();}finally{await record.close();}const strip=await stripPng(cap.dir);png=strip.png;}
     const result=await requestOcclusion({png,requestId:randomUUID()});
     if(result.width!==width||result.height!==height)throw Error('Occlusion mask does not match the camera image');
@@ -368,14 +442,19 @@ const methods = {
     const record={...output,first_column_race_time_s:strip.firstRaceTime,column_period_s:strip.period,at:new Date().toISOString()};
     await fsp.writeFile(path.join(cap.dir,'autocrop.json'),JSON.stringify(record));return record;
   },
-  async 'camera.image'({png,captureId,includePixels=true}) {
-    const source=scanSources.get(png);if(!source)throw new Error('Open this camera source first');
-    const cap=captures.get(captureId);
-    if(cap){const dir=path.join(cap.dir,'views');await fsp.mkdir(dir,{recursive:true});await fsp.copyFile(png,path.join(dir,source.id+'.png'));await fsp.writeFile(path.join(dir,source.id+'.json'),JSON.stringify({id:source.id,label:source.label,column_period_s:source.meta.column_period_s,first_column_race_time_s:source.meta.first_column_race_time_s,lane_rows:source.meta.lane_rows},null,2));}
-    return includePixels?core.decodePng(await fsp.readFile(png)):{ok:true};
+  async 'camera.image'({ png, captureId, cameraId, includePixels = true }) {
+    const cap = captures.get(captureId);
+    if (captureId && !cap) throw Error('Unknown capture');
+    let image = png;
+    if (cap) {
+      const source = cap.cameraSources.find(item => cameraId ? item.id === cameraId : item.png === png || item.id === scanSources.get(png)?.id);
+      if (!source) throw Error('Camera source does not belong to this capture');
+      image = path.join(cap.dir, 'views', `${source.id}.png`);
+    } else if (!scanSources.has(png)) throw Error('Open this camera source first');
+    return includePixels ? core.decodePng(await fsp.readFile(image)) : { ok: true };
   },
   async 'assets.open'({ dir, type = 'ttp' }) {
-    return registerReplay(await readReplayFolder(dir, readMeet, type));
+    return changeSource(async () => registerReplay(await readReplayFolder(dir, readMeet, type)));
   },
 };
 
@@ -494,8 +573,16 @@ async function closeScoreboards() {
   try { await scoreboardStarting; } catch { /* startup already reported its error */ }
   await scoreboardServer?.close();
 }
+function stopOwnedCapture() {
+  portClosed = true;
+  captureStartStop = true;
+  if (active) { active.stop = true; active.controller.abort(); }
+}
 port.on('close', () => { closeScoreboards().catch(() => {}); });
-process.once('disconnect', () => { closeScoreboards().catch(() => {}); });
+process.once('disconnect', () => {
+  stopOwnedCapture();
+  closeScoreboards().catch(() => {});
+});
 process.once('exit', () => { for (const controller of scoreboardAgents) controller.abort(); });
 // ========================== END SCOREBOARD V1 ================================
 

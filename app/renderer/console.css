@@ -230,6 +230,24 @@ svg.i { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-widt
 .dialog-live[hidden] { display:none; }
 .dialog-live [role=status]::before { content:'';display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:var(--mint); }
 .dialog-live button { color:var(--paper); }
+.drawer .pb.camera-setup-body { display:block; }
+.setup-dialog:has(.camera-setup-body) { --dialog-width:1200px;--dialog-height:760px; }
+.camera-setup [hidden] { display:none; }
+.camera-setup-grid { display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px; }
+.camera-inventory,.camera-editor,.camera-heat { border:1px solid var(--rule2);border-radius:var(--radius);padding:14px;min-width:0; }
+.camera-heat { margin-top:16px; }
+.camera-item { display:flex;flex-direction:column;width:100%;gap:5px;text-align:left;padding:10px;margin:6px 0;border:1px solid var(--rule);border-radius:var(--radius);background:var(--deep);color:var(--paper);cursor:pointer; }
+.camera-item.selected { border-color:var(--blue);box-shadow:inset 3px 0 var(--blue); }
+.camera-item-name { font-weight:600; }
+.camera-item-setup,.camera-item-status { color:var(--muted);font-size:12px; }
+.camera-field { display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px 0; }
+.camera-field :is(input,select) { width:60%;min-width:0;padding:7px 9px;border:1px solid var(--rule);border-radius:var(--radius);background:var(--deep);color:var(--paper);font:inherit; }
+.camera-actions { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0; }
+.camera-location-form { display:flex;flex-wrap:wrap;gap:8px;margin:10px 0; }
+.camera-location-form input { flex:1;min-width:160px;background:var(--deep);border:1px solid var(--rule);color:var(--paper);padding:7px; }
+.camera-setup-grid h3 { font-size:15px;margin:0 0 12px; }
+.camera-setup-grid details { margin-top:16px;color:var(--muted);font-size:12px; }
+.camera-setup-grid summary { cursor:pointer;color:var(--blue); }
 .card { border: 1px solid var(--rule2); border-radius: var(--radius); padding: 10px; min-width: 0; }
 .card h3 { margin: 0 0 8px; font-size: 13px; }
 .card p { margin: 6px 0; color: var(--muted); }

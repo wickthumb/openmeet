@@ -38,7 +38,7 @@ try{
  for(const label of ['Meet','Camera setup','Scoreboard','Network','Meet Link','Auto-Timing','Starts','Settings']){
    const before=(await stat(path.join(liveCapture,'columns.bin'))).size;await tab(label);await poll(()=>ev(`document.querySelector('#setupDialog').open`),label+' dialog');
    assert.equal(await ev(`document.querySelector('#setupDialog').matches(':modal')`),true);
-   if(label==='Camera setup')assert.equal(await ev(`document.querySelector('#openAlignment').disabled`),true);
+   if(label==='Camera setup')assert.equal(await ev(`document.querySelector('#cameraAlign').disabled`),true);
    await poll(async()=>(await stat(path.join(liveCapture,'columns.bin'))).size>before,label+' background columns');
    assert.equal(await ev(`document.querySelector('.state').textContent`),'RUNNING');
    const fit=await ev(`(()=>{const r=document.querySelector('#setupDialog').getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;})()`);assert.equal(fit,true);
@@ -68,4 +68,4 @@ try{
  const final=await getState();assert.deepEqual(final.results.map(r=>r.lane),[1,2,3]);assert.equal(final.lanes.find(r=>r.lane===4).time,null);
  const shot=await send('Page.captureScreenshot',{format:'png'});await writeFile(path.join(root,'accepted.png'),Buffer.from(shot.data,'base64'));
  assert.deepEqual(errors,[]);console.log(JSON.stringify({pass:true,output:root,pending:initial.lanes.filter(l=>l.review).map(l=>({lane:l.lane,time:l.time})),initialOrder:[3,1,2,4],acceptedOrder:[1,2,3,4],rawEvidenceUnchanged:true,liveDialogs:modalChecks}));
-}finally{clearTimeout(timer);ws?.close();stop();for(const p of pending.values())clearTimeout(p.t);}
+}catch(error){console.error(JSON.stringify({errors,ui:await ev('document.body.innerText').catch(()=>null)}));throw error;}finally{clearTimeout(timer);ws?.close();stop();for(const p of pending.values())clearTimeout(p.t);}

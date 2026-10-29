@@ -83,15 +83,16 @@ Planned for a later integration phase; see [the hardware setup blueprint](bluepr
 
 ## Camera inventory, movable setups and recording all views
 
-Planned engine/UI work; the current replay engine records one active stream. See [camera identity and race views](blueprint.md#camera-identity-positions-and-race-views-planned).
+Implemented for registered replay line-scans. See [camera identity and race views](blueprint.md#camera-identity-positions-and-race-views).
 
-- [ ] Give every device a stable identity, independent of main/additional viewing roles.
-- [ ] Define named finish locations with inside/outside or custom camera positions. Bind the heat to its finish location instead of deriving it from event distance.
-- [ ] Keep a versioned, timestamped placement/calibration history when a camera moves, changes direction or changes sensor mode. Earlier recordings retain their original setup.
-- [ ] Record every connected/enabled camera during meet recording, regardless of the selected view or the finish location currently in use. Report each recorder's actual state, gaps and clock health.
-- [ ] Select the heat's timing camera separately from other review views. Offer cameras at the same finish first; label other finish locations clearly and avoid automatic timing comparisons across unrelated finishes.
-- [ ] Support a single camera moved between races: select its new location, align/check it, and use that setup for following heats without rewriting earlier work. Mark mid-race setup changes for review while preserving recording.
-- [ ] Verify shared starts, per-camera clocks, simultaneous throughput and aggregate storage before claiming reliable multi-camera timing or full-day capacity.
+- [x] Stable source identities, independent of main/additional viewing roles.
+- [x] Named finish locations, inside/outside/unspecified sides and normal/reverse direction.
+- [x] Versioned, timestamped setup history and separate calibration profiles when a source moves or changes orientation. Historical captures retain their snapshots.
+- [x] Record every registered line-scan in a replay heat at its own native height/rate, including unrelated finishes. Report actual per-camera state/counts/errors and retain source snapshots.
+- [x] Assign the heat's timing source separately from review views. Disable linked comparison and shared finish hairlines across different finishes/directions.
+- [x] Preserve current attempts when preparing another timing source; flag mid-capture setup changes for review without stopping the other recorders.
+- [ ] Add physical camera adapters, sensor-mode epochs, measured clock mappings and explicit hardware alignment readiness.
+- [ ] Verify simultaneous hardware throughput, dropped-sample reporting and aggregate storage before claiming reliable multi-camera timing or full-day capacity.
 
 ## Optional meet records and athlete images
 

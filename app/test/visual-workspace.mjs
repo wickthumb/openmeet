@@ -56,7 +56,7 @@ const assert=(value,message)=>{if(!value)throw Error(message);};
 const waitFor=async(expression,description,limit=80)=>{for(let i=0;i<limit;i++){if(await ev(expression))return;await sleep(100);}throw Error('Timed out: '+description);};
 const bounds=selector=>ev(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height};})()`);
 const key=async(key,code=key)=>{await send('Input.dispatchKeyEvent',{type:'keyDown',key,code});await send('Input.dispatchKeyEvent',{type:'keyUp',key,code});};
-const source=async(role,label)=>{await ev(`document.querySelector(${JSON.stringify(role==='main'?'#scanCameraLabel':'#comparisonCameraPicker')}).click()`);assert(await ev(`(()=>{const b=[...document.querySelectorAll('.camera-source-menu button')].find(b=>b.textContent===${JSON.stringify(label)});if(!b)return false;b.click();return true;})()`),'Missing source '+label);await waitFor(`document.querySelector('#scanCameraLabel').disabled===false`,'source load');await sleep(150);};
+const source=async(role,label)=>{await ev(`document.querySelector(${JSON.stringify(role==='main'?'#scanCameraLabel':'#comparisonCameraPicker')}).click()`);assert(await ev(`(()=>{const b=[...document.querySelectorAll('.camera-source-menu button')].find(b=>b.textContent.startsWith(${JSON.stringify(label)}));if(!b)return false;b.click();return true;})()`),'Missing source '+label);await waitFor(`document.querySelector('#scanCameraLabel').disabled===false`,'source load');await sleep(150);};
 const settings=async()=>{await ev(`[...document.querySelectorAll('#tools button')].find(b=>b.textContent.includes('Lanes')).click()`);};
 const option=(k,v)=>ev(`(()=>{const e=document.querySelector('.overlay-settings [data-key="${k}"]');${typeof v==='boolean'?`e.checked=${v};`:`e.value=${JSON.stringify(v)};`}e.dispatchEvent(new Event('input'));})()`);
 const closeSettings=()=>ev(`document.querySelector('.overlay-settings [data-close]').click()`);
@@ -78,7 +78,7 @@ try {
  await ev(`document.querySelector('.pnl[data-p="front"] .ph button.btn').click()`);assert(await ev(`!!document.querySelector('.overlay-settings [data-key="fontSize"]')`),'Front camera lost its label size control');await closeSettings();
  const normalizedEdges=()=>ev(`(()=>{const height=document.querySelector('#scan').clientHeight-22;return [...document.querySelectorAll('.lane-divider')].map(e=>({key:e.dataset.boundary,fraction:(parseFloat(e.style.top)+6)/height}));})()`);
  const emptyBefore=await normalizedEdges();
- await click('Camera setup');await click('Open alignment view');await sleep(500);await click('Stop preview');await sleep(100);
+ await click('Camera setup');await click('Open alignment');await sleep(500);await click('Stop preview');await sleep(100);
  await ev(`document.querySelector('#workspaceSplit').focus()`);await key('Home');await sleep(100);await click('Return to race');await sleep(100);
  const emptyAfter=await normalizedEdges();console.log('EMPTY_CAMERA_GEOMETRY',JSON.stringify({before:emptyBefore,after:emptyAfter}));
  assert(emptyBefore.length===emptyAfter.length&&emptyBefore.every((e,i)=>Math.abs(e.fraction-emptyAfter[i].fraction)<.002),'Empty camera geometry changed after preview/resize; race start required to repair it');
@@ -90,7 +90,7 @@ try {
  unlinkSync(meetDir+'/heat-1/primary.png');copyFileSync(meetDir+'/heat-1/scan-tower.png',meetDir+'/heat-1/primary.png');
  const changedMeta={...original,rows:2000,column_period_s:.002,lane_rows:original.lane_rows.map(b=>({...b,top_row:b.top_row*2000/original.rows,bottom_row:b.bottom_row*2000/original.rows,...(b.standing_head_row_1p80m!=null?{standing_head_row_1p80m:b.standing_head_row_1p80m*2000/original.rows}:{})}))};
  unlinkSync(meetDir+'/heat-1/primary.json');writeFileSync(meetDir+'/heat-1/primary.json',JSON.stringify(changedMeta));
- await send('Page.reload');await sleep(1700);const modeChanged=await normalizedEdges();assert(nativeProfile.length===modeChanged.length&&nativeProfile.every((e,i)=>Math.abs(e.fraction-modeChanged[i].fraction)<.002),'Resolution change shifted saved lane layout');
+ await send('Page.reload');await waitFor(`JSON.parse(localStorage.getItem('openmeet.camera-geometry:'+${JSON.stringify(meetDir+'/meet')}+':primary'))?.rows===2000&&document.querySelector('#scanCameraLabel').textContent.includes('Line-scan A')`,'new resolution ready');await sleep(100);const modeChanged=await normalizedEdges();assert(nativeProfile.length===modeChanged.length&&nativeProfile.every((e,i)=>Math.abs(e.fraction-modeChanged[i].fraction)<.002),'Resolution change shifted saved lane layout');
  assert(await ev(`JSON.parse(localStorage.getItem('openmeet.camera-geometry:'+${JSON.stringify(meetDir+'/meet')}+':primary')).rows`)===2000,'New camera resolution was not retained');
  for(const name of ['primary.png','primary.json']){unlinkSync(meetDir+'/heat-1/'+name);copyFileSync(demoDir+'/heat-1/'+name,meetDir+'/heat-1/'+name);}
  await send('Page.reload');await sleep(1700);const reloaded=await normalizedEdges();assert(nativeProfile.length===reloaded.length&&nativeProfile.every((e,i)=>Math.abs(e.fraction-reloaded[i].fraction)<.002),'Reload changed idle lane positions');
