@@ -1,93 +1,59 @@
-# Proposed three-minute demo
+# OpenMeet demo: run the race, keep the meet moving
 
-Working title: **Can AI Untangle This Race Finish?**
+This walkthrough uses the current desktop prototype. Camera inputs are simulated; the bundled finish service echoes simulator truth and is visibly labelled **STAND-IN**. It demonstrates the operator workflow, not model accuracy. Proprietary timing and crop models are separate services and are not included in the repository or installers.
 
-This script describes the target prototype. Record each action only once it works. Use a real distance finish where another frame supplies the missing bib evidence, and replace the bracketed bib number with the actual value. Identify recorded footage as a replay and label any time compression.
+## 1. Load the meet
 
-## 0:00–0:15 — The challenge
+Open **Meet Link** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied simulator demo meet. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
 
-Screen: show the sprint, then freeze the crowded distance finish on the obscured bib.
+Open **Camera setup**, select a camera and choose **Open alignment** to preview simulated input before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race** or select **Run**. Setup does not start a race, record start triggers or write a race capture.
 
-> I'm giving OpenMeet two race finishes: this sprint—and this distance finish, where we can't read a runner's bib.
->
-> Can we get both to results an official can approve?
+## 2. Capture without losing control
 
-## 0:15–0:30 — The setup
+Use **Meet** to find an event, heat or athlete, then open that heat in Run. Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
 
-Screen: keep the race footage visible. Add progress indicators for Sprint and Distance.
+Optionally choose **After timeout** or **All runners marked** before starting another heat. These are explicit modes. A runner's status can resolve a DNS, DNF or DQ without manufacturing a finish time.
 
-> OpenMeet is open source. It calls our proprietary finish-detection model through an API, then uses a Meta-powered agent to help identify runners.
->
-> The official makes the final call.
+## 3. Review and correct a finish
 
-## 0:30–1:00 — Custom model
+Click a column, type `4`, then Enter to assign it to lane 4. Entry accepts multiple digits, including `20` when that number is in the roster. Backspace edits the pending number; Escape cancels it. A missing or ambiguous roster number does not change a finish.
 
-Screen: run the sprint. Briefly show OpenMeet → proprietary model API → proposed finish marks, then enlarge the marks.
+Drag any finish hairline along its full height. Select and delete it, then create a replacement. Operator edits are retained when later suggestions arrive. Close finishes remain available for review.
 
-> First, the sprint. We know who's in each lane.
->
-> OpenMeet sends the finish image to our model API. The model runs on our server and returns proposed finish marks. Its weights stay on the server.
->
-> Here are those marks over the original image, linked to the recorded hardware timestamps.
->
-> I inspect them, adjust anything necessary, and approve the heat.
->
-> One race approved.
+Click either scan and nudge the selected column with Left/Right or Shift+Left/Right. Select a reviewed finish in the sidebar to center and zoom its hairline, then choose **Accept time**. Switch the roster between **Lane** and **Finish** order. After scrolling away during capture, **Follow live** returns to the newest columns. More contains the other tools, Customize toolbar and Controls & shortcuts. Pin a tool, move it earlier and show that the layout survives reopening.
 
-## 1:00–1:15 — The harder case
+Hover either line-scan to inspect the corresponding front-camera frame. Use **Zoom** to inspect a box; **Unzoom** appears while zoomed. Neither changes original pixels. Drag the horizontal divider to give more height to the workspace or scan; the scan stays full width.
 
-Screen: return to the unidentified distance runner from the opening.
+Move rapidly between columns: available cached front-camera frames should paint without waiting on repeated video seeks. The displayed frame number follows the actual decoded frame; a pending cold load says **Loading frame…**. Hover during capture to inspect an earlier moment, then leave the scan to resume the live camera view.
 
-> Now take away the assigned lanes.
->
-> The model has marked the finishes. But this runner's identity is still missing.
->
-> We have a measured time. We still need the athlete.
+## 4. Fit the display to the venue
 
-## 1:15–1:50 — Meta agent
+Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, choose the lane count and position the first and last labels. Intermediate positions and font sizes are interpolated with perspective; switch to individual mode to fine-tune. Alt + wheel adjusts an individual number’s size. Show or hide numbers, adjust font size and weight, colors, thickness and opacity, and position the guides. Lane numbers sit in a separate left gutter; shared dividers can be dragged there or on the image. Appearance is remembered per meet/camera. **Highlight unfinished lanes** adds a brighter yellow fill behind runners awaiting an accepted finish or status. Gutter numbers automatically fit their lane rows. By default these are decorative guides. The separate **Use guides for auto-timing** option makes a derived scan containing opaque horizontal boundaries, without labels or finish marks. Original pixels and timestamps remain unchanged, and a request ledger records the preprocessing. Whether this helps a private model needs evaluation.
 
-Screen: show nearby frame crops, visible bib details, and roster candidates beside the finish evidence.
+On the line-scan, drag a divider in the left lane column anytime. **Drag on image** optionally enables editing over the scan itself. Only that shared edge moves, resizing the lanes above and below it. **Overlays behind runners** hides guide segments where the image differs from the initial empty-track reference. Compare the toggle on and off; finish markers stay visible. This display feature is separate from the opaque lines optionally included in model-input copies.
 
-> I ask the Meta-powered agent to help resolve this finisher.
->
-> It retrieves nearby frames, examines the visible bib details, and checks the race roster.
->
-> OpenMeet brings the supporting images and candidate entries into the official's review.
->
-> But this view still doesn't provide enough evidence. The identity stays unresolved.
->
-> Let's look earlier.
+In Camera setup, name each finish location, assign the heat's timing camera, and choose the main and additional views separately. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. DNS and vacant lanes are identified in the gutter. With a configured private cropper, More → Hide empty spans shortens the displayed scan with explicit time breaks; Show all columns restores the complete recording. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
 
-## 1:50–2:20 — The reveal
+## 5. Correct an accidental start trigger
 
-Screen: the official requests an earlier view. Show the clearer frame beside the obscured one.
+The **Starts** tab retains meet-wide start triggers and assignment history. Record another simulated trigger, then assign the correct trigger to the heat. All elapsed times update while the captured finish columns stay fixed. Re-save to update exported results.
 
-> Show me the clearest earlier bib view.
->
-> There—now we can read it.
->
-> The Meta agent extracts [actual bib number] and checks the roster.
->
-> Here's the proposed athlete, alongside the image supporting that match.
->
-> I check the evidence and confirm the identity.
+The small red **Restart** button beside the main action opens a confirmation dialog before arming a fresh attempt. While recording, **Stop/reset** offers **Stop capture** or **Stop & restart**. Cancel leaves the race running. Use the Race panel’s attempt selector to inspect earlier attempts during this session. Original capture files and start-trigger history are retained on disk; saved LIF snapshots are also copied into each capture folder.
 
-Pause so viewers can read the bib and matching entry.
+Physical start-sensor integration is still pending; the journal and assignment interface are implemented.
 
-## 2:20–2:45 — Official control
+## 6. Save and move on
 
-Screen: show the confirmed athlete attached to the original finish mark. Open the evidence record, then approve the reviewed results.
+The sidebar presents one main action for the current state. When every athlete has a finish or status, **Save results** writes `EEE-R-HH.lif` atomically. The next heat loads, and Auto-arm optionally arms it. Confirm AthleticLOCAL import on a test meet before relying on the integration at a real meet; result status conventions still require hands-on verification.
 
-> The official controls that confirmation. I can correct the suggestion or leave the identity unresolved.
->
-> The measured time remains tied to the original hardware timestamp. The supporting evidence and review decision remain attached to the result.
->
-> This match checks out. I'm approving the reviewed distance results.
+## 7. Show the scoreboard
 
-## 2:45–3:00 — The payoff
+Open **Scoreboard** to preview a live board, open it on another display, or use its LAN address with OBS. Create, delete and restore boards. **Build with AI** delegates a requested visual change to an installed, authenticated coding agent. Meta Muse Code, Codex and Grok have separate account requirements; do not claim a successful Meta build unless it actually ran.
 
-Screen: show both approved result sets, then transition to the next heat.
+## Before recording a submission
 
-> Two finishes. Both approved. The evidence is preserved, and we're ready for the next heat.
->
-> That's OpenMeet: specialized vision, a Meta-powered assistant, and an official in control—keeping the meet moving.
+- Record the actual working build and identify replay inputs and any time compression.
+- Keep **STAND-IN** visible when using the truth-based timing demonstration.
+- Do not show private timing/crop model code, weights or datasets.
+- Use only demonstration footage and backgrounds cleared for public display.
+- Show completed functionality. Distance-runner identification and real camera integration remain roadmap items until implemented and verified.

@@ -1,0 +1,6 @@
+{
+  "name": "@openmeet/autotiming",
+  "private": true,
+  "type": "module",
+  "exports": "./client.js"
+}
