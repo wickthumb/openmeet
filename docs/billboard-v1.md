@@ -18,9 +18,9 @@ every item; **Undo removal** restores the last removed item. Removing all items
 keeps the list empty. Existing single-billboard settings migrate into one list item.
 Custom artwork can also be deleted separately with an inline confirmation.
 
-Placement is saved per meet and scan camera. **Pattern offset** and **Repeat width**
+Placement is saved per meet and scan-camera setup revision. **Pattern offset** and **Repeat width**
 use original source-time seconds, before start corrections; top and height use
-native sensor rows. **Place on scan** closes the editor dialog so the selected band can be dragged directly on the scan. A small placement toolbar provides **Edit design** and **Done**. Its top and bottom handles resize it; the repeat size scales with its height. No drag-mode switch is required. Compact handles remain available outside the editor. Arrow keys move a
+native sensor rows. **Place on scan** closes the editor dialog so the selected band can be dragged directly on the scan. A small placement toolbar provides **Edit design** and **Done**. Its top and bottom handles resize it; the repeat size scales with its height. No drag-mode switch is required. Placement handles appear only during **Place on scan** and disappear after **Done** or returning to Run. Arrow keys move a
 focused handle by one source column/row; Shift moves ten. **Bring into view** brings the band into the visible rows without changing its size. Scrolling, zoom, Flip and height
 framing only change its projection. The pattern flips with the source image.
 Hidden spans preserve the pattern phase from original source columns and retain

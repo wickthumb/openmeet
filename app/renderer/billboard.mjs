@@ -151,9 +151,10 @@ export class BillboardConsole {
 
   syncEditor(b,rects,view){
     for(const key of ['time','duration','row','height']){const input=document.getElementById('billboard-'+key);if(input&&input!==document.activeElement)input.value=+b[key].toFixed(key==='time'||key==='duration'?6:2);}
-    this.editor.hidden=!b.enabled||view.framing||!rects.length;
-    if(this.dragging)return;
     const editing=!!this.context().placing;
+    this.editor.hidden=!editing||!b.enabled||view.framing||!rects.length;
+    if(this.editor.hidden){this.editor.replaceChildren();this.editorSignature=null;return;}
+    if(this.dragging)return;
     const signature=JSON.stringify([b,rects,view.framing,editing]);if(signature===this.editorSignature)return;this.editorSignature=signature;
     const focused=this.editor.contains(document.activeElement)?document.activeElement.className:null;this.editor.replaceChildren();
     const resized=(base,dr,top=false)=>{const bottom=base.row+base.height,row=top?Math.max(0,Math.min(bottom-1,base.row+dr)):base.row,height=top?bottom-row:Math.max(1,Math.min(view.rows-row,base.height+dr));return {...base,row,height,duration:Math.max(view.period*4,base.duration*height/base.height)};};
