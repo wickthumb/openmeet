@@ -2039,7 +2039,7 @@ function renderTools() {
   const key=JSON.stringify([box.clientWidth,h.replaySourceType,h.asset?.mainCameraId,h.asset?.mainCameraLabel,h.asset?.comparisonCameraLabel,cur().asset?.mainCameraId,cur().viewLoading,cur().asset?.lineScans?.length,!!overlayMenu?.isConnected,toolbarPopover?.menu.className,preferences,tools.map(t=>[t.id,t.when,t.on,t.disabled,t.label])]);
   if(toolbarRenderKey===key){toolbarPopover?.update();return;}toolbarRenderKey=key;box.innerHTML='';
   const camera=$('#scanCameraLabel');camera.textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';camera.disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;camera.onclick=e=>showSourceMenu('main',e.currentTarget);
-  camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:'Choose main line-scan view';
+  camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:`${h.asset?.mainCameraLabel||'Main scan'} · Choose main line-scan view`;
   const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} ▾`:'Backup line-scan';
   comparisonPicker.disabled=!replayCameras(h).comparison;
   backupLinkButton.disabled=!replayCameras(h).comparison;
