@@ -188,9 +188,13 @@ export function writeForegroundMask(target, columnOffset, image, background) {
 
 export function foregroundInRows(mask, column, height, firstRow, lastRow) {
   if (!mask || column < 0) return false;
-  for (let y = Math.max(0, firstRow); y <= Math.min(height - 1, lastRow); y++) {
-    const bit = column * height + y;
-    if (mask[bit >> 3] & (1 << (bit & 7))) return true;
-  }
+  const lo=Math.max(0,firstRow),hi=Math.min(height-1,lastRow);
+  if(hi<lo)return false;
+  const first=column*height+lo,last=column*height+hi,a=first>>3,b=last>>3;
+  const start=255<<(first&7),end=255>>>(7-(last&7));
+  if(a===b)return !!(mask[a]&start&end);
+  if((mask[a]&start)||(mask[b]&end))return true;
+  // Whole bytes skip empty native rows without a per-pixel query.
+  for(let i=a+1;i<b;i++)if(mask[i])return true;
   return false;
 }

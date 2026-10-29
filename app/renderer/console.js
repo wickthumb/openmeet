@@ -4,6 +4,7 @@ import { SCAN_TOOLS, toolbarPreferences, moveToolbarTool } from './scan-toolbar.
 import { validateCropResult, columnProjection, displayCoordinate, originalCoordinate, visibleColumnPieces } from './column-map.mjs';
 import { FrontOverlayOcclusion } from './front-occlusion.mjs';
 import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './occlusion-state.mjs';
+import { LiveFollow } from './live-follow.mjs';
 
 (() => {
 'use strict';
@@ -421,6 +422,7 @@ function ensureStrip(h) {
 // A heat whose camera is the engine's: the strip starts black and fills as the engine's columns arrive.
 const STRIP_TILE = 2048;
 function blankStrip(h) {
+  h.liveFollow=new LiveFollow();h.presentedCols=0;
   h.stripTiles = [];
   h.foregroundTiles = []; h.overlayBackground = null; h.sampleForeground = null;
   h.guideRenderCache=null;
@@ -430,7 +432,7 @@ function blankStrip(h) {
 function drawStrip(g,h,sx,sy,sw,sh,dx,dy,dw,dh) {
   if(!h.stripTiles) { g.drawImage(h.img,sx,sy,sw,sh,dx,dy,dw,dh); return; }
   if(sw<=0)return;
-  const lo=Math.floor(sx/STRIP_TILE),hi=Math.floor((sx+sw-1)/STRIP_TILE);
+  const lo=Math.floor(sx/STRIP_TILE),hi=Math.floor((sx+sw-1e-7)/STRIP_TILE);
   for(let i=lo;i<=hi;i++) {
     const tile=h.stripTiles[i]; if(!tile)continue;
     const a=Math.max(sx,i*STRIP_TILE),b=Math.min(sx+sw,(i+1)*STRIP_TILE);
@@ -455,6 +457,7 @@ function ingestColumns(h, first, count, data, channels) {
     writeForegroundMask(mask,local,{data:data.subarray((c-n)*rows*channels,c*rows*channels),width:n,height:rows,channels},h.overlayBackground);
   }
   h.recvCols=Math.max(h.recvCols||0,first+count);
+  (h.liveFollow ||= new LiveFollow()).observe(h.recvCols,performance.now(),SPEED/periodOf(h));
   if(h.preview){h.minCol=Math.max(0,h.recvCols-STRIP_TILE*8);const firstTile=Math.floor(h.minCol/STRIP_TILE);for(let i=h.firstTile||0;i<firstTile;i++){delete h.stripTiles[i];delete h.foregroundTiles[i];}h.firstTile=firstTile;}
   h.nCols=Math.max(h.nCols,h.recvCols);h.tClose=h.tOpen+h.recvCols*periodOf(h);
 }
@@ -632,7 +635,7 @@ function fire() {
   h.startCorrection = 0; h.startReference = null; h.startTriggerId = null; h.dismissed = {}; h.inputDerived=false;
   if(!h.asset) { h.sampleStrip=h.sampleStrip||h.img; blankStrip(h); }
   h.proposals = null; h.allProps = null; h.liveTo = null; h.liveBusy = false; h.req = 'idle';h.learnedForeground=null;h.occlusionAttempt=null;
-  S.view.user = false; S.view.followZoom=null; S.selCol = null;
+  S.view.user = false; S.view.followZoom=null; S.view.followTransition=null; S.selCol = null;
   if (h.asset && OM) {
     blankStrip(h); h.captureId = null; S.pendingCapture = h;
     OM.call('capture.start', {
@@ -984,9 +987,8 @@ function tickClock() {
   const h = cur(), c = $('#clock'), sub = $('#clocksub');
   if (!c) return;
   const done = ['review', 'saved'].includes(h.state), win = done ? places(h).fin[0] : null;
-  if (h.state === 'running') c.textContent = (Math.floor((h.tNow - (h.startCorrection || 0)) * 10) / 10).toFixed(1);
-  else if (win) c.textContent = official(raceTime(h, h.marks[win.lane].col));
-  else c.textContent = done ? '--.--' : '0.0';
+  const text=h.state==='running'?(Math.floor((h.tNow-(h.startCorrection||0))*10)/10).toFixed(1):win?official(raceTime(h,h.marks[win.lane].col)):done?'--.--':'0.0';
+  if(c.textContent!==text)c.textContent=text;
   c.style.color = h.state === 'running' || win ? 'var(--paper)' : 'var(--dim)';
   const lead = h.state === 'running' ? places(h).fin[0] : null;
   if (sub) sub.textContent = win ? `Winner: lane ${win.lane}, ${win.first} ${win.last}`
@@ -1907,7 +1909,7 @@ function scanToolStates() {
   const h=viewHeat(),captured=['review','saved'].includes(h.state)||(h.state==='running'&&h.liveCol>=0);
   const review=!S.cameraSetup&&['review','saved'].includes(h.state);
   const states={
-    follow:{icon:ICON.next,when:h.state==='running',on:!S.view.user,disabled:false,action:()=>{S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.zoomTool=false;S.hoverCol=null;follow(viewHeat());renderTools();invalidate();}},
+    follow:{icon:ICON.next,when:h.state==='running',on:!S.view.user,disabled:false,action:()=>{S.view.followTransition={at:performance.now(),c0:S.view.c0,zx:S.view.zx};S.view.followZoom=S.view.zx;S.view.user=false;S.view.zoomed=false;S.zoomTool=false;S.hoverCol=null;follow(viewHeat());renderTools();invalidate();}},
     zoom:{icon:ICON.zoom,on:S.zoomTool,disabled:!captured,action:()=>{S.zoomTool=!S.zoomTool;renderTools();syncCursor();}},
     unzoom:{icon:ICON.fit,when:S.view.zoomed,disabled:!captured,action:()=>{fitView();renderUI();}},
     height:{icon:ICON.fit,on:!!S.frameEditor,disabled:false,action:toggleHeightFrame},
@@ -2006,13 +2008,17 @@ function showToolbarDialog(kind) {
   }
   dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('close',()=>{dialog.remove();document.querySelector('#tools [data-more]')?.focus();},{once:true});document.body.append(dialog);dialog.showModal();
 }
+let toolbarRenderKey='';
 function renderTools() {
   invalidate();
-  const h=viewHeat(),box=$('#tools');box.innerHTML='';syncLaneGutter(overlayStyle('scan'));
+  const h=viewHeat(),box=$('#tools');syncLaneGutter(overlayStyle('scan'));
+  const tools=scanToolStates(),preferences=toolbarPreferences(store.get('scanToolbar',null));
+  const key=JSON.stringify([box.clientWidth,h.asset?.mainCameraId,h.asset?.mainCameraLabel,h.asset?.comparisonCameraLabel,cur().asset?.mainCameraId,cur().viewLoading,cur().asset?.lineScans?.length,!!overlayMenu?.isConnected,toolbarPopover?.menu.className,preferences,tools.map(t=>[t.id,t.when,t.on,t.disabled,t.label])]);
+  if(toolbarRenderKey===key){toolbarPopover?.update();return;}toolbarRenderKey=key;box.innerHTML='';
   const camera=$('#scanCameraLabel');camera.textContent=(h.asset?.mainCameraLabel||'Main scan')+' ▾';camera.disabled=!!cur().viewLoading||!cur().asset?.lineScans?.length;camera.onclick=e=>showSourceMenu('main',e.currentTarget);
   camera.title=h.asset?.mainCameraId!==cur().asset?.mainCameraId?`Viewing ${h.asset.mainCameraLabel}; recording and auto-timing use ${cur().asset.mainCameraLabel}`:'Choose main line-scan view';
   const backupTitle=backupCv?.parentNode?.parentNode?.querySelector('.kicker');if(backupTitle)backupTitle.textContent=h.asset?.comparisonCameraLabel?`${h.asset.comparisonCameraLabel} ▾`:'Backup line-scan';
-  const tools=scanToolStates(),preferences=toolbarPreferences(store.get('scanToolbar',null)),pinned=h_('div','pinned-scan-tools');box.append(pinned);
+  const pinned=h_('div','pinned-scan-tools');box.append(pinned);
   for(const id of preferences.order){const tool=tools.find(t=>t.id===id);if(!preferences.pinned.includes(id)||!tool.when)continue;
     const button=h_('button','tool'+(tool.on?' on':'')+(id==='mark'?' primary-tool':''));button.dataset.tool=id;button.title=tool.help;button.disabled=tool.disabled;
     button.innerHTML=tool.icon+tool.label+(['lanes','auto'].includes(id)?' ▾':'');
@@ -2295,12 +2301,15 @@ function centerOn(col) {
   if (col < v.c0 + vis * 0.1 || col > v.c0 + vis * 0.9) { v.c0 = col - vis / 2; clampView(); }
 }
 // While running: the scan streams in at 1:1, condenses down to MIN_ZX, then autoscrolls with the live edge at the right.
-function follow(h) {
-  const v = S.view, W = scanW(), n = Math.max(1, h.liveCol + 1);
+function follow(h,now=performance.now()) {
+  const v = S.view, W = scanW(), n = Math.max(1,h.presentedCols??h.liveCol+1);
   fitScanHeight(h);
   v.focusLane=null;
-  v.zx = Math.max(MIN_ZX, v.followZoom ?? Math.min(1, W / n));      // stream in at 1:1, condense to the floor, then autoscroll
-  v.c0 = Math.max(0, n - W / v.zx);
+  const zx=Math.max(MIN_ZX,v.followZoom??Math.min(1,W/n)),c0=Math.max(0,n-W/zx);
+  if(h.liveFollow?.resumed&&!v.followTransition)v.followTransition={at:now,c0:v.c0,zx:v.zx};
+  const transition=v.followTransition;
+  if(transition){const t=Math.min(1,Math.max(0,(now-transition.at)/240)),ease=t*t*(3-2*t);v.zx=transition.zx+(zx-transition.zx)*ease;v.c0=transition.c0+(c0-transition.c0)*ease;if(t===1)v.followTransition=null;}
+  else{v.zx=zx;v.c0=c0;}
 }
 // screen x <-> column, honouring Flip (mirrored: later times to the left)
 const unflipX = x => (S.flip ? scanW() - x : x);
@@ -2366,22 +2375,25 @@ function hitScanBoundary(h,x,y,inGutter=false) {
     return {...b,d:distance};
   }).filter(b=>b.d<=8).sort((a,b)=>a.d-b.d)[0]||null;
 }
-function guideRenderData(h,o,W,Hi,g) {
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.thickness,o.fontSize,o.weight,o.boundaries,o.positions]);
-  if(h.guideRenderCache?.key===key)return h.guideRenderCache.lines;
+const OVERLAY_PAD=192;
+const overlayOffset=cache=>-OVERLAY_PAD-(S.view.c0-cache.c0)*S.view.zx*(S.flip?-1:1);
+function guideRenderData(h,o,W,Hi) {
+  const v=S.view,key=JSON.stringify([W,Hi,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.thickness,o.boundaries,o.positions]);
+  if(h.guideRenderCache?.key===key&&Math.abs((v.c0-h.guideRenderCache.c0)*v.zx)<OVERLAY_PAD*.75)return h.guideRenderCache;
+  const width=W+2*OVERLAY_PAD;
   const lines=scanBoundaries(laneBands(h),o,rowsOf(h)).map(b=>{
     const y=(b.row-v.r0)*v.zy,path=new Path2D();
     if(y>=0&&y<=Hi&&o.thickness>0) {
-      if(!o.behindRunners){path.moveTo(0,y);path.lineTo(W,y);}
-      else {const half=o.thickness/(2*v.zy);let start=null;for(let x=0;x<=W;x++){
-        const hidden=x>=W||guideOccluded(h,x,x+1,b.row-half,b.row+half);
+      if(!o.behindRunners){path.moveTo(0,y);path.lineTo(width,y);}
+      else {const half=o.thickness/(2*v.zy);let start=null;for(let x=0;x<=width;x++){
+        const hidden=x>=width||guideOccluded(h,x-OVERLAY_PAD,x+1-OVERLAY_PAD,b.row-half,b.row+half);
         if(!hidden&&start==null)start=x;
         if(hidden&&start!=null){path.moveTo(start,y);path.lineTo(x,y);start=null;}
       }}
     }
     return {boundary:b,path};
   });
-  h.guideRenderCache={key,lines};return lines;
+  return h.guideRenderCache={key,lines,c0:v.c0};
 }
 
 function foregroundColumns(h,x0,x1) {
@@ -2398,27 +2410,30 @@ function foregroundColumns(h,x0,x1) {
 }
 function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache') {
   if(!pending.size||W<1||Hi<1)return null;
-  const v=S.view,key=JSON.stringify([W,Hi,v.c0,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.pendingColor,[...pending],edges]);
-  if(h[cache]?.key===key)return h[cache].canvas;
-  const canvas=document.createElement('canvas');canvas.width=W;canvas.height=Hi;
+  const v=S.view,key=JSON.stringify([W,Hi,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.pendingColor,[...pending],edges]);
+  if(h[cache]?.key===key&&Math.abs((v.c0-h[cache].c0)*v.zx)<OVERLAY_PAD*.75)return h[cache];
+  const canvas=document.createElement('canvas'),width=W+2*OVERLAY_PAD;canvas.width=width;canvas.height=Hi;
   const ctx=canvas.getContext('2d'),bands=[];ctx.fillStyle=o.pendingColor;
   for(let i=0;i<edges.length-1;i++){
     if(!pending.has(edges[i].below))continue;
     const top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);
-    if(bottom>top){ctx.fillRect(0,top,W,bottom-top);bands.push({top:Math.floor(top),bottom:Math.ceil(bottom)});}
+    if(bottom>top){ctx.fillRect(0,top,width,bottom-top);bands.push({top:Math.floor(top),bottom:Math.ceil(bottom),first:Math.max(0,Math.floor(v.r0+Math.floor(top)/v.zy)-2),last:Math.min(rowsOf(h)-1,Math.ceil(v.r0+Math.ceil(bottom)/v.zy)+2)});}
   }
   if(o.behindRunners&&bands.length){
-    const image=ctx.getImageData(0,0,W,Hi),rows=rowsOf(h);
-    for(let x=0;x<W;x++){
-      const columns=foregroundColumns(h,x,x+1);if(!columns.length)continue;
-      for(const band of bands)for(let y=band.top;y<band.bottom;y++){
-        const lo=Math.max(0,Math.floor(v.r0+y/v.zy)-2),hi=Math.min(rows-1,Math.ceil(v.r0+(y+1)/v.zy)+2);
-        if(columns.some(c=>foregroundInRows(c.mask,c.column,rows,lo,hi)))image.data[(y*W+x)*4+3]=0;
+    const image=ctx.getImageData(0,0,width,Hi),rows=rowsOf(h);
+    for(let x=0;x<width;x++){
+      const columns=foregroundColumns(h,x-OVERLAY_PAD,x+1-OVERLAY_PAD);if(!columns.length)continue;
+      for(const band of bands){
+        if(!columns.some(c=>foregroundInRows(c.mask,c.column,rows,band.first,band.last)))continue;
+        for(let y=band.top;y<band.bottom;y++){
+          const lo=Math.max(0,Math.floor(v.r0+y/v.zy)-2),hi=Math.min(rows-1,Math.ceil(v.r0+(y+1)/v.zy)+2);
+          for(const c of columns)if(foregroundInRows(c.mask,c.column,rows,lo,hi)){image.data[(y*width+x)*4+3]=0;break;}
+        }
       }
     }
     ctx.putImageData(image,0,0);
   }
-  h[cache]={key,canvas};return canvas;
+  return h[cache]={key,canvas,c0:v.c0};
 }
 
 function drawLaneGuides(g,h,W,Hi) {
@@ -2433,11 +2448,11 @@ function drawLaneGuides(g,h,W,Hi) {
     if(o.behindRunners)sampleForeground(h);
     const emptyLanes=new Set(o.shadeInactive&&!S.cameraSetup?laneBands(h).filter(b=>!h.athletes.some(a=>a.lane===b.lane)||['DNS','FS'].includes(h.status[b.lane])).map(b=>b.lane):[]);
     const emptyLayer=reviewHighlightLayer(h,{...o,pendingColor:o.inactiveColor},W,Hi,emptyLanes,edges,'statusHighlightCache');
-    if(emptyLayer){g.save();g.globalAlpha=o.inactiveOpacity;g.drawImage(emptyLayer,0,0);g.restore();}
+    if(emptyLayer){g.save();g.globalAlpha=o.inactiveOpacity;g.drawImage(emptyLayer.canvas,overlayOffset(emptyLayer),0);g.restore();}
     const highlight=reviewHighlightLayer(h,o,W,Hi,pending,edges);
-    if(highlight){g.save();g.globalAlpha=o.pendingOpacity;g.drawImage(highlight,0,0);g.restore();}
+    if(highlight){g.save();g.globalAlpha=o.pendingOpacity;g.drawImage(highlight.canvas,overlayOffset(highlight),0);g.restore();}
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
-    guideRenderData(h,o,W,Hi,g).forEach(line=>{
+    const guides=guideRenderData(h,o,W,Hi);g.translate(overlayOffset(guides),0);guides.lines.forEach(line=>{
       if(o.thickness>0)g.stroke(line.path);
     });g.restore();
   }
@@ -2637,16 +2652,16 @@ function frontTime(h) {
   const col = S.hoverCol != null ? S.hoverCol : S.selCol;
   return col == null ? null : colTime(h, col);
 }
-let vidEl = null, vidTag = null, frontCache=null, frontCacheKey=null, lastFrontFrame=null, wantedVideoTime=null;
+let vidEl = null, vidTag = null, frontCache=null, frontCacheKey=null, lastFrontFrame=null, wantedVideoTime=null, frontVideoFrame=0;
 const frontOcclusion=new FrontOverlayOcclusion(()=>invalidate());
 function currentFrontPixels() {
-  if(vidEl?.style.display==='block')return vidEl.readyState>=2?{image:vidEl,stamp:`video:${vidEl.currentTime}`}:null;
+  if(vidEl?.style.display==='block')return vidEl.readyState>=2?{image:vidEl,stamp:`video:${vidEl.dataset.src}:${vidEl.requestVideoFrameCallback?frontVideoFrame:Math.floor(vidEl.currentTime*(vidEl.dataset.fps||30))}`}:null;
   if(lastFrontFrame)return {image:lastFrontFrame.bitmap,stamp:`frame:${lastFrontFrame.index}`};
   const cv=$('#front');return cv.width&&cv.height?{image:cv,stamp:`sample:${frontTime(viewHeat())}:${cv.width}:${cv.height}`}:null;
 }
 function updateFrontOcclusion(h) {
   const layer=$('#frontLaneOverlay'),o=overlayStyle('front');
-  if(!o.enabled||!o.behindRunners){layer.style.maskImage='none';return;}
+  if(!o.enabled||!o.behindRunners){layer.style.maskImage='none';layer.style.visibility='';return;}
   const rec=h.frontRec||(h.asset?.front?{path:h.asset.front,frames:h.asset.frontFrames}:null),source=currentFrontPixels();
   if(rec){
     frontOcclusion.configure(frontCacheKey);
@@ -2655,6 +2670,9 @@ function updateFrontOcclusion(h) {
   const mask=source&&frontOcclusion.mask(source.image,source.stamp);
   layer.dataset.occlusion=mask?'ready':frontOcclusion.failed?'unavailable':frontOcclusion.reference?'waiting-frame':'loading-background';
   layer.style.maskImage=mask?`url("${mask}")`:'none';
+  // Keep live masks between worker completions. A new seek/reference has no
+  // matching mask yet, so only its decorative number layer waits for the result.
+  layer.style.visibility=!mask&&!frontOcclusion.failed?'hidden':'';
 }
 function seekFrontVideo(v,target) {
   wantedVideoTime=target;
@@ -2665,7 +2683,9 @@ function frontVideo() {
     const pb = $('#front').parentNode;
     vidEl = h_('video', 'frontvid'); vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';vidEl.crossOrigin='anonymous';
     vidEl.onloadedmetadata = invalidate;
-    vidEl.onseeked=()=>{if(wantedVideoTime!=null&&Math.abs(vidEl.currentTime-wantedVideoTime)>0.002)seekFrontVideo(vidEl,wantedVideoTime);invalidate();};
+    vidEl.onloadeddata=()=>{frontVideoFrame++;invalidate();};
+    vidEl.onseeked=()=>{frontVideoFrame++;if(wantedVideoTime!=null&&Math.abs(vidEl.currentTime-wantedVideoTime)>0.002)seekFrontVideo(vidEl,wantedVideoTime);invalidate();};
+    if(vidEl.requestVideoFrameCallback){const presented=()=>{frontVideoFrame++;invalidate();vidEl.requestVideoFrameCallback(presented);};vidEl.requestVideoFrameCallback(presented);}
     vidTag = h_('div', 'frametag');
     pb.append(vidEl, vidTag);
     applyFrontView();
@@ -2681,6 +2701,7 @@ function syncFront(h,g,W,Hf) {
   const url = OM.fileUrl(rec.path);
   if (v.dataset.src !== url) { v.dataset.src = url; v.src = url; }
   const fps = (rec.meta && rec.meta.fps) || 30, ff = (rec.meta && rec.meta.first_frame_race_time_s) || 0;
+  v.dataset.fps=fps;
   const cacheKey=rec.frames?.[0]||url;
   if(frontCacheKey!==cacheKey){frontCache?.dispose();frontCache=null;lastFrontFrame=null;frontCacheKey=cacheKey;if(rec.frames?.length)frontCache=new FrontFrameCache({load:async index=>{const im=new Image();im.crossOrigin='anonymous';im.src=OM.fileUrl(rec.frames[index]);await im.decode();return createImageBitmap(im);},onReady:invalidate});}
   if (h.state === 'running'&&S.hoverCol==null) {
@@ -3049,7 +3070,7 @@ function frame(now) {
         const target=Math.floor((preview.tNow-preview.tOpen)/periodOf(preview)),count=target-(preview.recvCols||0);
         if(count>0){const src=p.sample.getContext('2d').getImageData(0,0,1,rowsOf(preview)).data,data=new Uint8Array(count*rowsOf(preview)*3);for(let x=0;x<count;x++)for(let y=0;y<rowsOf(preview);y++){const d=(x*rowsOf(preview)+y)*3;data[d]=src[y*4];data[d+1]=src[y*4+1];data[d+2]=src[y*4+2];}ingestColumns(preview,preview.recvCols||0,count,data,3);}
       }
-      preview.liveCol=(preview.recvCols||0)-1;if(!S.view.user&&preview.liveCol>=0)follow(preview);
+      preview.liveCol=(preview.recvCols||0)-1;preview.presentedCols=preview.liveFollow?.sample(now)??preview.recvCols;if(!S.view.user&&preview.liveCol>=0)follow(preview,now);
     }
     if(now-lastLiveRender>500){lastLiveRender=now;renderRace();renderTools();}
   }
@@ -3066,9 +3087,11 @@ function frame(now) {
         c+=n;
       }
       h.recvCols=target;h.nCols=Math.max(h.nCols,target);h.tClose=h.tOpen+target*periodOf(h);
+      (h.liveFollow ||= new LiveFollow()).observe(target,now,SPEED/periodOf(h));
     }
     const lc=(h.recvCols||0)-1;
-    if (lc !== h.liveCol) { h.liveCol = lc; if (h===cur()&&!S.view.user && lc >= 0) follow(viewHeat()); }
+    h.liveCol=lc;h.presentedCols=h.liveFollow?.sample(now)??h.recvCols;
+    if(h===cur()&&!S.view.user&&lc>=0)follow(viewHeat(),now);
     if(now-lastLiveRender>250){lastLiveRender=now;liveSuggest(h);if(h===cur()){renderAcc();const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();}renderProps();renderTools();}renderSchedule();if(S.tab==='events')renderMeetNavigator($('#drawerBody'));publishBoard();}
     if(h.stopMode==='timeout'&&h.tNow>=h.stopAfter)stopCapture(h);
     if(h.stopMode==='complete'&&h.athletes.length&&h.athletes.every(a=>resolved(h,a)))stopCapture(h);

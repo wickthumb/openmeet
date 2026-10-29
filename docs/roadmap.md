@@ -49,6 +49,8 @@ Before applying or exporting a quality recipe, show synchronized original and de
 
 Qualification still needs representative real camera noise, lighting changes, crowded finishes, sustained throughput, source gap accounting, exact clocks, random access and crash recovery. Short simulated codec tests and perfect finite mask tests cannot establish real-camera full-day capacity or a never-missed-runner guarantee.
 
+Compare tight foreground masks with padded detection rectangles and full-height time windows. A tight outline can omit real athlete pixels; larger retained regions trade some background savings for more context. Padding must account for sensor resolution and scan rate. Measure independently labelled body pixels, torso edges and complete missed runners separately: exact compression of a selected region does not prove that selection retained every athlete.
+
 Explore one logical meet recording with an indexed start-trigger journal and race views referencing its columns, so a heat can use a different start without rewriting the original evidence. Keep proprietary models separate. Any storage or timing claim needs measured results and a real-camera validation plan.
 
 ## Optional custom line-scan background

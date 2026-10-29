@@ -34,23 +34,36 @@ export function frontOverlayAlpha(reference,current,width,height) {
   return alpha;
 }
 
+// One worker job and one replaceable snapshot; no worker ever owns timing data.
 export class FrontOverlayOcclusion {
   constructor(onReady=()=>{}) {
     this.onReady=onReady;this.key=null;this.generation=0;this.reference=null;this.loading=false;this.failed=false;this.stamp=null;this.url=null;
-    this.sample=document.createElement('canvas');this.output=document.createElement('canvas');
-    this.context=this.sample.getContext('2d',{willReadFrequently:true});this.out=this.output.getContext('2d');
+    this.worker=null;this.inFlight=null;this.pending=null;this.requestedStamp=null;this.nextId=0;this.timer=null;
+    this.playing=false;this.seeking=false;this.playbackGeneration=0;
+    this.sample=document.createElement('canvas');this.context=this.sample.getContext('2d',{willReadFrequently:true});
+  }
+  clearUrl() {
+    if(this.url)URL.revokeObjectURL(this.url);
+    this.url=null;this.stamp=null;
+  }
+  reset() {
+    this.generation++;this.worker?.terminate();this.worker=null;clearTimeout(this.timer);this.timer=null;
+    this.inFlight=null;this.pending=null;this.requestedStamp=null;this.clearUrl();
+    this.playing=false;this.seeking=false;this.playbackGeneration++;
+    this.loading=false;this.failed=false;
   }
   configure(key) {
     if(this.key===key)return;
-    this.key=key;this.generation++;this.reference=null;this.loading=false;this.failed=false;this.stamp=null;this.url=null;
+    this.key=key;this.reset();this.reference=null;
   }
   setReference(source) {
     const w=source.videoWidth||source.naturalWidth||source.width,h=source.videoHeight||source.naturalHeight||source.height;if(!w||!h)return false;
+    // Keep precisely the previous sampling dimensions and canvas resampling path.
     const scale=Math.min(1,640/Math.max(w,h));this.sample.width=Math.max(1,Math.round(w*scale));this.sample.height=Math.max(1,Math.round(h*scale));
-    this.output.width=this.sample.width;this.output.height=this.sample.height;
     this.context.drawImage(source,0,0,this.sample.width,this.sample.height);
-    this.reference=this.context.getImageData(0,0,this.sample.width,this.sample.height).data;
-    this.stamp=null;this.url=null;this.failed=false;this.onReady();return true;
+    const reference=this.context.getImageData(0,0,this.sample.width,this.sample.height).data;
+    // Also invalidate a loadReference still resolving for the same camera key.
+    this.reset();this.reference=reference;this.onReady();return true;
   }
   async loadReference(frameUrl,videoUrl) {
     if(this.reference||this.loading||this.failed)return;this.loading=true;const generation=this.generation;
@@ -66,12 +79,71 @@ export class FrontOverlayOcclusion {
     }catch{if(generation===this.generation)this.failed=true;}
     finally{if(video){video.removeAttribute('src');video.load();}if(generation===this.generation){this.loading=false;this.onReady();}}
   }
-  mask(source,stamp) {
-    if(!this.reference||!source)return null;
-    if(stamp===this.stamp&&this.url)return this.url;
-    const w=this.sample.width,h=this.sample.height;this.context.drawImage(source,0,0,w,h);
-    const alpha=frontOverlayAlpha(this.reference,this.context.getImageData(0,0,w,h).data,w,h),image=this.out.createImageData(w,h);
-    for(let i=0;i<alpha.length;i++){image.data[i*4]=image.data[i*4+1]=image.data[i*4+2]=255;image.data[i*4+3]=alpha[i];}
-    this.out.putImageData(image,0,0);this.stamp=stamp;this.url=this.output.toDataURL();return this.url;
+  fail(worker) {
+    if(worker&&worker!==this.worker)return;
+    this.worker?.terminate();this.worker=null;clearTimeout(this.timer);this.timer=null;
+    this.inFlight=null;this.pending=null;this.failed=true;this.clearUrl();this.onReady();
   }
+  ensureWorker() {
+    if(this.worker)return true;
+    if(this.failed)return false;
+    let worker;
+    try{
+      worker=new Worker(new URL('./front-occlusion-worker.mjs',import.meta.url),{type:'module'});this.worker=worker;
+      worker.onmessage=event=>this.completed(worker,event.data);
+      worker.onerror=event=>{event.preventDefault();this.fail(worker);};
+      worker.onmessageerror=()=>this.fail(worker);
+      // Transfer a copy: setReference's fixed reference stays intact on the UI side.
+      const reference=this.reference.slice();
+      worker.postMessage({type:'reference',generation:this.generation,width:this.sample.width,height:this.sample.height,reference:reference.buffer},[reference.buffer]);
+      return true;
+    }catch{this.fail(worker);return false;}
+  }
+  pump() {
+    if(this.inFlight||!this.pending||!this.ensureWorker())return;
+    const job=this.pending;this.pending=null;this.inFlight=job;
+    try{
+      this.worker.postMessage({type:'frame',id:job.id,generation:job.generation,stamp:job.stamp,pixels:job.pixels.buffer},[job.pixels.buffer]);
+      // An unresponsive encoder cannot retain snapshots indefinitely.
+      const worker=this.worker;this.timer=setTimeout(()=>this.fail(worker),10000);
+    }catch{this.fail(this.worker);}
+  }
+  completed(worker,result) {
+    if(worker!==this.worker||!this.inFlight||result.id!==this.inFlight.id||result.generation!==this.generation)return;
+    const job=this.inFlight;this.inFlight=null;clearTimeout(this.timer);this.timer=null;
+    if(result.error){this.fail(worker);return;}
+    // A live result may trail the current video frame. Leaving continuous
+    // playback invalidates that allowance, even if playback resumes immediately.
+    const exact=job.stamp===this.requestedStamp;
+    const continuous=this.playing&&job.playing&&job.playbackGeneration===this.playbackGeneration;
+    if(!this.seeking&&(exact||continuous)&&result.stamp===job.stamp){
+      try{this.clearUrl();this.url=URL.createObjectURL(result.blob);this.stamp=job.stamp;}catch{this.fail(worker);return;}
+      this.onReady();
+    }
+    this.pump();
+  }
+  mask(source,stamp) {
+    if(!this.reference||!source||this.failed)return null;
+    const seeking=!!source.seeking,playing=!!(source.videoWidth&&!source.paused&&!seeking);
+    if(playing!==this.playing||seeking!==this.seeking){
+      this.playbackGeneration++;this.pending=null;
+      if(!playing||seeking||this.seeking)this.clearUrl();
+    }
+    this.playing=playing;this.seeking=seeking;this.requestedStamp=stamp;
+    if(seeking)return null;
+    if(!playing&&stamp!==this.stamp)this.clearUrl();
+    if(stamp===this.stamp&&this.url)return this.url;
+    if(this.inFlight?.stamp===stamp){this.pending=null;return this.url;}
+    if(this.pending?.stamp===stamp)return this.url;
+    // A seek back to the in-flight frame replaces the queued frame without
+    // capturing it again. Every other request replaces just one pending buffer.
+    this.pending=null;
+    try{
+      const w=this.sample.width,h=this.sample.height;this.context.drawImage(source,0,0,w,h);
+      this.pending={id:++this.nextId,generation:this.generation,stamp,playing,playbackGeneration:this.playbackGeneration,pixels:this.context.getImageData(0,0,w,h).data};
+      this.pump();
+    }catch{this.fail(this.worker);}
+    return this.url;
+  }
+  dispose() {this.reset();this.reference=null;this.key=null;}
 }

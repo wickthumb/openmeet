@@ -4,6 +4,18 @@ import {scanBoundaries,movedBoundaryRow,scanBackground,writeForegroundMask,foreg
 
 const bands=[{lane:1,top:10,bottom:25},{lane:2,top:25,bottom:50},{lane:3,top:50,bottom:80}];
 
+test('foreground range queries agree with individual pixels across byte and column boundaries',()=>{
+  let seed=417;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+  for(const height of [1,7,8,9,31,640,2000]){
+    const mask=new Uint8Array(Math.ceil(height*5/8));for(let i=0;i<mask.length;i++)mask[i]=random()%9===0?random()&255:0;
+    for(let n=0;n<500;n++){
+      const column=random()%5,lo=random()%(height+8)-4,hi=lo+random()%(height+8);
+      let expected=false;for(let y=Math.max(0,lo);y<=Math.min(height-1,hi);y++){const bit=column*height+y;if(mask[bit>>3]&(1<<(bit&7))){expected=true;break;}}
+      assert.equal(foregroundInRows(mask,column,height,lo,hi),expected,`height=${height}, column=${column}, rows=${lo}..${hi}`);
+    }
+  }
+});
+
 test('one shared edge resizes both neighbouring lanes without moving other edges',()=>{
   const original=scanBoundaries(bands,{},100);
   assert.deepEqual(original.map(b=>b.row),[10,25,50,80]);
