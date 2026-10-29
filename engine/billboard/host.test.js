@@ -18,7 +18,7 @@ test('real host billboard RPC uses a separate library, unchanged fake preset, im
  await call('ping');assert.deepEqual(await call('billboard.list'),[]);await call('billboard.create',{name:'art'});
  const before=await call('billboard.read',{name:'art'});const logo=path.join(root,'logo.png');await writeFile(logo,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4uoAAAAASUVORK5CYII=','base64'));
  const asset=await call('billboard.addAsset',{name:'art',path:logo});assert.match((await call('billboard.read',{name:'art',asset})).dataUrl,/data:image\/png;base64,/);
- const result=await call('billboard.agent',{name:'art',request:'Sponsor',preset:'muse'});assert.equal(result.code,0,result.error);assert.equal(result.restored,false);assert.ok(events.some(e=>e.event==='billboard.agentOutput'&&e.data.line==='fake host build'));
+ const result=await call('billboard.agent',{name:'art',request:'Sponsor',preset:'muse'});assert.equal(result.code,0,JSON.stringify({result,events}));assert.equal(result.restored,false);assert.ok(events.some(e=>e.event==='billboard.agentOutput'&&e.data.line==='fake host build'));
  assert.match(await readFile(path.join(root,'billboards/art/assets/billboard.svg'),'utf8'),/Fake sponsor/);
  const argv=JSON.parse(await readFile(path.join(root,'billboards/art/argv.json'),'utf8'));assert.deepEqual(argv.slice(0,5),['exec','--workspace',await realpath(path.join(root,'billboards/art')),'--disable-web-tools','--user-input-auto-resolve']);
  assert.equal(argv.length,6);assert.match(argv[5],/Operator design request: Sponsor/);

@@ -21,6 +21,8 @@ process.exit(0);
   const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
   const optionsKey = Object.keys(env).find(key => key.toUpperCase() === 'NODE_OPTIONS') || 'NODE_OPTIONS';
   env[pathKey] = bin + path.delimiter + (env[pathKey] || '');
-  env[optionsKey] = `${env[optionsKey] || ''} --require ${JSON.stringify(preload)}`;
+  // NODE_OPTIONS uses Node's own quoting rules; forward slashes are valid on
+  // Windows and avoid treating a native path's backslashes as option escapes.
+  env[optionsKey] = `${env[optionsKey] || ''} --require ${JSON.stringify(preload.split(path.sep).join('/'))}`;
   return env;
 }

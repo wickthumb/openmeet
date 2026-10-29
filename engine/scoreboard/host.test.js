@@ -46,7 +46,7 @@ fs.writeSync(1,'preset output\\n');fs.appendFileSync('index.html','<!-- host edi
   const logo = path.join(root, 'Logo.svg'); await writeFile(logo, '<svg/>');
   assert.match(await call('scoreboard.addAsset', { name: 'overlay', path: logo }), /^assets\/logo-/);
   const result = await call('scoreboard.agent', { name: 'overlay', request: 'Add a footer', preset: 'muse' });
-  assert.equal(result.code, 0, result.error); assert.equal(result.restored, false);
+  assert.equal(result.code, 0, JSON.stringify({result,events})); assert.equal(result.restored, false);
   assert.ok(events.some(v => v.event === 'scoreboard.agentOutput' && v.data.name === 'overlay' && v.data.line === 'preset output'));
   const index = path.join(root, 'scoreboards/overlay/index.html');
   const argv = JSON.parse(await readFile(path.join(root, 'scoreboards/overlay/argv.json'), 'utf8'));
