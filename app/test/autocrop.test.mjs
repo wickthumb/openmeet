@@ -4,6 +4,7 @@ import {readFile,mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {fork} from 'node:child_process';
 import path from 'node:path';
+import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {descriptor,probabilities,modeOutput,cropImage} from '../autocrop/network.mjs';
 import {loadModel,MODEL_SHA256} from '../autocrop/model.mjs';
@@ -87,7 +88,7 @@ test('owned native images can transfer without a second pixel allocation, while 
 });
 
 test('engine hides empty spans locally with no crop configuration and retains capture bytes and times',async t=>{
-  const root=await mkdtemp('/tmp/openmeet-native-crop-');t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await mkdtemp(path.join(tmpdir(),'openmeet-native-crop-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const {dir,meta}=await replayFixture(root),hd=path.join(dir,'heat-1');
   const input=image();await writeFile(path.join(hd,'primary.png'),encodePng(input));
   await writeFile(path.join(hd,'primary.json'),JSON.stringify({...meta,first_column_race_time_s:0,truth:[]}));

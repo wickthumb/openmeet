@@ -4,6 +4,7 @@ import {fork} from 'node:child_process';
 import {createServer} from 'node:http';
 import {mkdtemp,mkdir,readFile,writeFile,rename,rm} from 'node:fs/promises';
 import path from 'node:path';
+import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createHash} from 'node:crypto';
 import {replayFixture} from './support/replay-fixture.mjs';
@@ -18,7 +19,7 @@ function host(userData,t){
   return {child,call(method,params={}){return new Promise((resolve,reject)=>{const key=++id,timer=setTimeout(()=>{pending.delete(key);reject(Error('Timed out: '+method));},10000);pending.set(key,{resolve,reject,timer});child.send({id:key,method,params});});}};
 }
 async function captured(t){
-  const root=await mkdtemp('/tmp/openmeet-service-audit-');t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await mkdtemp(path.join(tmpdir(),'openmeet-service-audit-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const fixture=await replayFixture(root,'ttp-simulator'),engine=host(path.join(root,'settings'),t);
   const source=await engine.call('demo.import',{dir:fixture.dir,type:'ttp'}),replay=await engine.call('demo.load',{id:source.id});
   const cap=await engine.call('capture.start',{key:'5-1-1',png:replay.heats[0].primary,meetDir:replay.meet.dir,speed:10});
@@ -27,7 +28,7 @@ async function captured(t){
 const hash=async file=>createHash('sha256').update(await readFile(file)).digest('hex');
 
 test('a failed backup status observer cannot reject or stall later backup jobs',async t=>{
-  const root=await mkdtemp('/tmp/openmeet-backup-observer-');t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await mkdtemp(path.join(tmpdir(),'openmeet-backup-observer-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const meetDir=path.join(root,'meet'),backupDir=path.join(root,'backup');await mkdir(meetDir);await mkdir(backupDir);
   await writeFile(path.join(meetDir,'lynx.evt'),'5,1,1,Test heat\n');
   const backup=createMeetBackup({onStatus(){throw Error('Observer disconnected');},writeAtomic:async(dir,name,text)=>{const file=path.join(dir,name);await writeFile(file+'.tmp',text);await rename(file+'.tmp',file);}});

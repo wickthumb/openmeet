@@ -9,7 +9,9 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const source=readFileSync(new URL('../main.mjs',import.meta.url),'utf8')
-  .replace(/^import .*?;\n/gm,'').replace('import.meta.url',JSON.stringify(new URL('../main.mjs',import.meta.url).href))
+  // Exercise Windows checkout line endings on every host, including Linux CI.
+  .replace(/\r?\n/g,'\r\n')
+  .replace(/^import .*?;\r?\n/gm,'').replace('import.meta.url',JSON.stringify(new URL('../main.mjs',import.meta.url).href))
   .replace('  const boards = new Map();','  const boards = globalThis.__boards = new Map();');
 
 async function fixture() {
