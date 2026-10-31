@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, writeFile, rm, readdir, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, readdir, mkdir, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -38,7 +38,7 @@ async function eventually(fn) {
   assert.fail('Condition did not become true');
 }
 async function fixtureHost(t, type) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'openmeet-multicamera-'));
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'openmeet-multicamera-')));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fixture = await replayFixture(root, type), engine = await host(t, root);
   const replay = await engine.call('assets.open', { dir: fixture.dir });
