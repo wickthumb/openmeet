@@ -245,6 +245,14 @@ try {
   await openInventory(); await selectCamera('scan-far'); await click('#cameraAlign');
   await waitUI(`!document.querySelector('#setupDialog').open&&document.querySelector('#race').textContent.includes('Preview streaming')`, 'camera alignment streaming');
   await waitUI(`window.__cameraEvents.filter(e=>e.name==='preview.columns').length>=3`, 'alignment receives actual columns');
+  await check('SIM alignment uses a two-column slit with every sensor row, shared zoom controls and no invented area view',async()=>{
+    await waitUI(`document.querySelector('#sim-camera-alignment').dataset.nativeHeight==='216'`, 'full-height slit');
+    assert.equal(await ev(`document.querySelector('#sim-camera-alignment').dataset.nativeWidth`),'2');
+    assert.equal(await ev(`document.querySelector('#sim-camera-alignment [data-alignment-action="area"]').disabled`),true);
+    await click('#sim-camera-alignment [data-alignment-action="in"]');assert.match(await ev(`document.querySelector('#sim-camera-alignment .alignment-caption').textContent`),/200%/);
+    await click('#sim-camera-alignment [data-alignment-action="width"]');assert.match(await ev(`document.querySelector('#sim-camera-alignment .alignment-caption').textContent`),/2× width/);await click('#sim-camera-alignment [data-alignment-action="narrow"]');assert.equal(await ev(`document.querySelector('#sim-camera-alignment [data-alignment-action="narrow"]').disabled`),true);await click('#sim-camera-alignment [data-alignment-action="fit"]');assert.match(await ev(`document.querySelector('#sim-camera-alignment .alignment-caption').textContent`),/100%/);
+    assert.equal(await ev(`getComputedStyle(document.querySelector('#tools')).display`),'none');
+  });
   await shot('01-alignment'); await button('Stop preview');
   await waitUI(`document.querySelector('#race').textContent.includes('Preview paused')`, 'alignment paused');
   await button('Return to race'); await waitUI(`!!document.querySelector('#ctl .go')`, 'race restored');

@@ -22,7 +22,8 @@ export function hardwareProfile(input,previous=null){
   if(profile.kind==='camera'){
     if(!['tcp','udp'].includes(profile.transport))throw fail('Choose TCP or UDP camera delivery');
     const supplied=structuredClone(input.configuration??{});if(Object.keys(supplied).length&&!supplied.profile)throw fail('Camera JSON must contain a profile object');
-    profile.configuration=supplied;profile.settings={height:640,rate:800,depth:5,alignmentWidth:128,alignmentRate:5,queueEpochTrusted:false,...input.settings};
+    profile.configuration=supplied;profile.settings={height:640,rate:800,depth:5,alignmentMode:'area',alignmentWidth:128,alignmentRate:5,queueEpochTrusted:false,...input.settings};
+    if(!['area','slit'].includes(profile.settings.alignmentMode))throw fail('Choose area or slit alignment');
     for(const [key,min,max]of[['height',16,2560],['rate',1,20000],['depth',3,7],['alignmentWidth',16,512],['alignmentRate',1,30]])if(!Number.isInteger(profile.settings[key])||profile.settings[key]<min||profile.settings[key]>max)throw fail('Invalid camera '+key);
     if(profile.settings.height%8)throw fail('Encoded camera height must be a multiple of 8');if(typeof profile.settings.queueEpochTrusted!=='boolean')throw fail('Explicit start-queue policy required');
     if(supplied.profile?.marker!=null&&(!Number.isInteger(supplied.profile.marker)||supplied.profile.marker<0||supplied.profile.marker>0xffffffff))throw fail('Invalid camera marker');

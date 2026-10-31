@@ -8,6 +8,7 @@ import { BillboardConsole } from './billboard.mjs';
 import { logoMarkup,LOGO_WIDTH,LOGO_HEIGHT } from './openmeet-logo.mjs';
 import { SetupDialog } from './setup-dialog.mjs';
 import { HardwareSetupPanel } from './hardware-setup.mjs';
+import { AlignmentPreview } from './alignment-preview.mjs';
 import { CameraSetupConsole } from './camera-setup.mjs';
 import { heatCameraKey,cameraProfileToken,sameFinish,cameraViewLabel } from './camera-state.mjs';
 import { LiveFollow } from './live-follow.mjs';
@@ -622,7 +623,23 @@ function renderSetupSidebar() {
   ['alignment','overlays','billboards'].forEach(mode=>{const b=h_('button','btn sm'+(setup.mode===mode?' primary':''),mode==='alignment'?'Alignment':mode==='overlays'?'Lane overlays':'Billboards');b.onclick=()=>{setup.mode=mode;S.billboardPanel=mode==='billboards';renderUI();};modes.append(b);});ctl.append(modes);
   const done=h_('button','btn wide','Return to race');done.disabled=setup.starting||setup.stopping;done.onclick=()=>stopCameraSetup(true);ctl.append(done);
   $('#warn').innerHTML='';
-  $('#list').innerHTML=setup.mode==='billboards'?'':`<div class="setup-help"><p>${setup.mode==='alignment'?'Use the preview image to align the finish-line view. Pan and zoom as needed.':'Open Lanes ▾ on an available camera to place and style your lane guides.'}</p><p>You can stop the preview and keep the image visible while adjusting overlays.</p><p class="dimtext">${setup.heat.replaySourceType==='real'?'This is recorded camera input. Live camera drivers are planned.':'This build uses simulated camera input. Real camera drivers are planned.'}</p></div>`;
+  $('#list').innerHTML=setup.mode==='billboards'?'':`<div class="setup-help"><p>${setup.mode==='alignment'?'Inspect the latest two sensor columns at full height. Fit height, zoom, widen or pan the slit without changing the camera samples.':'Open Lanes ▾ on an available camera to place and style your lane guides.'}</p><p>You can stop the preview and keep the image visible while adjusting overlays.</p><p class="dimtext">This source has line-scan imagery only. Area alignment requires a matching spatial frame from the same camera. Physical cameras are configured in Camera setup.</p></div>`;
+}
+
+function renderSimAlignment() {
+  const setup=S.cameraSetup,visible=setup?.mode==='alignment';
+  simAlignment.root.hidden=!visible;
+  scanCv.closest('.scanwrap').classList.toggle('alignment-only',!!visible);
+  scanCv.closest('.scan').classList.toggle('alignment-previewing',!!visible);
+  if(!visible){if(!setup){simAlignment.clear();simAlignmentContext=null;}return;}
+  if(simAlignmentContext!==setup){simAlignmentContext=setup;simAlignment.clear();simAlignment.fit();}
+  const h=setup.heat,count=h.recvCols||0,rows=rowsOf(h);
+  if(count<2){simAlignment.clear();return;}
+  const revision=`${setup.id}:${count}:${setup.live}`;
+  if(simAlignment.frame?.revision===revision)return;
+  if(simSlit.height!==rows)simSlit.height=rows;
+  const g=simSlit.getContext('2d');g.clearRect(0,0,2,rows);drawStrip(g,h,count-2,0,2,rows,0,0,2,rows);
+  simAlignment.setFrame(simSlit,{kind:'slit',revision,label:`${cameraLabel(h,h.asset?.mainCameraId)} · ${setup.live?'Live replay':'Paused replay'} · no race recording`});
 }
 
 // ---------------------------------------------------------------- heat flow: Loaded -> Armed -> Running -> Review -> Saved
@@ -2137,6 +2154,7 @@ function syncCursor() { scanCv.classList.toggle('zoom', S.zoomTool); }
 function renderUI() {
   invalidate();
   renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderSchedule(); renderDrawer(); renderTools();renderCameraSwitches();
+  renderSimAlignment();
   if(!S.cameraSetup)publishBoard();
   updateFrontOverlay();
   updateTs();
@@ -2692,6 +2710,7 @@ function drawFinishMarkers(g,h,W,height,project) {
 function drawScan() {
   const [g, W, Hc] = fitCanvas(scanCv), Hi = Hc - RULER, h = viewHeat(), v = S.view;
   g.fillStyle = TK.scanbg; g.fillRect(0, 0, W, Hc);
+  if(S.cameraSetup?.mode==='alignment'){renderSimAlignment();return;}
   const live = h.state === 'running', last = live ? h.liveCol : h.nCols - 1;
   const captured = h.state === 'review' || h.state === 'saved' || (live && h.liveCol >= 0);
   // Framing changes only the viewport. Sensor rows and lane coordinates remain native.
@@ -2745,9 +2764,6 @@ function drawScan() {
     const { x0, y0, x1, y1 } = S.drag;
     g.strokeRect(Math.min(x0, x1) + 0.5, Math.min(y0, y1) + 0.5, Math.abs(x1 - x0), Math.abs(y1 - y0));
     g.setLineDash([]);
-  }
-  if(S.cameraSetup?.mode==='alignment'){
-    g.save();g.strokeStyle='rgba(255,255,255,0.6)';g.lineWidth=1;g.setLineDash([5,5]);g.beginPath();g.moveTo(W/2,0);g.lineTo(W/2,Hi);g.moveTo(0,Hi/2);g.lineTo(W,Hi/2);g.stroke();g.restore();
   }
   drawRuler(g, W, Hc, h, true);
 }
@@ -3226,6 +3242,9 @@ window.addEventListener('keydown', e => {
 });
 const cameraHardware=new HardwareSetupPanel({kind:'camera',bridge:OM,toast,context:()=>({meetDir:S.meet?.dir??null})});
 const scoreboardHardware=new HardwareSetupPanel({kind:'scoreboard',bridge:OM,toast});
+const simAlignment=new AlignmentPreview({id:'sim-camera-alignment'}),simSlit=document.createElement('canvas');simSlit.width=2;
+let simAlignmentContext=null;
+scanCv.parentElement.append(simAlignment.root);
 const cameraSetupConsole=new CameraSetupConsole({bridge:OM,toast,changed:invalidate,context:()=>({meetDir:S.meet?.dir||null,heatKey:heatCameraKey(cur()),heatName:cur().name,scans:cur().asset?.lineScans||[],timingId:cur().asset?.mainCameraId,viewId:viewHeat().asset?.mainCameraId,captureId:(runningHeat()||cur()).captureId,recording:!!runningHeat(),started:['running','review','saved'].includes(cur().state),preview:!!S.cameraSetup,sourceType:cur().replaySourceType}),applyConfig:applyCameraConfig,billboards:async id=>{await chooseScanView('main',id);S.billboardPanel=true;renderUI();},chooseView:id=>chooseScanView('main',id),align:async id=>{if(runningHeat())return;await chooseScanView('main',id);if(!S.cameraSetup)await startCameraSetup();else {S.tab='run';renderUI();}}});
 function closeSetupDialog(){S.billboardPanel=false;S.tab='run';renderUI();}
 const setupDialog=new SetupDialog({drawer:$('#drawer'),onDismiss:closeSetupDialog,beforeDismiss:async()=>{

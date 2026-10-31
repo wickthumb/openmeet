@@ -19,7 +19,7 @@ export function createHardwareService({root,cameras,boards,openCamera=options=>c
   function checkInterface(p){if(p.localAddress&&!interfaces().some(i=>i.address===p.localAddress))throw fail('ERR_HARDWARE_INTERFACE','The selected local interface is no longer available');}
   function observed(p,key,value){p.observations={...p.observations,[key]:{...value,at:new Date().toISOString(),fingerprint:p.fingerprint}};persist(p);return p;}
   function live(p){const entry=runtime.get(p.id);if(!entry)return null;
-    try{const status=p.kind==='camera'?cameras.snapshot({id:entry.sessionId}):boards.list().find(b=>b.id===entry.sessionId);if(!status)throw fail('ERR_HARDWARE_DISCONNECTED');return {...status,mode:entry.mode,error:entry.error??status.error,sessionId:entry.sessionId};}
+    try{const status=p.kind==='camera'?cameras.snapshot({id:entry.sessionId}):boards.list().find(b=>b.id===entry.sessionId);if(!status)throw fail('ERR_HARDWARE_DISCONNECTED');return {...status,mode:entry.mode,alignmentMode:entry.alignmentMode,error:entry.error??status.error,sessionId:entry.sessionId};}
     catch{if(entry.timer)timers.clearInterval(entry.timer);entry.timer=null;if(entry.stopTimer)(timers.clearTimeout??clearTimeout)(entry.stopTimer);runtime.delete(p.id);return null;}
   }
   const snapshot=p=>({...structuredClone(p),busy:working.has(p.id),runtime:live(p)});
@@ -68,7 +68,7 @@ export function createHardwareService({root,cameras,boards,openCamera=options=>c
       const old=id?get(id):null,name=old?.name??path.basename(file,path.extname(file));
       if(kind==='scoreboard'&&!text.trimStart().startsWith('{'))return {draft:{...(old??{}),kind,name,address:old?.address??'127.0.0.1',port:old?.port??5000,transport:old?.transport??'tcp-client',script:text},source:path.basename(file)};
       const value=JSON.parse(text);if(value.kind)return {draft:{...value,id:old?.id??null,kind,observations:{}},source:path.basename(file)};
-      if(kind==='camera'&&value.profile){const v=value.profile;return {draft:{kind,id:old?.id??null,name,address:v.address??old?.address??'192.168.0.6',localAddress:v.localAddress??null,transport:v.delivery??'tcp',configuration:value,settings:{height:value.imageProfile?.height??v.parameters?.[2]??640,rate:v.parameters?.[3]??800,depth:((v.reset?.[0]??20)>>>2)&63,queueEpochTrusted:v.queueEpochTrusted===true,alignmentWidth:128,alignmentRate:5}},source:path.basename(file)};}
+      if(kind==='camera'&&value.profile){const v=value.profile;return {draft:{kind,id:old?.id??null,name,address:v.address??old?.address??'192.168.0.6',localAddress:v.localAddress??null,transport:v.delivery??'tcp',configuration:value,settings:{height:value.imageProfile?.height??v.parameters?.[2]??640,rate:v.parameters?.[3]??800,depth:((v.reset?.[0]??20)>>>2)&63,queueEpochTrusted:v.queueEpochTrusted===true,alignmentMode:value.alignment?.dimensions===1?'slit':'area',alignmentWidth:128,alignmentRate:5}},source:path.basename(file)};}
       throw TypeError('Unrecognized equipment JSON');
     },
     inspect({id}){return exclusive(id,async()=>{const p=get(id);if(p.kind!=='camera')throw TypeError('Choose a camera');if(captureBusy())throw fail('ERR_HARDWARE_LIVE','Stop capture or preview before checking camera setup');if(live(p))throw fail('ERR_HARDWARE_IN_USE','Disconnect this camera before checking it');checkInterface(p);
@@ -81,8 +81,10 @@ export function createHardwareService({root,cameras,boards,openCamera=options=>c
         const checked=await cameras.inspect({address:p.address,localAddress:p.localAddress,port:p.port,marker:p.configuration.profile?.marker??CAMERA_MARKER,family:3});observed(p,'inspection',{result:checked});if(mode==='recording'&&p.transport==='tcp'&&checked.configuration.tcpSupported===false)throw fail('ERR_HARDWARE_TRANSPORT','Camera did not report TCP delivery support. Choose UDP or import a verified profile.');
         const config=makeCameraConfiguration(p,checked),entry={mode,sessionId:null,timer:null,polling:null,error:null,delivery:p.transport};
         if(mode==='alignment'){
-          const reset=buildAlignmentReset({depth:p.settings.depth,dimensions:2,alignmentParameter:p.configuration.alignment?.alignmentParameter??0,width:p.settings.alignmentWidth,rate:p.settings.alignmentRate,indicatorRgb:[0,255,0],...p.configuration.alignment});
-          config.profile={...config.profile,mode:'alignment',delivery:'udp',reset:reset.words};config.previewWidth=reset.effectiveWidth;entry.delivery='udp';
+          entry.alignmentMode=p.settings.alignmentMode??'area';
+          if(entry.alignmentMode==='area'&&![11,12,13,14].includes(checked.configuration.internalType))throw fail('ERR_HARDWARE_ALIGNMENT_MODE','This runtime has not reported area alignment support. Choose slit alignment.');
+          const reset=buildAlignmentReset({alignmentParameter:0,indicatorRgb:[0,255,0],...p.configuration.alignment,depth:p.settings.depth,dimensions:entry.alignmentMode==='slit'?1:2,width:p.settings.alignmentWidth,rate:p.settings.alignmentRate});
+          config.profile={...config.profile,mode:'alignment',delivery:'udp',reset:reset.words};config.previewWidth=entry.alignmentMode==='area'?reset.effectiveWidth:null;entry.delivery='udp';
         }
         let opened;try{opened=await openCamera({...config,meetDir:null,diagnostic:true,recordingDir:path.join(root,'camera-sessions',randomUUID())});entry.sessionId=opened.id;runtime.set(id,entry);await cameras.command({id:opened.id,operation:'prepare'});if(mode==='recording')await cameras.command({id:opened.id,operation:'start'});startPolling(p,entry);if(mode==='recording'){entry.stopTimer=(timers.setTimeout??setTimeout)(async()=>{try{await working.get(id);if(runtime.get(id)===entry)await this.disconnect({id});}catch(error){onEvent('hardware.error',{id,...errorInfo(error)});}},10000);entry.stopTimer.unref?.();}observed(p,'sessionOpened',{mode,recording:opened.recording,deviceValidated:false});}
         catch(error){await stopPolling(entry);if(opened)await cameras.close({id:opened.id}).catch(()=>{});runtime.delete(id);throw error;}
@@ -96,14 +98,14 @@ export function createHardwareService({root,cameras,boards,openCamera=options=>c
     disconnect({id}){return exclusive(id,()=>disconnect(get(id)));},
     retryStatus({id}){return exclusive(id,async()=>{const p=get(id),entry=runtime.get(id);if(!entry||p.kind!=='camera')throw fail('ERR_HARDWARE_DISCONNECTED');await stopPolling(entry);await cameras.command({id:entry.sessionId,operation:'retryStatus'});entry.error=null;startPolling(p,entry);return snapshot(p);});},
     image({id,after=null}){
-      const p=get(id),state=live(p),entry=runtime.get(id);if(!entry||p.kind!=='camera'||!state.image)return {ready:false};const revision=entry.mode==='alignment'?state.image.previewFrames:state.image.columns;
-      if(after===revision)return {ready:false,revision};const rows=state.image.rows,count=state.image.columns,keep=Math.max(1,Math.min(512,Math.floor(4194304/(rows*3))));
-      return {...cameras.image({id:entry.sessionId,preview:entry.mode==='alignment',from:Math.max(0,count-keep)}),revision};
+      const p=get(id),state=live(p),entry=runtime.get(id);if(!entry||p.kind!=='camera'||!state.image)return {ready:false};const area=entry.mode==='alignment'&&entry.alignmentMode==='area',slit=entry.mode==='alignment'&&!area,revision=area?state.image.previewFrames:state.image.columns;
+      if(after===revision||slit&&revision<2)return {ready:false,revision};const rows=state.image.rows,count=state.image.columns,keep=slit?2:Math.max(1,Math.min(512,Math.floor(4194304/(rows*3))));
+      return {...cameras.image({id:entry.sessionId,preview:area,from:Math.max(0,count-keep)}),revision,kind:area?'area':'slit'};
     },
     scoreboardMode({id,mode,pattern='444'}){return exclusive(id,async()=>{const p=get(id),entry=runtime.get(id);if(p.kind!=='scoreboard'||!entry)throw fail('ERR_HARDWARE_DISCONNECTED');await boards.setMode({id:entry.sessionId,mode,pattern});entry.mode=mode;if(['pattern','clock','results'].includes(mode))observed(p,'lastTest',{mode,pattern,localCompletion:true,displayConfirmed:false});return snapshot(get(id));});},
     confirm({id,test,answer,notes=''}){return exclusive(id,async()=>{const p=get(id);if(!['yes','no','different'].includes(answer)||typeof notes!=='string'||notes.length>1000)throw TypeError('Choose an observed result');
       if(p.kind==='scoreboard'&&(!['pattern','clock','results'].includes(test)||p.observations.lastTest?.mode!==test||!live(p)||live(p).error))throw fail('ERR_HARDWARE_TEST','Run this diagnostic before confirming its display');
-      if(p.kind==='camera'&&(test!=='alignment'||!(live(p)?.image?.previewFrames>=1)))throw fail('ERR_HARDWARE_TEST','Receive a complete alignment image first');
+      if(p.kind==='camera'){const state=live(p);if(test!=='alignment'||state?.mode!=='alignment'||!(state.alignmentMode==='slit'?state.image?.columns>=2:state.image?.previewFrames>=1))throw fail('ERR_HARDWARE_TEST','Receive a complete alignment image first');}
       observed(p,'confirmed-'+test,{answer,notes,operatorObserved:true,physicalTimingCalibrated:false});return snapshot(get(id));
     });},
     async scriptPreview({id,mode='pattern',pattern='444'}){const p=get(id);if(p.kind!=='scoreboard')throw TypeError('Choose a scoreboard');const loaded=scoreboardWireProtocol.formatter.loadDecodedLines(p.script.replace(/\r\n?/g,'\n').split('\n'));

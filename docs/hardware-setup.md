@@ -15,9 +15,11 @@ meet rehearsal, distance identification, or area-scan adapter is included here.
    This sends no parameter/reset/start/stop/clock-write requests. A reply proves
    only the particular runtime response and reported bounds, not a retail model,
    sensor geometry or calibrated timing. Reversed or unsupported bounds fail.
-4. **Preview alignment** performs a fresh check and starts an owned UDP preview.
-   A PNG appears only after the complete declared frame boundary. The reported
-   frame/column counts and errors reflect the backend's actual observations.
+4. Choose **Alignment source → Area** or **Slit**, then **Preview alignment**.
+   This performs a fresh check and starts an owned UDP preview. Area mode requires
+   reported runtime support and a complete declared 2D frame boundary. Slit mode
+   uses 1D alignment and displays the newest two decoded line samples; it does
+   not wait for a 2D boundary. Reported counts and errors are actual observations.
 5. Record whether the displayed finish line is aligned. This stores an operator
    observation; it does not certify timing. **Stop and disconnect** stays available
    above the preview. Disconnect before editing the connection profile.
@@ -33,6 +35,26 @@ manual gain/single-TDI and the documented geometry/parameter packing are used.
 Exposure, color and sensor-specific reconstruction still need a real device check.
 The configured interface is used for outgoing camera UDP and TCP connections.
 Unknown codec branches preserve raw evidence and report a decoded-image error.
+
+### Shared alignment viewer and simulator
+
+SIM/replay and physical-camera previews use the same **Fit height**, zoom, drag
+and **Wider** controls. Every native row is visible at fit height. Width enlargement
+only changes the display; a two-column slit remains two samples. Zoom is relative
+to fit height. Green aiming guides belong to area display and are transformed with
+the image, rather than fixed to the screen.
+
+The current demo provides line-scan recordings and a separate front-camera video;
+it does not provide spatial area frames from each line-scan viewpoint. SIM alignment
+therefore displays a live `2 × native height` slit, not a scrolling race strip.
+**Area** stays unavailable for those sources. A front-camera frame or a horizontal
+time strip must not be presented as that camera's area view. Lane overlays and
+billboards remain accessible through their setup modes, with the wider strip view.
+
+For a physical area source, **Slit** in the viewer inspects two spatial columns
+around the aiming guide; it does not change device acquisition. To acquire real
+1D alignment, stop the session and change the saved **Alignment source** to Slit.
+Preview observations remain distinct from timing-column calibration.
 
 The camera must already be running a compatible runtime. Firmware boot/download,
 network address assignment, firewall changes and alternate-marker probing are not
@@ -87,6 +109,9 @@ The reviewed primary guidance distinguishes runtime camera communication from bo
 services and lists separate TCP connect/listen and UDP scoreboard transports:
 [Camera network guidance](https://support.finishlynx.com/troubleshoot/networking/school-or-managed-network),
 [external port settings](https://support.finishlynx.com/manual/finishlynx/resources/port-settings/port-settings).
+Separate 1D and 2D alignment views and vertical-fit inspection are described in the
+[alignment manual](https://help.finishlynx.com/Content/OnlineManual/StartAlignment.htm)
+and [alignment tools](https://support.finishlynx.com/manual/finishlynx/features/additional-features/camera-alignment-tools).
 No device firmware, executable, packaged driver script or private model is imported.
 
 Run the headless interaction check separately from `npm --prefix app test`, because

@@ -72,6 +72,8 @@ Acceptance: with the option disabled, capture and review remain unchanged; with 
 
 A first camera/physical-scoreboard workflow is implemented; see [equipment setup](hardware-setup.md). Physical qualification, automatic boot provisioning and the wider assistant/provider features below remain open. See [the hardware setup blueprint](blueprint.md#11-guided-hardware-setup-with-ai-assistance).
 
+- [x] Share full-height alignment inspection between replay and physical cameras; distinguish a live two-column slit from a genuine spatial area frame.
+- [ ] Connect saved physical-camera profiles to the ordinary arm/start/stop heat workflow, including disconnect recovery and per-camera evidence.
 - [ ] Define a common engine adapter and device-profile contract for scoreboards, cameras, start sensors and wind gauges.
 - [ ] Select exact Daktronics scoreboard/controller and FinishLynx camera models for the first prebuilt integrations; research their official documentation and available driver/protocol interfaces.
 - [ ] Add novice-friendly setup from Scoreboard and Network, with manual model selection or photo-assisted identification.
