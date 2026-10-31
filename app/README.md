@@ -21,7 +21,7 @@ node app/test/smoke-packaged.mjs app/dist/linux-arm64-unpacked/openmeet
 
 The smoke test uses Node's built-in WebSocket and headless Chromium/CDP to call the
 packaged utility-process engine; it fails unless `ping` returns `core: true`.
-The engine ships as `resources/app/engine/` (JS + package.json only). Asar is
+The engine ships as `resources/app/engine/` (JS, CJS + package.json). Asar is
 disabled so the utility process can load ESM directly; dev still loads `../engine/`.
 Alpha installers are available on the [GitHub release page](https://github.com/wickthumb/openmeet/releases). Builds are unsigned and have no auto-updater. Local build commands never publish automatically. On macOS,
 Gatekeeper needs **right-click → Open** on OpenMeet after copying it from the DMG.
@@ -194,3 +194,12 @@ For default selection and reconnection, run `OPENMEET_OCCLUSION_COMMAND='<your p
 For live modal workflows, run `node app/test/visual-scoreboard-review.mjs "$PWD/app"`. It uses generated local data and checks every header dialog during an active capture, native Escape, Return to live, unchanged start history and timestamp prefixes, and the default scoreboard review flow. No private service is used.
 
 Run `node app/test/visual-review-cache.mjs` for a disposable Electron check of empty-mask allocation, precomputation, repeated scrubbing, saving entirely pending results, returning for a partial correction, and unchanged capture bytes/timestamps.
+
+## Physical equipment setup
+
+Camera setup now includes live network-camera profiles, connection checks, alignment
+preview and isolated 10-second sample recordings. Scoreboard includes physical
+TCP/UDP setup, script import, offline byte preview, diagnostic tests and explicit
+live output. See [hardware-setup.md](../docs/hardware-setup.md). Real equipment
+remains unverified until tested; an area-scan adapter and distance identification
+are separate future work.

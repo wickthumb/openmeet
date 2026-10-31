@@ -94,4 +94,5 @@ bindStart,drain,synchronize,close}`. It chooses fresh destinations under the mee
 or user-data directory, registers decoded images with existing capture APIs and
 closes owned resources on shutdown/IPC disconnect. Start binding requires a
 journal trigger from the same clock. One local owner per peer is allowed; this
-does not lock other controlling processes/computers. No UI code is changed.
+does not lock other controlling processes/computers. Operator controls are now
+available in Camera setup; see [equipment setup](hardware-setup.md).

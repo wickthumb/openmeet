@@ -155,6 +155,8 @@ const networkCameras = cameraEngine?.createNetworkCameraService({ onEvent(name,d
   }
   emit(name,data);
 } });
+const hardware = core?.createHardwareService({root:userData,cameras:networkCameras,boards:wireScoreboards,
+  openCamera:options=>methods['camera.network.open'](options),captureBusy:()=>!!active||captureStarting||sourceChanging,onEvent:emit});
 const cameraConfig = cameraEngine?.createCameraConfig({
   sampleDir: path.join(userData, 'sample'),
   cameras: () => [...new Map([...scanSources.values()].map(source => [source.id, source])).values()],
@@ -388,6 +390,19 @@ const methods = {
     const backup = input && backupDir ? { state: 'copying' } : null;
     return { path: p, name, text, backup };
   },
+  async 'hardware.list'(params) { return hardware.list(params); },
+  async 'hardware.save'(params) { return hardware.save(params); },
+  async 'hardware.remove'(params) { return hardware.remove(params); },
+  async 'hardware.import'(params) { return hardware.importFile(params); },
+  async 'hardware.inspect'(params) { return hardware.inspect(params); },
+  async 'hardware.connect'(params) { return hardware.connect(params); },
+  async 'hardware.status'(params) { return hardware.status(params); },
+  async 'hardware.disconnect'(params) { return hardware.disconnect(params); },
+  async 'hardware.image'(params) { return hardware.image(params); },
+  async 'hardware.retryStatus'(params) { return hardware.retryStatus(params); },
+  async 'hardware.scoreboardMode'(params) { return hardware.scoreboardMode(params); },
+  async 'hardware.confirm'(params) { return hardware.confirm(params); },
+  async 'hardware.scriptPreview'(params) { return hardware.scriptPreview(params); },
   async 'camera.config.get'(params) { return cameraConfig.get(params); },
   async 'camera.network.probe'(params) { return networkCameras.probe(params); },
   async 'camera.network.inspect'(params) { return networkCameras.inspect(params); },
@@ -396,7 +411,7 @@ const methods = {
     const base = meetDir ? path.join(meetDir, 'openmeet', 'camera-sessions') : path.join(userData, 'camera-sessions');
     const opened=networkCameras.open({ ...options, profile, meetDir, recordingDir: path.join(base, randomUUID()) });
     if(opened.image){captures.set(opened.id,{id:opened.id,dir:opened.image.dir,meetDir,network:true,
-      sourceType:'network',cameraId:profile.cameraKey,cameraSources:[],sidecar:null,invalidColumns:new Set()});latestCaptureId=opened.id;}
+      sourceType:'network',cameraId:profile.cameraKey,cameraSources:[],sidecar:null,invalidColumns:new Set()});if(!options.diagnostic)latestCaptureId=opened.id;}
     return opened;
   },
   async 'camera.network.command'(params) { return networkCameras.command(params); },
@@ -785,7 +800,7 @@ function closeOwnedServices() {
     for(const child of cropProcesses)child.kill();
     const ownedWatcher=watcher;watcher=null;
     const closeWatcher=async()=>{if(typeof ownedWatcher==='function')await ownedWatcher();else await ownedWatcher?.close();};
-    await Promise.allSettled([closeWatcher(),closeScoreboards(),closeFinishService(),networkCameras?.closeAll(),wireScoreboards?.closeAll(),remoteServers?.closeAll()]);
+    await Promise.allSettled([closeWatcher(),closeScoreboards(),closeFinishService(),hardware?.closeAll(),networkCameras?.closeAll(),wireScoreboards?.closeAll(),remoteServers?.closeAll()]);
   })();
 }
 port.on('close', () => {closeOwnedServices().catch(()=>{});});

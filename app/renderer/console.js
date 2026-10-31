@@ -7,6 +7,7 @@ import { scanMaskPreferences, modelMaskStatus, OcclusionAvailability } from './o
 import { BillboardConsole } from './billboard.mjs';
 import { logoMarkup,LOGO_WIDTH,LOGO_HEIGHT } from './openmeet-logo.mjs';
 import { SetupDialog } from './setup-dialog.mjs';
+import { HardwareSetupPanel } from './hardware-setup.mjs';
 import { CameraSetupConsole } from './camera-setup.mjs';
 import { heatCameraKey,cameraProfileToken,sameFinish,cameraViewLabel } from './camera-state.mjs';
 import { LiveFollow } from './live-follow.mjs';
@@ -1365,6 +1366,8 @@ function renderMeetNavigator(body) {
 }
 
 function renderDrawer() {
+  cameraHardware.setActive(S.tab==='alignment'&&!S.billboardPanel);
+  scoreboardHardware.setActive(S.tab==='board'&&!S.billboardPanel);
   const d = $('#drawer');
   $('#drawerClose').textContent='Done';
   setupDialog.dialog.dataset.surface=S.billboardPanel?'billboards':S.tab;
@@ -1377,7 +1380,7 @@ function renderDrawer() {
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
-  if(S.tab==='alignment'){body.classList.add('camera-setup-body');cameraSetupConsole.render(body);return;}
+  if(S.tab==='alignment'){body.classList.add('camera-setup-body');cameraSetupConsole.render(body);cameraHardware.render(body);return;}
   body.classList.remove('camera-setup-body');
   if (S.tab === 'events') { renderMeetNavigator(body); return; }
   if (S.tab === 'starts') { renderStarts(body); return; }
@@ -1391,7 +1394,7 @@ function renderDrawer() {
       ${row(h.asset?.comparisonCameraLabel||'Backup line-scan',cameras.comparison,h.asset?.backupMeta?`${(1/h.asset.backupMeta.column_period_s).toFixed(1)} columns/s`:'simulated')}
       ${row('Front camera',cameras.front,h.asset?.front?'recorded video':'simulated')}
       ${row('Start system',true,'replay clock')}${row('Wind gauge',h.wind!=null,h.wind==null?'absent':windStr(h))}</table>
-      <p class="dimtext">Recorded input is replayed locally. Live camera drivers are planned.</p></div>
+      <p class="dimtext">Replay inputs stay local. Configure live camera connections in Camera setup and physical board connections in Scoreboard.</p></div>
       <div class="card"><h3>Auto-timing service</h3><p>${S.apiOnline?'Enabled':'Simulated offline'}</p></div>`;
     const camerasCard=h_('div','card');camerasCard.append(h_('h3','','Camera views'));renderCameraRoles(camerasCard);body.prepend(camerasCard);
     renderSimulationSources(body);
@@ -1569,6 +1572,7 @@ function renderBoard(body) {
   if(document.activeElement!==$('#bPrompt'))$('#bPrompt').value=B.prompts.get(B.sel)||'';
   $('#bBuild').disabled = B.running; $('#bUndo').disabled = B.running || !B.snapshot;
   $('#bLog').textContent = B.log || 'The agent edits only this board\'s folder. Each build can be undone.';
+  scoreboardHardware.render(body);
 }
 function reloadPreview() { const f = $('#bFrame'); if (f) f.src = boardUrl(B.sel) + '?preview=' + Date.now(); }
 async function newBoard(from) {
@@ -3220,14 +3224,18 @@ window.addEventListener('keydown', e => {
     renderUI();
   }
 });
+const cameraHardware=new HardwareSetupPanel({kind:'camera',bridge:OM,toast,context:()=>({meetDir:S.meet?.dir??null})});
+const scoreboardHardware=new HardwareSetupPanel({kind:'scoreboard',bridge:OM,toast});
 const cameraSetupConsole=new CameraSetupConsole({bridge:OM,toast,changed:invalidate,context:()=>({meetDir:S.meet?.dir||null,heatKey:heatCameraKey(cur()),heatName:cur().name,scans:cur().asset?.lineScans||[],timingId:cur().asset?.mainCameraId,viewId:viewHeat().asset?.mainCameraId,captureId:(runningHeat()||cur()).captureId,recording:!!runningHeat(),started:['running','review','saved'].includes(cur().state),preview:!!S.cameraSetup,sourceType:cur().replaySourceType}),applyConfig:applyCameraConfig,billboards:async id=>{await chooseScanView('main',id);S.billboardPanel=true;renderUI();},chooseView:id=>chooseScanView('main',id),align:async id=>{if(runningHeat())return;await chooseScanView('main',id);if(!S.cameraSetup)await startCameraSetup();else {S.tab='run';renderUI();}}});
 function closeSetupDialog(){S.billboardPanel=false;S.tab='run';renderUI();}
 const setupDialog=new SetupDialog({drawer:$('#drawer'),onDismiss:closeSetupDialog,beforeDismiss:async()=>{
-  if(cameraSetupConsole.busy){toast('Wait for camera setup to finish saving.');return false;}
+  if(cameraSetupConsole.busy||cameraHardware.busy||scoreboardHardware.busy){toast('Wait for camera setup to finish saving.');return false;}
   const cameraDirty=cameraSetupConsole.hasUnsavedChanges(),boardDirty=S.tab==='board'&&!B.running&&!!$('#bPrompt')?.value.trim()&&$('#bPrompt').value.trim()!==B.submitted.get(B.sel),billboardDirty=S.billboardPanel&&billboards.hasUnsavedPrompt();
-  if(!cameraDirty&&!boardDirty&&!billboardDirty)return true;
+  const hardwareDirty=cameraHardware.hasUnsavedChanges()||scoreboardHardware.hasUnsavedChanges();
+  if(!cameraDirty&&!boardDirty&&!billboardDirty&&!hardwareDirty)return true;
   if(!await confirmDiscardChanges())return false;
   if(cameraDirty)cameraSetupConsole.discardChanges();
+  if(hardwareDirty){cameraHardware.discardChanges();scoreboardHardware.discardChanges();}
   if(boardDirty){B.prompts.delete(B.sel);$('#bPrompt').value='';}
   if(billboardDirty)billboards.discardPrompt();
   return true;

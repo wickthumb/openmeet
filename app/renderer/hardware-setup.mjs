@@ -1,0 +1,96 @@
+const el=(tag,text='',className='')=>{const node=document.createElement(tag);if(text)node.textContent=text;if(className)node.className=className;return node;};
+const clone=value=>structuredClone(value);
+export class HardwareSetupPanel {
+  constructor({kind,bridge,toast=()=>{},context=()=>({})}){Object.assign(this,{kind,bridge,toast,context,profiles:[],interfaces:[],selected:null,draft:null,dirty:false,busy:false,active:false,loaded:false,loading:false,imageUrl:null,imageRevision:null,epoch:0});}
+  get prefix(){return 'hardware-'+this.kind;}
+  hasUnsavedChanges(){return this.dirty||!!this.notes?.value.trim();}
+  discardChanges(){this.choose(this.selected?.id??null);}
+  setActive(active){if(this.active===active)return;this.active=active;this.epoch++;if(this.timer){clearInterval(this.timer);this.timer=null;}if(!active){this._releaseImage();return;}if(this.bridge?.call){this.timer=setInterval(()=>this.refresh(),600);if(!this.loaded&&!this.loading)void this.load();else void this.refresh();}}
+  _releaseImage(){if(this.imageUrl)URL.revokeObjectURL(this.imageUrl);this.imageUrl=null;this.imageRevision=null;if(this.image){this.image.removeAttribute('src');this.image.hidden=true;}}
+  async load(){if(!this.bridge?.call||this.loading)return;this.loading=true;this._paint();try{const result=await this.bridge.call('hardware.list',{kind:this.kind});this.profiles=result.profiles;this.interfaces=result.interfaces;this.loaded=true;if(!this.dirty)this.choose(this.selected?.id??this.profiles[0]?.id??null);this._options();}catch(error){this.notice=error.message;}finally{this.loading=false;this._paint();}}
+  choose(id){this.epoch++;this.selected=this.profiles.find(p=>p.id===id)??null;this.draft=this.selected?clone(this.selected):{kind:this.kind,name:'',address:'',localAddress:null,port:this.kind==='camera'?41925:5000,transport:this.kind==='camera'?'tcp':'tcp-client',configuration:{},settings:{height:640,rate:800,depth:5,alignmentWidth:128,alignmentRate:5,queueEpochTrusted:false},script:'',bindings:[],section:'auto'};this.dirty=false;this.notice='';if(this.notes)this.notes.value='';this._releaseImage();if(this.wirePreview)this.wirePreview.textContent='';this._fill();this._paint();}
+  _options(){if(!this.select)return;this.select.replaceChildren();const empty=el('option',this.kind==='camera'?'New camera':'New physical scoreboard');empty.value='';this.select.append(empty);for(const p of this.profiles){const option=el('option',p.name);option.value=p.id;this.select.append(option);}this.select.value=this.selected?.id??'';
+    const current=this.local.value;this.local.replaceChildren();const automatic=el('option','Automatic route');automatic.value='';this.local.append(automatic);for(const item of this.interfaces){const option=el('option',`${item.name} · ${item.address}${item.internal?' · loopback':''}`);option.value=item.address;this.local.append(option);}this.local.value=this.draft?(this.draft.localAddress??''):(current??'');
+  }
+  async _action(fn){if(this.busy||!this.bridge?.call)return;this.busy=true;this.notice='';this._paint();try{return await fn();}catch(error){this.notice=error.message;this.toast(error.message,true);return null;}finally{this.busy=false;this._paint();}}
+  _accept(result,{saved=false}={}){if(!result)return;this.selected={...this.selected,...result};const i=this.profiles.findIndex(p=>p.id===result.id);if(i>=0)this.profiles[i]=this.selected;else this.profiles.push(this.selected);if(saved){this.draft=clone(this.selected);this.dirty=false;this._options();this._fill();}this._paint();}
+  _read(){const p={...this.draft,kind:this.kind,name:this.name.value,address:this.address.value.trim(),localAddress:this.local.value||null,transport:this.transport.value};
+    if(this.kind==='camera'){p.configuration=JSON.parse(this.advanced.value||'{}');p.settings={...p.settings,height:Number(this.height.value),rate:Number(this.rate.value),depth:Number(this.depth.value),alignmentWidth:Number(this.width.value),alignmentRate:Number(this.previewRate.value),queueEpochTrusted:this.trusted.checked};}
+    else{p.port=Number(this.port.value);p.broadcast=this.broadcast.checked;p.section=this.section.value;p.script=this.script.value||undefined;p.bindings=JSON.parse(this.advanced.value||'[]');}return p;
+  }
+  save(){return this._action(async()=>{const result=await this.bridge.call('hardware.save',this._read());this._accept(result,{saved:true});this.notice='Profile saved. Connection and display checks remain separate.';});}
+  importFile(){return this._action(async()=>{const file=await this.bridge.pickFile(this.kind==='camera'?'Import camera profile JSON':'Import scoreboard script or profile');if(!file)return;const result=await this.bridge.call('hardware.import',{file,kind:this.kind,id:this.selected?.id??null});this.draft={...this.draft,...result.draft};this.dirty=true;this._fill();this.notice=`Imported ${result.source}. Review and save before connecting.`;});}
+  inspect(){return this._action(async()=>{const p=await this.bridge.call('hardware.inspect',{id:this.selected.id});this._accept(p);this.notice='Runtime replies received. The camera remains unverified until its image and timing are checked.';});}
+  connect(mode){return this._action(async()=>{this._releaseImage();const p=await this.bridge.call('hardware.connect',{id:this.selected.id,mode,meetDir:this.context().meetDir??null});this._accept(p);this.notice=this.kind==='camera'?(mode==='alignment'?'Alignment preview started. Waiting for a complete frame.':'Recording a 10-second sample; no heat is assigned.'):'Output connected and paused. Run a diagnostic before sending live meet data.';});}
+  disconnect(){return this._action(async()=>{const p=await this.bridge.call('hardware.disconnect',{id:this.selected.id});this._accept(p);this._releaseImage();this.notice=p.observations?.lastSession?.recording?.dir?'Recording saved: '+p.observations.lastSession.recording.dir:'Disconnected.';});}
+  test(mode){return this._action(async()=>{const p=await this.bridge.call('hardware.scoreboardMode',{id:this.selected.id,mode,pattern:this.pattern.value||'444'});this._accept(p);this.notice=mode==='live'?'Live meet output enabled.':mode==='paused'?'Output paused.':`Sending ${mode} test. Check the physical board.`;});}
+  confirm(answer){return this._action(async()=>{const test=this.kind==='camera'?'alignment':this.selected.runtime.mode;const p=await this.bridge.call('hardware.confirm',{id:this.selected.id,test,answer,notes:this.notes.value});this._accept(p);this.notes.value='';this.notice=answer==='yes'?'Operator observation saved. Timing calibration is a separate check.':'Observation saved. Check the script, port and device settings before retrying.';});}
+  async refresh(){if(!this.active||!this.selected||this.busy||this.refreshing||!this.bridge?.call)return;this.refreshing=true;const epoch=this.epoch,id=this.selected.id;
+    try{const status=await this.bridge.call('hardware.status',{id});if(!this.active||epoch!==this.epoch||this.selected?.id!==id)return;this._accept(status);
+      if(this.kind==='camera'&&status.runtime?.image){const result=await this.bridge.call('hardware.image',{id,after:this.imageRevision});if(!this.active||epoch!==this.epoch||this.selected?.id!==id)return;if(result.ready&&result.png){const url=URL.createObjectURL(new Blob([result.png],{type:'image/png'}));if(this.imageUrl)URL.revokeObjectURL(this.imageUrl);this.imageUrl=url;this.imageRevision=result.revision;this.image.src=url;this.image.hidden=false;if(this.notice==='Alignment preview started. Waiting for a complete frame.')this.notice='Live alignment image received.';}}
+    }catch(error){if(epoch===this.epoch)this.notice=error.message;}finally{this.refreshing=false;this._paint();}
+  }
+  render(parent){if(!this.root)this._mount();if(this.root.parentNode!==parent)parent.prepend(this.root);this._paint();if(!this.draft)this.choose(null);if(!this.loaded&&!this.loading&&this.active)void this.load();}
+  _field(parent,key,label,{type='text',tag='input',options=null,advanced=false,transient=false}={}){const box=el('label','','hardware-field'),caption=el('span',label),input=el(tag);input.id=this.prefix+'-'+key;if(tag==='input')input.type=type;if(options)for(const [value,text]of options){const option=el('option',text);option.value=value;input.append(option);}box.htmlFor=input.id;box.append(caption,input);parent.append(box);this[key]=input;
+    input[tag==='select'||type==='checkbox'?'onchange':'oninput']=()=>{if(!transient){this.dirty=true;this.notice='Unsaved changes';}if(key==='pattern'&&this.wirePreview)this.wirePreview.textContent='';this._paint();};return input;
+  }
+  _button(parent,key,label,action){const b=el('button',label,['save','connect','check'].includes(key)?'btn sm primary':'btn sm');b.id=this.prefix+'-'+key;b.type='button';b.onclick=action;parent.append(b);this[key+'Button']=b;return b;}
+  _mount(){
+    const root=el('section','','hardware-setup card');root.id=this.prefix;this.root=root;
+    root.append(el('h3',this.kind==='camera'?'Live network camera':'Connect a physical scoreboard'));
+    root.append(el('p',this.kind==='camera'?'Check a running camera, review its settings, then preview alignment or record a sample.':'Use a matching device script over TCP or UDP. Browser scoreboard designs remain separate.','dimtext'));
+    const chooser=el('div','','hardware-actions');this.select=el('select');this.select.id=this.prefix+'-select';this.select.setAttribute('aria-label','Saved equipment');this.select.onchange=()=>{if(this.hasUnsavedChanges()){this.select.value=this.selected?.id??'';this.notice='Save or discard the current profile before selecting another.';this._paint();return;}this.choose(this.select.value||null);};chooser.append(this.select);
+    this._button(chooser,'new','New',()=>{if(this.hasUnsavedChanges()){this.notice='Save or discard the current profile first.';this._paint();return;}this.choose(null);});this._button(chooser,'import','Import…',()=>this.importFile());root.append(chooser);
+    this.noticeEl=el('p','','hardware-status');this.noticeEl.setAttribute('role','status');root.append(this.noticeEl);
+    const form=el('form','','hardware-form');form.onsubmit=event=>{event.preventDefault();void this.save();};this.form=form;
+    this._field(form,'name','Name');this._field(form,'address',this.kind==='camera'?'Camera address':'Board address');this.address.placeholder=this.kind==='camera'?'192.168.0.6':'192.168.0.100';
+    this._field(form,'local','Local interface',{tag:'select'});this._field(form,'transport','Connection',{tag:'select',options:this.kind==='camera'?[['tcp','TCP capture'],['udp','UDP capture']]:[['tcp-client','TCP · connect to board'],['tcp-server','TCP · listen for board'],['udp','UDP · send to board']]});
+    if(this.kind==='camera'){
+      this._field(form,'height','Encoded image height · rows',{type:'number'});this.height.min='16';this.height.max='2560';this.height.step='8';this._field(form,'rate','Capture rate · columns/s',{type:'number'});this.rate.min='1';this.rate.max='20000';
+      const advanced=el('details','','hardware-advanced');advanced.append(el('summary','Advanced camera profile'));this._field(advanced,'depth','Sample depth',{tag:'select',options:[3,4,5,6,7].map(n=>[String(n),String(n)+' bits'])});this._field(advanced,'width','Alignment frame width',{type:'number'});this._field(advanced,'previewRate','Alignment rate',{type:'number'});this._field(advanced,'trusted','Trust a fresh start queue',{type:'checkbox'});this._field(advanced,'advanced','Imported configuration JSON',{tag:'textarea'});form.append(advanced);
+    }else{
+      this._field(form,'port','Port',{type:'number'});this.port.min='1';this.port.max='65535';this._field(form,'section','Live output',{tag:'select',options:[['auto','Race clock · automatic'],['Results','Results'],['StartList','Start list'],['TimeRunning','Running clock']]});
+      this._field(form,'broadcast','Broadcast UDP',{type:'checkbox'});
+      const advanced=el('details','','hardware-advanced');advanced.append(el('summary','Device script and field bindings'));this._field(advanced,'script','Script',{tag:'textarea'});this.script.rows=10;this.script.placeholder='Import a matching script, or leave blank for the generic text diagnostic.';this._field(advanced,'advanced','Additional field bindings JSON',{tag:'textarea'});form.append(advanced);
+    }
+    const saveActions=el('div','','hardware-actions');this._button(saveActions,'save','Save profile',()=>this.save());this._button(saveActions,'discard','Discard changes',()=>this.discardChanges());this._button(saveActions,'remove','Remove profile',()=>this._action(async()=>{await this.bridge.call('hardware.remove',{id:this.selected.id});this.profiles=this.profiles.filter(p=>p.id!==this.selected.id);this.choose(null);this._options();}));form.append(saveActions);root.append(form);
+    this.facts=el('p','','hardware-facts');root.append(this.facts);
+    const actions=el('div','','hardware-actions');this.actions=actions;
+    if(this.kind==='camera'){
+      this._button(actions,'check','Check connection',()=>this.inspect());this._button(actions,'align','Preview alignment',()=>this.connect('alignment'));this._button(actions,'record','Record 10-second sample',()=>this.connect('recording'));
+      this._button(actions,'retry','Retry status',()=>this._action(async()=>this._accept(await this.bridge.call('hardware.retryStatus',{id:this.selected.id}))));
+      this.image=el('img','','hardware-preview');this.image.alt='Live camera alignment or latest recorded columns';this.image.hidden=true;
+    }else{
+      this._button(actions,'preview','Preview output',()=>this._action(async()=>{const result=await this.bridge.call('hardware.scriptPreview',{id:this.selected.id,pattern:this.pattern.value||'444'});this.wirePreview.textContent=result.preview?`${result.preview.bytes} bytes · no network activity\n${result.preview.text}\n${result.preview.hex}`:'No preview available';}));
+      this._button(actions,'connect','Connect · output paused',()=>this.connect());this._field(root,'pattern','Test pattern',{transient:true});this.pattern.value='444';this.wirePreview=el('pre','','hardware-wire-preview');root.append(this.wirePreview);
+      this._button(actions,'patternTest','Send pattern',()=>this.test('pattern'));this._button(actions,'clockTest','Test running clock',()=>this.test('clock'));this._button(actions,'resultsTest','Test results',()=>this.test('results'));
+      this._button(actions,'live','Use live meet data',()=>this.test('live'));this._button(actions,'pause','Pause output',()=>this.test('paused'));
+    }
+    this._button(actions,'disconnect',this.kind==='camera'?'Stop and disconnect':'Disconnect',()=>this.disconnect());root.append(actions);if(this.image)root.append(this.image);
+    this.observation=el('div','','hardware-observation');this.question=el('p');this.observation.append(this.question);this._field(this.observation,'notes','What did you see? · optional',{transient:true});const answers=el('div','','hardware-actions');for(const [key,label]of[['yes','Yes'],['no','No'],['different','Something different']])this._button(answers,key,label,()=>this.confirm(key));this.observation.append(answers);root.append(this.observation);
+    this.assumptions=el('p','','dimtext');root.append(this.assumptions);
+  }
+  _fill(){if(!this.root||!this.draft)return;const p=this.draft;this.name.value=p.name??'';this.address.value=p.address??'';this._options();this.transport.value=p.transport;
+    if(this.kind==='camera'){for(const key of ['height','rate','depth','width','previewRate'])this[key].value=String(p.settings?.[({width:'alignmentWidth',previewRate:'alignmentRate'})[key]??key]??({height:640,rate:800,depth:5,width:128,previewRate:5})[key]);this.trusted.checked=p.settings?.queueEpochTrusted===true;this.advanced.value=JSON.stringify(p.configuration??{},null,2);}
+    else{this.port.value=String(p.port??5000);this.section.value=p.section??'auto';this.broadcast.checked=p.broadcast===true;this.script.value=p.script??'';this.advanced.value=JSON.stringify(p.bindings??[],null,2);}
+  }
+  _paint(){if(!this.root)return;const p=this.selected,r=p?.runtime,connected=!!r,enabled=!!this.bridge?.call&&!this.busy&&!this.loading,ready=enabled&&!!p&&!this.dirty;
+    this.noticeEl.textContent=!this.bridge?.call?'Open this screen in the desktop app.':this.busy?'Working…':this.loading?'Loading equipment profiles…':this.notice??'';
+    this.form.hidden=connected;this.notes.disabled=!enabled;if(this.pattern)this.pattern.disabled=!enabled;this.saveButton.disabled=!enabled||connected;this.discardButton.disabled=!enabled||!this.hasUnsavedChanges();this.removeButton.disabled=!ready||connected;this.importButton.disabled=!enabled||connected;this.newButton.disabled=!enabled||connected;this.select.disabled=!enabled||connected;
+    for(const field of this.form.querySelectorAll('input,select,textarea'))field.disabled=!enabled||connected;
+    this.disconnectButton.disabled=!enabled||!connected;
+    if(this.kind==='camera'){
+      this.checkButton.disabled=!ready||connected;this.alignButton.disabled=!ready||connected;this.recordButton.disabled=!ready||connected;this.retryButton.disabled=!enabled||!connected||!r?.error;
+      const inspected=p?.observations?.inspection?.result,config=inspected?.configuration;
+      this.facts.textContent=r?`${p.address} · ${r.mode==='alignment'?'Alignment preview':'Sample recording'} · ${r.image?.columns??0} columns · ${r.image?.previewFrames??0} complete frames${r.image?.error?' · Decode error: '+r.image.error.message:''}${r.error?' · '+r.error.message:''}`:inspected?`Camera replied${config?` · ${config.height.min}–${config.height.max} rows · ${config.rate.min}–${config.rate.max} columns/s`:''} · timing unverified`:'No runtime check yet. Camera boot/loading and network address configuration are separate.';
+      if(!r&&p?.observations?.lastSession?.recording?.dir)this.facts.textContent+=' · Recording saved: '+p.observations.lastSession.recording.dir;
+      this.question.textContent='Is the finish line aligned correctly in this preview?';this.observation.hidden=!connected||r.mode!=='alignment'||!(r.image?.previewFrames>0);
+    }else{
+      this.connectButton.disabled=!ready||connected;this.previewButton.disabled=!ready;for(const key of ['patternTest','clockTest','resultsTest','live','pause'])this[key+'Button'].disabled=!ready||!connected;
+      this.facts.textContent=r?`${p.address}:${p.port} · ${r.transport?.state??'Connected locally'} · ${r.mode} · ${r.revision??0} output cycles${r.error?' · '+r.error.message:''}`:'Not connected. A successful send does not confirm what the physical board displays.';
+      this.question.textContent=r?.mode==='pattern'?`Does the board display ${p.observations?.lastTest?.pattern||'444'}?`:r?.mode==='clock'?'Is the clock visible and advancing?':'Do you see the Test Runner result at 12.34?';this.observation.hidden=!connected||!['pattern','clock','results'].includes(r.mode);
+    }
+    for(const key of ['yes','no','different'])this[key+'Button'].disabled=!enabled;
+    this.assumptions.textContent=(p?.assumptions??(this.kind==='camera'?['Experimental settings; actual image geometry, color and timing need device tests.']:['Use the script and port settings specified for your device.'])).join(' ');
+  }
+}

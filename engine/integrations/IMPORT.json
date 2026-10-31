@@ -20,11 +20,12 @@
     },
     {
       "path": "camera-link/src/node-transport.cjs",
-      "sha256": "b4a230b4b57d7487404bbdc2e607bf82f7375c9ba1c0d1844933f8a4a2735a47",
-      "bytes": 4571,
+      "sha256": "d2b466dd0f047a5a25991af54cd590b6163c492edcb9d61bc20cef733290f688",
+      "bytes": 4729,
       "upstreamSha256": "ee6ef36d70115800523b25d68bbb66f8ac84ff76bbc26b83daf494c2bcd7e724",
       "integrationChanges": [
-        "Add cancellable unacknowledged datagram sends for explicit clock-sample operations."
+        "Add cancellable unacknowledged datagram sends for explicit clock-sample operations.",
+        "Bind UDP/TCP to an explicitly selected local interface while preserving the default route."
       ]
     },
     {
@@ -65,8 +66,12 @@
     },
     {
       "path": "scoreboard/src/node-tcp.cjs",
-      "sha256": "2186ae1c96cb82379f75292a13d200af11f6e150011a2dc9cbb7108118fa568b",
-      "bytes": 7477
+      "sha256": "fab21f1f98aa7dc6cbaad2c814894af92e5080c74cd078410d3030d929b078ea",
+      "bytes": 7662,
+      "upstreamSha256": "2186ae1c96cb82379f75292a13d200af11f6e150011a2dc9cbb7108118fa568b",
+      "integrationChanges": [
+        "Allow an explicit local IPv4 interface for physical-board setup."
+      ]
     },
     {
       "path": "scoreboard/src/output-plan.cjs",

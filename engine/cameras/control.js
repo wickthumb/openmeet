@@ -3,11 +3,11 @@ import { decodeCameraConfiguration } from './configuration.js';
 
 const fail = (code, message = code) => Object.assign(new Error(message), { code });
 export async function inspectNetworkCamera({ address, port = 41925, marker, sequence = 0,
-  timeoutMs = 1000, family, identity = true, configuration = true },
+  timeoutMs = 1000, family, localAddress = null, identity = true, configuration = true },
 { transportFactory = wire.createNodeCameraTransport, signal } = {}) {
   if (!wire.hostOK(address) || port !== 41925 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) throw new TypeError('Explicit camera peer and deadline required');
   wire.encodeCameraCommand({ marker, sequence, operation:'clockRead', words:[] });
-  const transport=transportFactory({ host:address, port }), packets=[];
+  const transport=transportFactory({ host:address, port,localAddress }), packets=[];
   const abort=()=>transport.close(); signal?.addEventListener('abort',abort,{once:true});
   try {
     async function read(operation, words, raw = false) {

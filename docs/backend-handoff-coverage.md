@@ -48,10 +48,14 @@ and offset evidence; acknowledgment does not certify a physical pulse. Binary
 extended attributes require an explicit provider. The native capture adapter's
 replacement seek policy is first column at or after the requested time.
 
-Physical scripts need explicit field bindings; missing bindings fail rather than
-guess. Configure is inert, connection is explicit, and local completion never
-means display receipt. UDP reconnect is explicitly unsupported; close/configure/
-connect creates a fresh route. Camera details are in [network-camera.md](network-camera.md).
+Physical scripts can use the standard logical selectors or explicit field
+bindings. The standard mapper emits empty text for unavailable providers;
+routes without that mapper reject missing bindings. Configure is inert,
+connection is explicit, and local completion never means display receipt.
+UDP reconnect is explicitly unsupported; close/configure/connect creates a fresh
+route. The app exposes saved equipment, camera checks/alignment/sample recording,
+and isolated physical-board tests in [hardware-setup.md](hardware-setup.md).
+Camera details are in [network-camera.md](network-camera.md).
 
 JPEG/H264/MP4 encoding and decoding use an explicitly supplied open codec process,
 with deadlines, cancellation and output budgets. No codec binary is downloaded or

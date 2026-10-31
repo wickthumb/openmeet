@@ -131,7 +131,7 @@ export function createNetworkCameraService({
         return {exchange:async(...args)=>{if(closed)throw fail('ERR_CAMERA_SERVICE_CLOSED');const result=await transport.exchange(...args);if(closed)throw fail('ERR_CAMERA_SERVICE_CLOSED');return result;},close:async()=>{try{await transport.close();}finally{probes.delete(transport);}}};
       }});}finally{peers.delete(peer);}
     },
-    async probe({ address, port = 41925, marker, sequence = 0, timeoutMs = 1000 }) {
+    async probe({ address, port = 41925, localAddress = null, marker, sequence = 0, timeoutMs = 1000 }) {
       if (closed) throw fail('ERR_CAMERA_SERVICE_CLOSED');
       if (!wire.hostOK(address) || port !== 41925 || !int(timeoutMs, 1, 2147483647)) throw new TypeError('Explicit unicast address and valid timeout required');
       const packet = wire.encodeCameraCommand({ marker, sequence, operation: 'clockRead', words: [] });
@@ -140,7 +140,7 @@ export function createNetworkCameraService({
       peers.add(peer);
       let transport;
       try {
-        transport = transportFactory({ host: address, port }); probes.add(transport);
+        transport = transportFactory({ host: address, port,localAddress }); probes.add(transport);
         const options = { expectedAddress: address, expectedPort: port, requestMarker: marker, sequence };
         const observation = await transport.exchange(packet, { timeoutMs, accept: value => {
           try { return wire.decodeControlReply(value.bytes, { ...options, peerAddress: value.peerAddress, peerPort: value.peerPort }).decision === 'accepted'; }
@@ -172,7 +172,7 @@ export function createNetworkCameraService({
       if (image && !(Number.isFinite(image.columnPeriod) && image.columnPeriod > 0)) throw new TypeError('Explicit nominal columnPeriod required');
       const frameAssembler = previewWidth == null ? null : createAlignmentFrameAssembler({ width:previewWidth,
         height:image?.outputHeight, epochId:supplied.epochId });
-      const transport = transportFactory({ host: supplied.address, port: supplied.port });
+      const transport = transportFactory({ host: supplied.address, port: supplied.port,localAddress:supplied.localAddress });
       let session, store, entry;
       try {
         const recordedTransport = {

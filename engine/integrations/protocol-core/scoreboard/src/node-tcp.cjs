@@ -5,6 +5,7 @@ const fault=(code,message,extra={})=>Object.assign(new Error(message),{code,...e
 function route(s){if(typeof s!=='string'||!s.length)throw new TypeError('Explicit routeId required');return s;}
 function createScoreboardTcpClient(profile,options={}){
  const p=validateProfile(profile),routeId=route(options.routeId);
+ if(options.localAddress!=null&&net.isIP(options.localAddress)!==4)throw new TypeError('Explicit local IPv4 required');
  const first=+p.host.split('.')[0];if(first===0||first>=224||p.host==='255.255.255.255')throw new RangeError('Explicit unicast IPv4 required');
  for(const k of ['connectTimeoutMs','writeTimeoutMs'])if(!Number.isInteger(options[k])||options[k]<1||options[k]>2147483647)throw new RangeError('Positive bounded '+k+' required');
  const connectTimeout=options.connectTimeoutMs,writeTimeout=options.writeTimeoutMs;
@@ -26,7 +27,7 @@ function createScoreboardTcpClient(profile,options={}){
   const onConnect=()=>{if(done||epoch!==generation||terminal)return;done=true;cleanup();status='connected';resolve(summary());};
   const network=e=>{if(epoch!==generation||s!==socket)return;if(!done){fail(e);return;}if(cancel){cancel(e);return;}remember(e);status=terminal?'closed':'disconnected';revoke();};
   cancel=abort;
-  try{s=factory();socket=s;const onEnd=()=>network(fault('ERR_SCOREBOARD_END','Peer ended')),onClose=()=>network(fault('ERR_SCOREBOARD_CLOSE','Socket closed')),onData=()=>{};s.on('error',network);s.on('end',onEnd);s.on('close',onClose);s.on('data',onData);s.on('connect',onConnect);release=()=>{s.removeListener('error',network);s.on('error',()=>{});s.removeListener('end',onEnd);s.removeListener('close',onClose);s.removeListener('data',onData);s.removeListener('connect',onConnect);};timer=setTimer(()=>fail(fault('ERR_SCOREBOARD_CONNECT_TIMEOUT','Connect timeout')),connectTimeout);s.setKeepAlive(p.keepAlive);s.connect({host:p.host,port:p.port});}catch(e){fail(e);}
+  try{s=factory();socket=s;const onEnd=()=>network(fault('ERR_SCOREBOARD_END','Peer ended')),onClose=()=>network(fault('ERR_SCOREBOARD_CLOSE','Socket closed')),onData=()=>{};s.on('error',network);s.on('end',onEnd);s.on('close',onClose);s.on('data',onData);s.on('connect',onConnect);release=()=>{s.removeListener('error',network);s.on('error',()=>{});s.removeListener('end',onEnd);s.removeListener('close',onClose);s.removeListener('data',onData);s.removeListener('connect',onConnect);};timer=setTimer(()=>fail(fault('ERR_SCOREBOARD_CONNECT_TIMEOUT','Connect timeout')),connectTimeout);s.setKeepAlive(p.keepAlive);s.connect({host:p.host,port:p.port,...(options.localAddress?{localAddress:options.localAddress}:{})});}catch(e){fail(e);}
  });}
  async function write(){connected();if(!pending.length)return summary();const b=Buffer.from(pending);pending=Buffer.alloc(0);const s=socket,epoch=generation;
  return new Promise((resolve,reject)=>{let done=false,returned=false,callbackDone=false,drained=false,needsDrain=false,timer;

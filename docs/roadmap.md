@@ -70,7 +70,7 @@ Acceptance: with the option disabled, capture and review remain unchanged; with 
 
 ## Guided hardware setup and verification
 
-Planned for a later integration phase; see [the hardware setup blueprint](blueprint.md#11-guided-hardware-setup-with-ai-assistance).
+A first camera/physical-scoreboard workflow is implemented; see [equipment setup](hardware-setup.md). Physical qualification, automatic boot provisioning and the wider assistant/provider features below remain open. See [the hardware setup blueprint](blueprint.md#11-guided-hardware-setup-with-ai-assistance).
 
 - [ ] Define a common engine adapter and device-profile contract for scoreboards, cameras, start sensors and wind gauges.
 - [ ] Select exact Daktronics scoreboard/controller and FinishLynx camera models for the first prebuilt integrations; research their official documentation and available driver/protocol interfaces.

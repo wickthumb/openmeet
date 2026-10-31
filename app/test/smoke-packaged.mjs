@@ -139,6 +139,10 @@ try {
   assert.equal(backend.exceptionDetails,undefined,JSON.stringify(backend.exceptionDetails));
   assert.equal(backend.result.value[0].tuple.ticks,'12000000');
   assert.deepEqual(backend.result.value.slice(1),[[],[]],'Packaged output services did not load inertly');
+  const equipment=await cdp.call('Runtime.evaluate',{expression:"window.openmeet.call('hardware.list')",awaitPromise:true,returnByValue:true});
+  assert.equal(equipment.exceptionDetails,undefined,JSON.stringify(equipment.exceptionDetails));
+  assert.deepEqual(equipment.result.value.profiles,[],'Packaged equipment setup did not load inertly');
+  assert.ok(Array.isArray(equipment.result.value.interfaces));
   const crop=await cdp.call('Runtime.evaluate',{expression:"window.openmeet.call('autocrop.info')",awaitPromise:true,returnByValue:true});
   assert.equal(crop.exceptionDetails,undefined);assert.equal(crop.result.value?.provider,'native');assert.equal(crop.result.value?.ready,true,'Packaged native cropper did not load');
   console.log('PASS: packaged engine, camera, timing, scoreboard, remote services and built-in cropper ready');

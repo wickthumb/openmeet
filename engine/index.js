@@ -42,3 +42,5 @@ export * from './capture/media.js';
 export * from './capture/media-codec.js';
 export * from './integrations/remote-capture.js';
 export * from './timing/value-format.js';
+export * from './hardware/service.js';
+export * from './hardware/profiles.js';
