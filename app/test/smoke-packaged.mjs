@@ -126,9 +126,22 @@ try {
   console.log(`ping: ${JSON.stringify(ping)}`);
   assert.equal(ping?.ok, true, 'Engine ping failed');
   assert.equal(ping?.core, true, 'Packaged engine core was not loaded');
+  const cameras = await cdp.call('Runtime.evaluate', {
+    expression: "window.openmeet.call('camera.network.status')",
+    awaitPromise: true, returnByValue: true,
+  });
+  assert.equal(cameras.exceptionDetails, undefined, JSON.stringify(cameras.exceptionDetails));
+  assert.deepEqual(cameras.result.value, [], 'Packaged network camera service did not load inertly');
+  const backend=await cdp.call('Runtime.evaluate',{
+    expression:"Promise.all([window.openmeet.call('backend.time',{operation:'parseTimePrefix',input:{text:'1:90'}}),window.openmeet.call('scoreboard.wire.list'),window.openmeet.call('remote.list')])",
+    awaitPromise:true,returnByValue:true,
+  });
+  assert.equal(backend.exceptionDetails,undefined,JSON.stringify(backend.exceptionDetails));
+  assert.equal(backend.result.value[0].tuple.ticks,'12000000');
+  assert.deepEqual(backend.result.value.slice(1),[[],[]],'Packaged output services did not load inertly');
   const crop=await cdp.call('Runtime.evaluate',{expression:"window.openmeet.call('autocrop.info')",awaitPromise:true,returnByValue:true});
   assert.equal(crop.exceptionDetails,undefined);assert.equal(crop.result.value?.provider,'native');assert.equal(crop.result.value?.ready,true,'Packaged native cropper did not load');
-  console.log('PASS: packaged engine and built-in cropper ready');
+  console.log('PASS: packaged engine, camera, timing, scoreboard, remote services and built-in cropper ready');
 } catch (error) {
   console.error(`FAIL: ${error.message}`);
   if (logs) console.error(logs);

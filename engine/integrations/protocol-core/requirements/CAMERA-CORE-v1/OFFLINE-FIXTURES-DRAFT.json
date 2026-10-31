@@ -1,0 +1,42 @@
+﻿{
+    "provenance":  "Authored input/output examples from declarative field layout; invented marker and payloads; no device observations",
+    "status":  "DRAFT pending source investigators content review",
+    "streamRequest":  {
+                          "marker":  270544960,
+                          "initialIndex":  2309737967,
+                          "hex":  "40302010000000000900030003000000efcdab8900000080803e0000",
+                          "expectedBytes":  28
+                      },
+    "normalReply":  {
+                        "expectedPeer":  "192.0.2.10",
+                        "expectedPort":  41925,
+                        "requestMarker":  270544960,
+                        "sequence":  7,
+                        "hex":  "bfcfdfef07000000010000800200000044332211ddccbbaa",
+                        "expected":  {
+                                         "success":  true,
+                                         "payload":  [
+                                                         287454020,
+                                                         2864434397
+                                                     ]
+                                     }
+                    },
+    "shortFrame":  {
+                       "hex":  "f1041400000102030405060708090a0b0c0d0e0f10111213",
+                       "payloadHex":  "000102030405060708090a0b0c0d0e0f10111213",
+                       "notes":  "Authored 20-byte framing sample only; not a valid image record or camera trailer"
+                   },
+    "negativeCases":  [
+                          "wrong source IP",
+                          "wrong source port",
+                          "wrong complementary marker",
+                          "stale/wrong reply sequence",
+                          "reply count inconsistent with length",
+                          "unsupported reply status",
+                          "incomplete header on EOF",
+                          "incomplete body on EOF",
+                          "invalid stream marker",
+                          "declared body shorter than20 or longer than16000"
+                      ],
+    "policyNote":  "How own client rejects or ignores invalid data must be explicit local policy; do not attribute all errors/recovery to vendor behavior"
+}

@@ -1,0 +1,21 @@
+﻿{
+    "scope":  "Passive offline block inspector only; no image validity, EOF/drain, live controller or hardware guarantee",
+    "provenance":  "Reviewed source-informed prose and29 invented authored cases; no original implementation or device outputs",
+    "files":  [
+                  {
+                      "file":  "RECEIVED-BLOCK-CANDIDATE-v1.txt",
+                      "bytes":  3142,
+                      "sha256":  "308dbf31812943e33167f4bb0755426017c6c6c42d35513529f63c8a954d58ed"
+                  },
+                  {
+                      "file":  "RECEIVED-BLOCK-API-SUPPLEMENT-v1.txt",
+                      "bytes":  2519,
+                      "sha256":  "2ed8e514b70f5554263fbb6c8a5207424ab60b9c5eb53ce9d2f80112a6408958"
+                  },
+                  {
+                      "file":  "AUTHORED-BLOCK-CASES-v1.json",
+                      "bytes":  33506,
+                      "sha256":  "f2a9441c8adcf2448a8dc56854ec4787e4db6c955f43dce7fd3bb8b3c1544b8f"
+                  }
+              ]
+}

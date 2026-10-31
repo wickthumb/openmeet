@@ -1,0 +1,2287 @@
+{
+  "scope": "Authored synthetic handoff examples; no device or native runtime outputs.",
+  "archives": [
+    {
+      "id": "time-config-20002",
+      "family": "cfg",
+      "bytesHex": "020002000000000000000000",
+      "expectedBytes": 12
+    },
+    {
+      "id": "time-config-20003",
+      "family": "cfg",
+      "bytesHex": "0300020000000000000000000100020000000000000000000000000000000000000000000000000000000000",
+      "expectedBytes": 44
+    },
+    {
+      "id": "time-config-20004",
+      "family": "cfg",
+      "bytesHex": "04000200000000000000000001000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "expectedBytes": 100
+    },
+    {
+      "id": "time-config-20005",
+      "family": "cfg",
+      "bytesHex": "0500020000000000000000000100020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "expectedBytes": 104
+    },
+    {
+      "id": "group-v0c-zero-condition-bytes-N3",
+      "family": "group",
+      "bytesHex": "0c0002000100000005000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000",
+      "expectedBytes": 84
+    },
+    {
+      "id": "group-v0e-N3-V0",
+      "family": "group",
+      "bytesHex": "0e00020001000000050001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000070001000000000003000000000000000a0000001400000000000000000000000100000002000000",
+      "expectedBytes": 108
+    },
+    {
+      "id": "extra-result-v0f",
+      "family": "extra",
+      "bytesHex": "0f000200230100000100020000000000000000000000000000000000",
+      "expectedBytes": 28
+    },
+    {
+      "id": "extra-result-v10-empty-text",
+      "family": "extra",
+      "bytesHex": "10000200560400000100020000000000000000000000000000000000070000000500010000000000",
+      "expectedBytes": 40
+    },
+    {
+      "id": "transform-1",
+      "family": "transform",
+      "bytesHex": "0100000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-2",
+      "family": "transform",
+      "bytesHex": "0200000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-4",
+      "family": "transform",
+      "bytesHex": "0400000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-8",
+      "family": "transform",
+      "bytesHex": "0800000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-16",
+      "family": "transform",
+      "bytesHex": "1000000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-32",
+      "family": "transform",
+      "bytesHex": "2000000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-64",
+      "family": "transform",
+      "bytesHex": "4000000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-128",
+      "family": "transform",
+      "bytesHex": "8000000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-256",
+      "family": "transform",
+      "bytesHex": "0001000000000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform--2",
+      "family": "transform",
+      "bytesHex": "feffffff00000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform--4",
+      "family": "transform",
+      "bytesHex": "fcffffff00000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform--8",
+      "family": "transform",
+      "bytesHex": "f8ffffff00000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform--16",
+      "family": "transform",
+      "bytesHex": "f0ffffff00000000",
+      "expectedBytes": 8
+    },
+    {
+      "id": "transform-131088",
+      "family": "transform",
+      "bytesHex": "10000200000000000000000000000000000000000000000000000000",
+      "expectedBytes": 28
+    },
+    {
+      "id": "transform-131089",
+      "family": "transform",
+      "bytesHex": "11000200000000000000000000000000000000000000000000000000",
+      "expectedBytes": 28
+    },
+    {
+      "id": "results-table-20005",
+      "family": "table",
+      "bytesHex": "050002000000000000000000070001000000000000000000000000000000000000000000000000000000000005000100000000000700010000000000",
+      "expectedBytes": 60
+    },
+    {
+      "id": "results-table-20006",
+      "family": "table",
+      "bytesHex": "060002000000000000000000070001000000000000000000000000000000000000000000000000000000000005000100000000000700010000000000000000000000",
+      "expectedBytes": 66
+    },
+    {
+      "id": "results-table-20007-two-extra-records",
+      "family": "table",
+      "bytesHex": "07000200000000000000000007000100000000000000000000000000000000000000000000000000000000000500010000000000070001000000000000000000000007000100020000000f00020023010000010002000000000000000000000000000000000010000200560400000100020000000000000000000000000000000000070000000500010000000000",
+      "expectedBytes": 142
+    }
+  ],
+  "wind": [
+    {
+      "speed": 123,
+      "unit": 0,
+      "expectedAppend": "+1.3",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": 123,
+      "unit": 1,
+      "expectedAppend": "+1.3",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": 123,
+      "unit": 2,
+      "expectedAppend": "+1.3",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": 123,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    },
+    {
+      "speed": 120,
+      "unit": 0,
+      "expectedAppend": "+1.2",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": 120,
+      "unit": 1,
+      "expectedAppend": "+1.2",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": 120,
+      "unit": 2,
+      "expectedAppend": "+1.2",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": 120,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    },
+    {
+      "speed": -123,
+      "unit": 0,
+      "expectedAppend": "-1.2",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": -123,
+      "unit": 1,
+      "expectedAppend": "-1.2",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": -123,
+      "unit": 2,
+      "expectedAppend": "-1.2",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": -123,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    },
+    {
+      "speed": -120,
+      "unit": 0,
+      "expectedAppend": "-1.2",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": -120,
+      "unit": 1,
+      "expectedAppend": "-1.2",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": -120,
+      "unit": 2,
+      "expectedAppend": "-1.2",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": -120,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    },
+    {
+      "speed": -9,
+      "unit": 0,
+      "expectedAppend": "+0.0",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": -9,
+      "unit": 1,
+      "expectedAppend": "+0.0",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": -9,
+      "unit": 2,
+      "expectedAppend": "+0.0",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": -9,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    },
+    {
+      "speed": 0,
+      "unit": 0,
+      "expectedAppend": "+0.0",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": 0,
+      "unit": 1,
+      "expectedAppend": "+0.0",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": 0,
+      "unit": 2,
+      "expectedAppend": "+0.0",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": 0,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    },
+    {
+      "speed": 25500,
+      "unit": 0,
+      "expectedAppend": "+255.0",
+      "expectedUnitLabel": "MPH"
+    },
+    {
+      "speed": 25500,
+      "unit": 1,
+      "expectedAppend": "+255.0",
+      "expectedUnitLabel": "F/S"
+    },
+    {
+      "speed": 25500,
+      "unit": 2,
+      "expectedAppend": "+255.0",
+      "expectedUnitLabel": "M/S"
+    },
+    {
+      "speed": 25500,
+      "unit": -1,
+      "expectedAppend": "",
+      "expectedUnitLabel": ""
+    }
+  ],
+  "parser": [
+    {
+      "input": "12.345M/S",
+      "suppliedUnit": -1,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": 1234,
+        "unit": 2,
+        "remainder": "",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "input": "-12.345F/S",
+      "suppliedUnit": -1,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": -1234,
+        "unit": 1,
+        "remainder": "",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "input": ".5mph",
+      "suppliedUnit": -1,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": 50,
+        "unit": 0,
+        "remainder": "",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "input": ".",
+      "suppliedUnit": 2,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": 0,
+        "unit": 2,
+        "remainder": "",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "input": "--1",
+      "suppliedUnit": 2,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": 100,
+        "unit": 2,
+        "remainder": "",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "input": "1.2X",
+      "suppliedUnit": 2,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": 120,
+        "unit": 2,
+        "remainder": "X",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "input": "1.2X",
+      "suppliedUnit": -1,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": false,
+        "speed": 999,
+        "unit": -1,
+        "remainder": "X",
+        "notifications": []
+      }
+    },
+    {
+      "input": "1.20 M/S ",
+      "suppliedUnit": -1,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": false,
+        "speed": 999,
+        "unit": -1,
+        "remainder": "M/S ",
+        "notifications": []
+      }
+    },
+    {
+      "input": " 1.2M/S",
+      "suppliedUnit": -1,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": false,
+        "speed": 999,
+        "unit": -1,
+        "remainder": " 1.2M/S",
+        "notifications": []
+      }
+    },
+    {
+      "input": "junk",
+      "suppliedUnit": 2,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": false,
+        "speed": 999,
+        "unit": -1,
+        "remainder": "junk",
+        "notifications": []
+      }
+    },
+    {
+      "input": "-0.09",
+      "suppliedUnit": 2,
+      "initial": {
+        "speed": 999,
+        "unit": -1,
+        "secondary": -2147483648,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "unitLabels": [
+        "MPH",
+        "F/S",
+        "M/S"
+      ],
+      "expected": {
+        "accepted": true,
+        "speed": -9,
+        "unit": 2,
+        "remainder": "",
+        "notifications": [
+          5,
+          6
+        ]
+      }
+    }
+  ],
+  "directions": [
+    {
+      "mode": 0,
+      "direction": 0,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S"
+    },
+    {
+      "mode": 0,
+      "direction": 44,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S"
+    },
+    {
+      "mode": 0,
+      "direction": 89,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S"
+    },
+    {
+      "mode": 0,
+      "direction": 271,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S"
+    },
+    {
+      "mode": 0,
+      "direction": 359,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S"
+    },
+    {
+      "mode": 2,
+      "direction": 0,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 2,
+      "direction": 44,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 2,
+      "direction": 89,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 2,
+      "direction": 271,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 2,
+      "direction": 359,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 4,
+      "direction": 0,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 4,
+      "direction": 44,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 4,
+      "direction": 89,
+      "expectedResourceIndex": 4,
+      "expectedAppend": "M/S D4"
+    },
+    {
+      "mode": 4,
+      "direction": 271,
+      "expectedResourceIndex": 12,
+      "expectedAppend": "M/S D12"
+    },
+    {
+      "mode": 4,
+      "direction": 359,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 8,
+      "direction": 0,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 8,
+      "direction": 44,
+      "expectedResourceIndex": 2,
+      "expectedAppend": "M/S D2"
+    },
+    {
+      "mode": 8,
+      "direction": 89,
+      "expectedResourceIndex": 4,
+      "expectedAppend": "M/S D4"
+    },
+    {
+      "mode": 8,
+      "direction": 271,
+      "expectedResourceIndex": 12,
+      "expectedAppend": "M/S D12"
+    },
+    {
+      "mode": 8,
+      "direction": 359,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 16,
+      "direction": 0,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 16,
+      "direction": 44,
+      "expectedResourceIndex": 2,
+      "expectedAppend": "M/S D2"
+    },
+    {
+      "mode": 16,
+      "direction": 89,
+      "expectedResourceIndex": 4,
+      "expectedAppend": "M/S D4"
+    },
+    {
+      "mode": 16,
+      "direction": 271,
+      "expectedResourceIndex": 12,
+      "expectedAppend": "M/S D12"
+    },
+    {
+      "mode": 16,
+      "direction": 359,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 360,
+      "direction": 0,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S 0"
+    },
+    {
+      "mode": 360,
+      "direction": 44,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S 44"
+    },
+    {
+      "mode": 360,
+      "direction": 89,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S 89"
+    },
+    {
+      "mode": 360,
+      "direction": 271,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S 271"
+    },
+    {
+      "mode": 360,
+      "direction": 359,
+      "expectedResourceIndex": null,
+      "expectedAppend": "M/S 359"
+    },
+    {
+      "mode": 99,
+      "direction": 0,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    },
+    {
+      "mode": 99,
+      "direction": 44,
+      "expectedResourceIndex": 2,
+      "expectedAppend": "M/S D2"
+    },
+    {
+      "mode": 99,
+      "direction": 89,
+      "expectedResourceIndex": 4,
+      "expectedAppend": "M/S D4"
+    },
+    {
+      "mode": 99,
+      "direction": 271,
+      "expectedResourceIndex": 12,
+      "expectedAppend": "M/S D12"
+    },
+    {
+      "mode": 99,
+      "direction": 359,
+      "expectedResourceIndex": 0,
+      "expectedAppend": "M/S D0"
+    }
+  ],
+  "persistence": [
+    {
+      "version": 131074,
+      "swap": false,
+      "writerStatus": "authored older-reader layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        2,
+        0,
+        2,
+        0,
+        46,
+        251,
+        255,
+        255,
+        2,
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131074,
+        "consumedBytes": 12,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": -2147483648,
+          "time": {
+            "ticks": "40000",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 1,
+          "start": 77,
+          "duration": 88,
+          "weather": [
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648
+          ]
+        }
+      }
+    },
+    {
+      "version": 131074,
+      "swap": true,
+      "writerStatus": "authored older-reader layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        0,
+        2,
+        0,
+        2,
+        255,
+        255,
+        251,
+        46,
+        0,
+        0,
+        0,
+        2
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131074,
+        "consumedBytes": 12,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": -2147483648,
+          "time": {
+            "ticks": "40000",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 1,
+          "start": 77,
+          "duration": 88,
+          "weather": [
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648
+          ]
+        }
+      }
+    },
+    {
+      "version": 131075,
+      "swap": false,
+      "writerStatus": "authored older-reader layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        3,
+        0,
+        2,
+        0,
+        46,
+        251,
+        255,
+        255,
+        2,
+        0,
+        0,
+        0,
+        1,
+        0,
+        2,
+        0,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        80,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255,
+        255,
+        255,
+        255,
+        3,
+        0,
+        0,
+        0,
+        176,
+        4,
+        0,
+        0,
+        16,
+        39,
+        0,
+        0
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131075,
+        "consumedBytes": 44,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": -2147483648,
+          "time": {
+            "ticks": "1108152157446",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 3,
+          "start": 1200,
+          "duration": 10000,
+          "weather": [
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648
+          ]
+        }
+      }
+    },
+    {
+      "version": 131075,
+      "swap": true,
+      "writerStatus": "authored older-reader layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        0,
+        2,
+        0,
+        3,
+        255,
+        255,
+        251,
+        46,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0,
+        1,
+        5,
+        6,
+        3,
+        4,
+        1,
+        2,
+        0,
+        80,
+        0,
+        0,
+        0,
+        0,
+        255,
+        255,
+        255,
+        255,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        4,
+        176,
+        0,
+        0,
+        39,
+        16
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131075,
+        "consumedBytes": 44,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": -2147483648,
+          "time": {
+            "ticks": "1108152157446",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 3,
+          "start": 1200,
+          "duration": 10000,
+          "weather": [
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648,
+            -2147483648
+          ]
+        }
+      }
+    },
+    {
+      "version": 131076,
+      "swap": false,
+      "writerStatus": "authored older-reader layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        4,
+        0,
+        2,
+        0,
+        46,
+        251,
+        255,
+        255,
+        2,
+        0,
+        0,
+        0,
+        1,
+        0,
+        2,
+        0,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        80,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255,
+        255,
+        255,
+        255,
+        3,
+        0,
+        0,
+        0,
+        176,
+        4,
+        0,
+        0,
+        16,
+        39,
+        0,
+        0,
+        215,
+        0,
+        0,
+        0,
+        201,
+        255,
+        255,
+        255,
+        100,
+        0,
+        0,
+        0,
+        156,
+        255,
+        255,
+        255,
+        45,
+        0,
+        0,
+        0,
+        50,
+        0,
+        0,
+        0,
+        55,
+        0,
+        0,
+        0,
+        60,
+        0,
+        0,
+        0,
+        188,
+        2,
+        0,
+        0,
+        132,
+        3,
+        0,
+        0,
+        15,
+        1,
+        0,
+        0,
+        171,
+        117,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        200,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131076,
+        "consumedBytes": 100,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": -2147483648,
+          "time": {
+            "ticks": "1108152157446",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 3,
+          "start": 1200,
+          "duration": 10000,
+          "weather": [
+            215,
+            -55,
+            100,
+            -100,
+            45,
+            50,
+            55,
+            60,
+            700,
+            900,
+            271,
+            30123,
+            6,
+            456
+          ]
+        }
+      }
+    },
+    {
+      "version": 131076,
+      "swap": true,
+      "writerStatus": "authored older-reader layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        0,
+        2,
+        0,
+        4,
+        255,
+        255,
+        251,
+        46,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0,
+        1,
+        5,
+        6,
+        3,
+        4,
+        1,
+        2,
+        0,
+        80,
+        0,
+        0,
+        0,
+        0,
+        255,
+        255,
+        255,
+        255,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        4,
+        176,
+        0,
+        0,
+        39,
+        16,
+        0,
+        0,
+        0,
+        215,
+        255,
+        255,
+        255,
+        201,
+        0,
+        0,
+        0,
+        100,
+        255,
+        255,
+        255,
+        156,
+        0,
+        0,
+        0,
+        45,
+        0,
+        0,
+        0,
+        50,
+        0,
+        0,
+        0,
+        55,
+        0,
+        0,
+        0,
+        60,
+        0,
+        0,
+        2,
+        188,
+        0,
+        0,
+        3,
+        132,
+        0,
+        0,
+        1,
+        15,
+        0,
+        0,
+        117,
+        171,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        1,
+        200
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131076,
+        "consumedBytes": 100,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": -2147483648,
+          "time": {
+            "ticks": "1108152157446",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 3,
+          "start": 1200,
+          "duration": 10000,
+          "weather": [
+            215,
+            -55,
+            100,
+            -100,
+            45,
+            50,
+            55,
+            60,
+            700,
+            900,
+            271,
+            30123,
+            6,
+            456
+          ]
+        }
+      }
+    },
+    {
+      "version": 131077,
+      "swap": false,
+      "writerStatus": "current writer layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        5,
+        0,
+        2,
+        0,
+        46,
+        251,
+        255,
+        255,
+        2,
+        0,
+        0,
+        0,
+        1,
+        0,
+        2,
+        0,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        80,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255,
+        255,
+        255,
+        255,
+        3,
+        0,
+        0,
+        0,
+        176,
+        4,
+        0,
+        0,
+        16,
+        39,
+        0,
+        0,
+        215,
+        0,
+        0,
+        0,
+        201,
+        255,
+        255,
+        255,
+        100,
+        0,
+        0,
+        0,
+        156,
+        255,
+        255,
+        255,
+        45,
+        0,
+        0,
+        0,
+        50,
+        0,
+        0,
+        0,
+        55,
+        0,
+        0,
+        0,
+        60,
+        0,
+        0,
+        0,
+        188,
+        2,
+        0,
+        0,
+        132,
+        3,
+        0,
+        0,
+        15,
+        1,
+        0,
+        0,
+        171,
+        117,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        200,
+        1,
+        0,
+        0,
+        55,
+        2,
+        0,
+        0
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131077,
+        "consumedBytes": 104,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": 567,
+          "time": {
+            "ticks": "1108152157446",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 3,
+          "start": 1200,
+          "duration": 10000,
+          "weather": [
+            215,
+            -55,
+            100,
+            -100,
+            45,
+            50,
+            55,
+            60,
+            700,
+            900,
+            271,
+            30123,
+            6,
+            456
+          ]
+        }
+      }
+    },
+    {
+      "version": 131077,
+      "swap": true,
+      "writerStatus": "current writer layout",
+      "inputState": {
+        "speed": -1234,
+        "unit": 2,
+        "secondary": 567,
+        "time": {
+          "ticks": "1108152157446",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 3,
+        "start": 1200,
+        "duration": 10000,
+        "weather": [
+          215,
+          -55,
+          100,
+          -100,
+          45,
+          50,
+          55,
+          60,
+          700,
+          900,
+          271,
+          30123,
+          6,
+          456
+        ]
+      },
+      "priorReaderState": {
+        "speed": 777,
+        "unit": -1,
+        "secondary": -2147483648,
+        "time": {
+          "ticks": "40000",
+          "quantum": "80",
+          "origin": -1
+        },
+        "mode": 1,
+        "start": 77,
+        "duration": 88,
+        "weather": [
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648,
+          -2147483648
+        ]
+      },
+      "serializedBytes": [
+        0,
+        2,
+        0,
+        5,
+        255,
+        255,
+        251,
+        46,
+        0,
+        0,
+        0,
+        2,
+        0,
+        2,
+        0,
+        1,
+        5,
+        6,
+        3,
+        4,
+        1,
+        2,
+        0,
+        80,
+        0,
+        0,
+        0,
+        0,
+        255,
+        255,
+        255,
+        255,
+        0,
+        0,
+        0,
+        3,
+        0,
+        0,
+        4,
+        176,
+        0,
+        0,
+        39,
+        16,
+        0,
+        0,
+        0,
+        215,
+        255,
+        255,
+        255,
+        201,
+        0,
+        0,
+        0,
+        100,
+        255,
+        255,
+        255,
+        156,
+        0,
+        0,
+        0,
+        45,
+        0,
+        0,
+        0,
+        50,
+        0,
+        0,
+        0,
+        55,
+        0,
+        0,
+        0,
+        60,
+        0,
+        0,
+        2,
+        188,
+        0,
+        0,
+        3,
+        132,
+        0,
+        0,
+        1,
+        15,
+        0,
+        0,
+        117,
+        171,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        1,
+        200,
+        0,
+        0,
+        2,
+        55
+      ],
+      "expected": {
+        "accepted": true,
+        "version": 131077,
+        "consumedBytes": 104,
+        "state": {
+          "speed": -1234,
+          "unit": 2,
+          "secondary": 567,
+          "time": {
+            "ticks": "1108152157446",
+            "quantum": "80",
+            "origin": -1
+          },
+          "mode": 3,
+          "start": 1200,
+          "duration": 10000,
+          "weather": [
+            215,
+            -55,
+            100,
+            -100,
+            45,
+            50,
+            55,
+            60,
+            700,
+            900,
+            271,
+            30123,
+            6,
+            456
+          ]
+        }
+      }
+    }
+  ]
+}

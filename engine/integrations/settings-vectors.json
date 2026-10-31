@@ -1,0 +1,2817 @@
+{
+  "initialStates": {
+    "emptyFreshRoot": {
+      "name": "",
+      "type": "Group",
+      "metadata": 1,
+      "runtime": 4,
+      "label": "",
+      "children": []
+    },
+    "labeledRoot": {
+      "name": "",
+      "type": "Group",
+      "metadata": 1,
+      "runtime": 4,
+      "label": "Group",
+      "children": []
+    },
+    "singleInt": {
+      "name": "",
+      "type": "Group",
+      "metadata": 1,
+      "runtime": 4,
+      "label": "Group",
+      "children": [
+        {
+          "name": "Tally",
+          "type": "Int",
+          "metadata": 1,
+          "runtime": 4,
+          "value": 3,
+          "lower": -2147483648,
+          "upper": 2147483647
+        }
+      ]
+    },
+    "singleString": {
+      "name": "",
+      "type": "Group",
+      "metadata": 1,
+      "runtime": 4,
+      "label": "Group",
+      "children": [
+        {
+          "name": "Caption",
+          "type": "String",
+          "metadata": 1,
+          "runtime": 4,
+          "value": "old"
+        }
+      ]
+    },
+    "labInt": {
+      "name": "",
+      "type": "Group",
+      "metadata": 1,
+      "runtime": 4,
+      "label": "Group",
+      "children": [
+        {
+          "name": "Lab",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Tally",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 4,
+              "value": 3,
+              "lower": -2147483648,
+              "upper": 2147483647
+            }
+          ]
+        }
+      ]
+    },
+    "customInt": {
+      "name": "",
+      "type": "Group",
+      "metadata": 1,
+      "runtime": 4,
+      "label": "Group",
+      "children": [
+        {
+          "name": "Tally",
+          "type": "Int",
+          "metadata": 2,
+          "runtime": 4,
+          "value": 3,
+          "lower": -5,
+          "upper": 9
+        }
+      ]
+    }
+  },
+  "integerPrefix": [
+    {
+      "id": "INT-001",
+      "operation": "automatic-base lexical prefix",
+      "input": "018tail",
+      "expected": {
+        "ok": true,
+        "value": 1,
+        "prefixLength": 2,
+        "signedDecimal": "1"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-002",
+      "operation": "automatic-base lexical prefix",
+      "input": "0x2Atail",
+      "expected": {
+        "ok": true,
+        "value": 42,
+        "prefixLength": 4,
+        "signedDecimal": "42"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-003",
+      "operation": "automatic-base lexical prefix",
+      "input": "0X2b",
+      "expected": {
+        "ok": true,
+        "value": 43,
+        "prefixLength": 4,
+        "signedDecimal": "43"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-004",
+      "operation": "automatic-base lexical prefix",
+      "input": "0x",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-005",
+      "operation": "automatic-base lexical prefix",
+      "input": "0",
+      "expected": {
+        "ok": true,
+        "value": 0,
+        "prefixLength": 1,
+        "signedDecimal": "0"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-006",
+      "operation": "automatic-base lexical prefix",
+      "input": "00rest",
+      "expected": {
+        "ok": true,
+        "value": 0,
+        "prefixLength": 2,
+        "signedDecimal": "0"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-007",
+      "operation": "automatic-base lexical prefix",
+      "input": "-0x2A",
+      "expected": {
+        "ok": true,
+        "value": 0,
+        "prefixLength": 2,
+        "signedDecimal": "0"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-008",
+      "operation": "automatic-base lexical prefix",
+      "input": "+19suffix",
+      "expected": {
+        "ok": true,
+        "value": 19,
+        "prefixLength": 3,
+        "signedDecimal": "19"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-009",
+      "operation": "automatic-base lexical prefix",
+      "input": "-23",
+      "expected": {
+        "ok": true,
+        "value": -23,
+        "prefixLength": 3,
+        "signedDecimal": "-23"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-010",
+      "operation": "automatic-base lexical prefix",
+      "input": " 19",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-011",
+      "operation": "automatic-base lexical prefix",
+      "input": "",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-012",
+      "operation": "automatic-base lexical prefix",
+      "input": "true",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-013",
+      "operation": "automatic-base lexical prefix",
+      "input": "0xG",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-014",
+      "operation": "automatic-base lexical prefix",
+      "input": "078",
+      "expected": {
+        "ok": true,
+        "value": 7,
+        "prefixLength": 2,
+        "signedDecimal": "7"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-015",
+      "operation": "automatic-base lexical prefix",
+      "input": "075",
+      "expected": {
+        "ok": true,
+        "value": 61,
+        "prefixLength": 3,
+        "signedDecimal": "61"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-016",
+      "operation": "automatic-base lexical prefix",
+      "input": "19.5",
+      "expected": {
+        "ok": true,
+        "value": 19,
+        "prefixLength": 2,
+        "signedDecimal": "19"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-017",
+      "operation": "automatic-base lexical prefix",
+      "input": "+",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-018",
+      "operation": "automatic-base lexical prefix",
+      "input": "-",
+      "expected": {
+        "ok": false,
+        "value": null,
+        "prefixLength": "HELD_on_failure",
+        "signedDecimal": null
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-019",
+      "operation": "automatic-base lexical prefix",
+      "input": "09",
+      "expected": {
+        "ok": true,
+        "value": 0,
+        "prefixLength": 1,
+        "signedDecimal": "0"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    },
+    {
+      "id": "INT-020",
+      "operation": "automatic-base lexical prefix",
+      "input": "2147483647",
+      "expected": {
+        "ok": true,
+        "value": 2147483647,
+        "prefixLength": 10,
+        "signedDecimal": "2147483647"
+      },
+      "completion": "Not invoked in lexical cases. Setter success would discard remaining suffix."
+    }
+  ],
+  "booleanSetter": [
+    {
+      "id": "BOOL-022",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": true
+      },
+      "input": "0",
+      "expected": {
+        "value": false,
+        "runtime": 6,
+        "valueSuccess": true,
+        "writerPayload": "0"
+      }
+    },
+    {
+      "id": "BOOL-023",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": false
+      },
+      "input": "0x2A",
+      "expected": {
+        "value": true,
+        "runtime": 6,
+        "valueSuccess": true,
+        "writerPayload": "1"
+      }
+    },
+    {
+      "id": "BOOL-024",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": false
+      },
+      "input": "-23tail",
+      "expected": {
+        "value": true,
+        "runtime": 6,
+        "valueSuccess": true,
+        "writerPayload": "1"
+      }
+    },
+    {
+      "id": "BOOL-025",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": true
+      },
+      "input": "09",
+      "expected": {
+        "value": false,
+        "runtime": 6,
+        "valueSuccess": true,
+        "writerPayload": "0"
+      }
+    },
+    {
+      "id": "BOOL-026",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": true
+      },
+      "input": "true",
+      "expected": {
+        "value": true,
+        "runtime": 4,
+        "valueSuccess": false,
+        "writerPayload": "1"
+      }
+    },
+    {
+      "id": "BOOL-027",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": true
+      },
+      "input": "false",
+      "expected": {
+        "value": true,
+        "runtime": 4,
+        "valueSuccess": false,
+        "writerPayload": "1"
+      }
+    },
+    {
+      "id": "BOOL-028",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": true
+      },
+      "input": " 1",
+      "expected": {
+        "value": true,
+        "runtime": 4,
+        "valueSuccess": false,
+        "writerPayload": "1"
+      }
+    },
+    {
+      "id": "BOOL-029",
+      "operation": "default Bool setter",
+      "initial": {
+        "name": "Flag",
+        "type": "Bool",
+        "metadata": 1,
+        "runtime": 4,
+        "value": true
+      },
+      "input": "",
+      "expected": {
+        "value": true,
+        "runtime": 4,
+        "valueSuccess": false,
+        "writerPayload": "1"
+      }
+    }
+  ],
+  "rationalSetter": [
+    {
+      "id": "RAT-030",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "-3 1/4",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          -13,
+          4
+        ],
+        "runtime": 6,
+        "writerPayload": "-3 1/4"
+      }
+    },
+    {
+      "id": "RAT-031",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "3.50",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          7,
+          2
+        ],
+        "runtime": 6,
+        "writerPayload": "3 1/2"
+      }
+    },
+    {
+      "id": "RAT-032",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "3/4tail",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          3,
+          4
+        ],
+        "runtime": 6,
+        "writerPayload": "3/4"
+      }
+    },
+    {
+      "id": "RAT-033",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "4 3/x",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          4,
+          1
+        ],
+        "runtime": 6,
+        "writerPayload": "4"
+      }
+    },
+    {
+      "id": "RAT-034",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "4 1/0",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          1,
+          0
+        ],
+        "runtime": 6,
+        "writerPayload": ""
+      }
+    },
+    {
+      "id": "RAT-035",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "3/0",
+      "expected": {
+        "valueSuccess": false,
+        "value": [
+          5,
+          6
+        ],
+        "runtime": 4,
+        "writerPayload": "5/6"
+      }
+    },
+    {
+      "id": "RAT-036",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": ".75",
+      "expected": {
+        "valueSuccess": false,
+        "value": [
+          5,
+          6
+        ],
+        "runtime": 4,
+        "writerPayload": "5/6"
+      }
+    },
+    {
+      "id": "RAT-037",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "0.50",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          1,
+          2
+        ],
+        "runtime": 6,
+        "writerPayload": "1/2"
+      }
+    },
+    {
+      "id": "RAT-038",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "6.",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          6,
+          1
+        ],
+        "runtime": 6,
+        "writerPayload": "6"
+      }
+    },
+    {
+      "id": "RAT-039",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "018",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          18,
+          1
+        ],
+        "runtime": 6,
+        "writerPayload": "18"
+      }
+    },
+    {
+      "id": "RAT-040",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "3 01/04",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          13,
+          4
+        ],
+        "runtime": 6,
+        "writerPayload": "3 1/4"
+      }
+    },
+    {
+      "id": "RAT-041",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "3  1/4",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          3,
+          1
+        ],
+        "runtime": 6,
+        "writerPayload": "3"
+      }
+    },
+    {
+      "id": "RAT-042",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "0",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          0,
+          1
+        ],
+        "runtime": 6,
+        "writerPayload": "0"
+      }
+    },
+    {
+      "id": "RAT-043",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "-6/4",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          -3,
+          2
+        ],
+        "runtime": 6,
+        "writerPayload": "-1 1/2"
+      }
+    },
+    {
+      "id": "RAT-044",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "3/12",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          1,
+          4
+        ],
+        "runtime": 6,
+        "writerPayload": "1/4"
+      }
+    },
+    {
+      "id": "RAT-045",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "4 03/010",
+      "expected": {
+        "valueSuccess": true,
+        "value": [
+          35,
+          8
+        ],
+        "runtime": 6,
+        "writerPayload": "4 3/8"
+      }
+    },
+    {
+      "id": "RAT-046",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": "2/00",
+      "expected": {
+        "valueSuccess": false,
+        "value": [
+          5,
+          6
+        ],
+        "runtime": 4,
+        "writerPayload": "5/6"
+      }
+    },
+    {
+      "id": "RAT-047",
+      "operation": "default Rat setter and canonical value writer",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          5,
+          6
+        ]
+      },
+      "input": " 3",
+      "expected": {
+        "valueSuccess": false,
+        "value": [
+          5,
+          6
+        ],
+        "runtime": 4,
+        "writerPayload": "5/6"
+      }
+    }
+  ],
+  "floatPrefix": [
+    {
+      "id": "FLOAT-048",
+      "operation": "Float prefix recognition",
+      "input": ".5",
+      "expected": {
+        "ok": true,
+        "token": ".5",
+        "value": 0.5
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-049",
+      "operation": "Float prefix recognition",
+      "input": "1.25tail",
+      "expected": {
+        "ok": true,
+        "token": "1.25",
+        "value": 1.25
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-050",
+      "operation": "Float prefix recognition",
+      "input": "2.5",
+      "expected": {
+        "ok": true,
+        "token": "2.5",
+        "value": 2.5
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-051",
+      "operation": "Float prefix recognition",
+      "input": "2e4",
+      "expected": {
+        "ok": true,
+        "token": "2",
+        "value": 2
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-052",
+      "operation": "Float prefix recognition",
+      "input": "2,75",
+      "expected": {
+        "ok": true,
+        "token": "2",
+        "value": 2
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-053",
+      "operation": "Float prefix recognition",
+      "input": "3.",
+      "expected": {
+        "ok": true,
+        "token": "3.",
+        "value": 3
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-054",
+      "operation": "Float prefix recognition",
+      "input": "+.5",
+      "expected": {
+        "ok": true,
+        "token": "+.5",
+        "value": 0.5
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-055",
+      "operation": "Float prefix recognition",
+      "input": "-0.5rest",
+      "expected": {
+        "ok": true,
+        "token": "-0.5",
+        "value": -0.5
+      },
+      "scope": "Finite exact numerical oracle; successful setter completes and sets runtime bit 2."
+    },
+    {
+      "id": "FLOAT-056",
+      "operation": "Float prefix recognition",
+      "input": ".75",
+      "expected": {
+        "ok": true,
+        "token": ".75",
+        "value": "HELD_numerical_rounding"
+      },
+      "scope": "Grammar only or failure; no guessed binary64 result."
+    },
+    {
+      "id": "FLOAT-057",
+      "operation": "Float prefix recognition",
+      "input": "123.456789",
+      "expected": {
+        "ok": true,
+        "token": "123.456789",
+        "value": "HELD_numerical_rounding"
+      },
+      "scope": "Grammar only or failure; no guessed binary64 result."
+    },
+    {
+      "id": "FLOAT-058",
+      "operation": "Float prefix recognition",
+      "input": ".",
+      "expected": {
+        "ok": false,
+        "token": null,
+        "value": null
+      },
+      "scope": "Grammar only or failure; no guessed binary64 result."
+    },
+    {
+      "id": "FLOAT-059",
+      "operation": "Float prefix recognition",
+      "input": "-",
+      "expected": {
+        "ok": false,
+        "token": null,
+        "value": null
+      },
+      "scope": "Grammar only or failure; no guessed binary64 result."
+    },
+    {
+      "id": "FLOAT-060",
+      "operation": "Float prefix recognition",
+      "input": " 2",
+      "expected": {
+        "ok": false,
+        "token": null,
+        "value": null
+      },
+      "scope": "Grammar only or failure; no guessed binary64 result."
+    },
+    {
+      "id": "FLOAT-061",
+      "operation": "Float prefix recognition",
+      "input": "",
+      "expected": {
+        "ok": false,
+        "token": null,
+        "value": null
+      },
+      "scope": "Grammar only or failure; no guessed binary64 result."
+    }
+  ],
+  "stringSetter": [
+    {
+      "id": "STRING-062",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "",
+      "expected": {
+        "valueSuccess": true,
+        "value": "",
+        "runtime": 6,
+        "writerText": "Caption:String,1=\n",
+        "rereadSafe": true
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    },
+    {
+      "id": "STRING-063",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "  Banner, \"quoted\"=x  ",
+      "expected": {
+        "valueSuccess": true,
+        "value": "  Banner, \"quoted\"=x  ",
+        "runtime": 6,
+        "writerText": "Caption:String,1=  Banner, \"quoted\"=x  \n",
+        "rereadSafe": true
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    },
+    {
+      "id": "STRING-064",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "\"wrapped\"",
+      "expected": {
+        "valueSuccess": true,
+        "value": "\"wrapped\"",
+        "runtime": 6,
+        "writerText": "Caption:String,1=\"wrapped\"\n",
+        "rereadSafe": true
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    },
+    {
+      "id": "STRING-065",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "C\\nD",
+      "expected": {
+        "valueSuccess": true,
+        "value": "C\\nD",
+        "runtime": 6,
+        "writerText": "Caption:String,1=C\\nD\n",
+        "rereadSafe": true
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    },
+    {
+      "id": "STRING-066",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "comma,equals=colon:slash\\",
+      "expected": {
+        "valueSuccess": true,
+        "value": "comma,equals=colon:slash\\",
+        "runtime": 6,
+        "writerText": "Caption:String,1=comma,equals=colon:slash\\\n",
+        "rereadSafe": true
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    },
+    {
+      "id": "STRING-067",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "C\r",
+      "expected": {
+        "valueSuccess": true,
+        "value": "C\r",
+        "runtime": 6,
+        "writerText": "Caption:String,1=C\r\n",
+        "rereadSafe": true
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    },
+    {
+      "id": "STRING-068",
+      "operation": "direct default String setter then direct leaf writer",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "C\nD",
+      "expected": {
+        "valueSuccess": true,
+        "value": "C\nD",
+        "runtime": 6,
+        "writerText": "Caption:String,1=C\nD\n",
+        "rereadSafe": false
+      },
+      "boundary": "Input is direct payload, not a registry line. CR remains literal at logical boundary."
+    }
+  ],
+  "declarations": [
+    {
+      "id": "DECLARE-069",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally:Int,1=11",
+      "expected": {
+        "inserted": true,
+        "newChild": {
+          "name": "Tally",
+          "type": "Int",
+          "metadata": 1,
+          "runtime": 6,
+          "value": 11,
+          "lower": -2147483648,
+          "upper": 2147483647
+        },
+        "localStages": 3
+      }
+    },
+    {
+      "id": "DECLARE-070",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally: int,1=11",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-071",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally:NoType,1=11",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-072",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally:Int,1=oops",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-073",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally:Int,1=018tail",
+      "expected": {
+        "inserted": true,
+        "newChild": {
+          "name": "Tally",
+          "type": "Int",
+          "metadata": 1,
+          "runtime": 6,
+          "value": 1,
+          "lower": -2147483648,
+          "upper": 2147483647
+        },
+        "localStages": 3
+      }
+    },
+    {
+      "id": "DECLARE-074",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "tAlLy:iNt,1=0x2A",
+      "expected": {
+        "inserted": true,
+        "newChild": {
+          "name": "tAlLy",
+          "type": "Int",
+          "metadata": 1,
+          "runtime": 6,
+          "value": 42,
+          "lower": -2147483648,
+          "upper": 2147483647
+        },
+        "localStages": 3
+      }
+    },
+    {
+      "id": "DECLARE-075",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "7Flag:Bool,1=2",
+      "expected": {
+        "inserted": true,
+        "newChild": {
+          "name": "7Flag",
+          "type": "Bool",
+          "metadata": 1,
+          "runtime": 6,
+          "value": true
+        },
+        "localStages": 3
+      }
+    },
+    {
+      "id": "DECLARE-076",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "_Caption:String,1=value",
+      "expected": {
+        "inserted": true,
+        "newChild": {
+          "name": "_Caption",
+          "type": "String",
+          "metadata": 1,
+          "runtime": 6,
+          "value": "value"
+        },
+        "localStages": 3
+      }
+    },
+    {
+      "id": "DECLARE-077",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "NoGroup\\Tally:Int,1=11",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-078",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "A\\B\\:Group,1=",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-079",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally:Int,1",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-080",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": " Tally:Int,1=11",
+      "expected": {
+        "inserted": false,
+        "newChild": null
+      }
+    },
+    {
+      "id": "DECLARE-081",
+      "operation": "resolve declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Tally:Float,1=1.25",
+      "expected": {
+        "inserted": true,
+        "newChild": {
+          "name": "Tally",
+          "type": "Float",
+          "metadata": 1,
+          "runtime": 6,
+          "value": 1.25,
+          "lower": 2.2250738585072014e-308,
+          "upper": 1.7976931348623157e+308
+        },
+        "localStages": 3
+      }
+    },
+    {
+      "id": "DECLARE-082",
+      "operation": "resolve group declaration",
+      "initialState": "emptyFreshRoot",
+      "input": "Lab\\:Group,1=discard this",
+      "expected": {
+        "inserted": true,
+        "localStages": 3,
+        "newChild": {
+          "name": "Lab",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 6,
+          "label": "Group",
+          "children": []
+        },
+        "groupRelativeWriter": "Lab\\:Group,1=\n"
+      }
+    }
+  ],
+  "existingUpdates": [
+    {
+      "id": "UPDATE-083",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "Tally:String,5,-3,14=16",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "type": "Int",
+          "metadata": 5,
+          "lower": -3,
+          "upper": 14,
+          "value": 16,
+          "runtime": 6
+        },
+        "localStages": 2,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-084",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "Tally=11",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "value": 3,
+          "runtime": 4
+        },
+        "localStages": 0,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-085",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "Tally:=11",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "value": 11,
+          "runtime": 6
+        },
+        "localStages": 2,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-086",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "Tally:Int,7,-2,8=oops",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "metadata": 7,
+          "lower": -2,
+          "upper": 8,
+          "value": 3,
+          "runtime": 4
+        },
+        "localStages": 1,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-087",
+      "operation": "resolve against existing state",
+      "initialState": "customInt",
+      "input": "Tally:Int,,,=11",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "metadata": 2,
+          "lower": -5,
+          "upper": 9,
+          "value": 11,
+          "runtime": 6
+        },
+        "localStages": 3,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-088",
+      "operation": "resolve against existing state",
+      "initialState": "customInt",
+      "input": "Tally:Int, 7, bad,=11",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "metadata": 2,
+          "lower": -5,
+          "upper": 9,
+          "value": 11,
+          "runtime": 6
+        },
+        "localStages": 3,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-089",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "Tally: int ,3,0,1=8",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "metadata": 3,
+          "lower": 0,
+          "upper": 1,
+          "value": 8,
+          "runtime": 6
+        },
+        "localStages": 3,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-090",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "Tally:Int,0xA,-5,2=40",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "metadata": 10,
+          "lower": -5,
+          "upper": 2,
+          "value": 40,
+          "runtime": 6
+        },
+        "localStages": 3,
+        "originalChildTypeUnchanged": true
+      }
+    },
+    {
+      "id": "UPDATE-091",
+      "operation": "resolve against existing state",
+      "initialState": "singleInt",
+      "input": "TallyX:Int,1=8",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "value": 3,
+          "runtime": 4
+        },
+        "localStages": 3,
+        "originalChildTypeUnchanged": true,
+        "newSibling": {
+          "name": "TallyX",
+          "type": "Int",
+          "metadata": 1,
+          "runtime": 6,
+          "value": 8,
+          "lower": -2147483648,
+          "upper": 2147483647
+        },
+        "childNames": [
+          "Tally",
+          "TallyX"
+        ]
+      }
+    },
+    {
+      "id": "UPDATE-092",
+      "operation": "resolve against existing state",
+      "initialState": "singleString",
+      "input": "Caption:String,1=",
+      "expected": {
+        "stateProjectionOfOriginalChild": {
+          "value": "",
+          "runtime": 6
+        },
+        "localStages": 3,
+        "originalChildTypeUnchanged": true
+      }
+    }
+  ],
+  "rootPrefixes": [
+    {
+      "id": "PREFIX-093",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": "Lab\\Tally:Int,1=11",
+      "expected": {
+        "rootPrefixConsumed": 0,
+        "targetAssigned": true,
+        "originalTallyValue": 11
+      }
+    },
+    {
+      "id": "PREFIX-094",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": "\\Lab\\Tally:Int,1=11",
+      "expected": {
+        "rootPrefixConsumed": 1,
+        "targetAssigned": true,
+        "originalTallyValue": 11
+      }
+    },
+    {
+      "id": "PREFIX-095",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": "\\\\Lab\\Tally:Int,1=11",
+      "expected": {
+        "rootPrefixConsumed": 1,
+        "targetAssigned": false,
+        "originalTallyValue": 3
+      }
+    },
+    {
+      "id": "PREFIX-096",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": " Lab\\Tally:Int,1=11",
+      "expected": {
+        "rootPrefixConsumed": 0,
+        "targetAssigned": false,
+        "originalTallyValue": 3
+      }
+    },
+    {
+      "id": "PREFIX-097",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": "\\lAb\\tAlLy:Int,1=11",
+      "expected": {
+        "rootPrefixConsumed": 1,
+        "targetAssigned": true,
+        "originalTallyValue": 11
+      }
+    },
+    {
+      "id": "PREFIX-098",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": "Lab\\Tally=11",
+      "expected": {
+        "rootPrefixConsumed": 0,
+        "targetAssigned": false,
+        "originalTallyValue": 3
+      }
+    },
+    {
+      "id": "PREFIX-099",
+      "operation": "resolve path against nested existing Int",
+      "initialState": "labInt",
+      "input": "Lab\\Tally_1:Int,1=11",
+      "expected": {
+        "rootPrefixConsumed": 0,
+        "targetAssigned": false,
+        "originalTallyValue": 3,
+        "insertedSiblingName": "Tally_1",
+        "insertedSiblingValue": 11
+      }
+    }
+  ],
+  "writerMasks": [
+    {
+      "id": "MASK-100",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 0,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": false
+      }
+    },
+    {
+      "id": "MASK-101",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 1,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": false
+      }
+    },
+    {
+      "id": "MASK-102",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 2,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": false
+      }
+    },
+    {
+      "id": "MASK-103",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 3,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": false
+      }
+    },
+    {
+      "id": "MASK-104",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 4,
+        "metadata": 0
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "id": "MASK-105",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 5,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": false
+      }
+    },
+    {
+      "id": "MASK-106",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 6,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": true
+      }
+    },
+    {
+      "id": "MASK-107",
+      "operation": "parent child eligibility only",
+      "input": {
+        "runtime": 7,
+        "metadata": 7
+      },
+      "expected": {
+        "eligible": false
+      }
+    }
+  ],
+  "writerTrees": [
+    {
+      "id": "WRITE-108",
+      "operation": "direct fresh named Group writer",
+      "input": {
+        "node": {
+          "name": "Workshop",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "",
+          "children": []
+        },
+        "prefix": ""
+      },
+      "expected": {
+        "text": "Workshop\\:,1=\n"
+      }
+    },
+    {
+      "id": "WRITE-109",
+      "operation": "direct root Group writer",
+      "input": {
+        "node": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 7,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Visible",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 6,
+              "value": 11,
+              "lower": -2147483648,
+              "upper": 2147483647
+            }
+          ]
+        },
+        "prefix": ""
+      },
+      "expected": {
+        "text": "\\:Group,1=\n\\Visible:Int,1,,=11\n"
+      }
+    },
+    {
+      "id": "WRITE-110",
+      "operation": "direct Int writer",
+      "input": {
+        "node": {
+          "name": "Tally",
+          "type": "Int",
+          "metadata": 1,
+          "runtime": 0,
+          "value": 11,
+          "lower": -2147483648,
+          "upper": 2147483647
+        },
+        "prefix": "Lab\\"
+      },
+      "expected": {
+        "text": "Lab\\Tally:Int,1,,=11\n"
+      }
+    },
+    {
+      "id": "WRITE-111",
+      "operation": "registry writer",
+      "input": {
+        "root": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Third",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 4,
+              "value": 3,
+              "lower": -2147483648,
+              "upper": 2147483647
+            },
+            {
+              "name": "First",
+              "type": "String",
+              "metadata": 1,
+              "runtime": 4,
+              "value": "x"
+            },
+            {
+              "name": "Second",
+              "type": "Int",
+              "metadata": 4,
+              "runtime": 6,
+              "value": 2,
+              "lower": -5,
+              "upper": 9
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Registry Version: 1.00\n\\:Group,1=\n\\Third:Int,1,,=3\n\\First:String,1=x\n\\Second:Int,4,-5,9=2\n",
+        "childNamesAfter": [
+          "Third",
+          "First",
+          "Second"
+        ]
+      }
+    },
+    {
+      "id": "WRITE-112",
+      "operation": "registry writer",
+      "input": {
+        "root": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Hidden",
+              "type": "Group",
+              "metadata": 1,
+              "runtime": 7,
+              "label": "Group",
+              "children": [
+                {
+                  "name": "Nested",
+                  "type": "Int",
+                  "metadata": 1,
+                  "runtime": 4,
+                  "value": 8,
+                  "lower": -2147483648,
+                  "upper": 2147483647
+                }
+              ]
+            },
+            {
+              "name": "Shown",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 4,
+              "value": 9,
+              "lower": -2147483648,
+              "upper": 2147483647
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Registry Version: 1.00\n\\:Group,1=\n\\Shown:Int,1,,=9\n"
+      }
+    },
+    {
+      "id": "WRITE-113",
+      "operation": "direct Group writer with supplied prefix",
+      "input": {
+        "node": {
+          "name": "Inner",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "N",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 4,
+              "value": 5,
+              "lower": -2147483648,
+              "upper": 2147483647
+            },
+            {
+              "name": "S",
+              "type": "String",
+              "metadata": 1,
+              "runtime": 4,
+              "value": "v"
+            }
+          ]
+        },
+        "prefix": "Outer\\"
+      },
+      "expected": {
+        "text": "Outer\\Inner\\:Group,1=\nOuter\\Inner\\N:Int,1,,=5\nOuter\\Inner\\S:String,1=v\n",
+        "childNamesAfter": [
+          "N",
+          "S"
+        ]
+      }
+    }
+  ],
+  "callbacks": [
+    {
+      "id": "CALLBACK-114",
+      "operation": "Int setter",
+      "initial": {
+        "name": "Tally",
+        "type": "Int",
+        "metadata": 1,
+        "runtime": 4,
+        "value": 3,
+        "lower": -2147483648,
+        "upper": 2147483647
+      },
+      "input": "18tail",
+      "injected": {
+        "normalReturn": false,
+        "storedValueAfterCallback": 18
+      },
+      "expected": {
+        "value": 18,
+        "valueSuccess": true,
+        "runtime": 6
+      }
+    },
+    {
+      "id": "CALLBACK-115",
+      "operation": "Int setter",
+      "initial": {
+        "name": "Tally",
+        "type": "Int",
+        "metadata": 1,
+        "runtime": 4,
+        "value": 3,
+        "lower": -2147483648,
+        "upper": 2147483647
+      },
+      "input": "18",
+      "injected": {
+        "normalReturn": false,
+        "storedValueAfterCallback": 3
+      },
+      "expected": {
+        "value": 3,
+        "valueSuccess": true,
+        "runtime": 6
+      }
+    },
+    {
+      "id": "CALLBACK-116",
+      "operation": "Rat setter",
+      "initial": {
+        "name": "Ratio",
+        "type": "Rat",
+        "metadata": 1,
+        "runtime": 4,
+        "value": [
+          1,
+          2
+        ]
+      },
+      "input": "3/4",
+      "injected": {
+        "normalReturn": false,
+        "storedValueAfterCallback": [
+          7,
+          8
+        ]
+      },
+      "expected": {
+        "value": [
+          7,
+          8
+        ],
+        "valueSuccess": true,
+        "runtime": 6
+      }
+    },
+    {
+      "id": "CALLBACK-117",
+      "operation": "String setter",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "new",
+      "injected": {
+        "normalReturn": false,
+        "storedValueAfterCallback": "old",
+        "externalMarkerAfter": "unchanged"
+      },
+      "expected": {
+        "value": "old",
+        "valueSuccess": false,
+        "runtime": 4,
+        "externalMarkerAfter": "unchanged"
+      }
+    },
+    {
+      "id": "CALLBACK-118",
+      "operation": "String setter",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "new",
+      "injected": {
+        "normalReturn": false,
+        "storedValueAfterCallback": "callback changed",
+        "externalMarkerAfter": "touched"
+      },
+      "expected": {
+        "value": "callback changed",
+        "valueSuccess": false,
+        "runtime": 4,
+        "externalMarkerAfter": "touched"
+      }
+    },
+    {
+      "id": "CALLBACK-119",
+      "operation": "String setter",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "new",
+      "injected": {
+        "normalReturn": true,
+        "storedValueAfterCallback": "custom"
+      },
+      "expected": {
+        "value": "custom",
+        "valueSuccess": true,
+        "runtime": 6
+      }
+    },
+    {
+      "id": "CALLBACK-120",
+      "operation": "String setter with injected exception outcome",
+      "initial": {
+        "name": "Caption",
+        "type": "String",
+        "metadata": 1,
+        "runtime": 4,
+        "value": "old"
+      },
+      "input": "new",
+      "injected": {
+        "throwsLabel": "TEST_EXCEPTION",
+        "finalObservedValue": "partial",
+        "finalObservedRuntime": 4,
+        "abortSequence": true
+      },
+      "expected": {
+        "exceptionLabel": "TEST_EXCEPTION",
+        "value": "partial",
+        "runtime": 4,
+        "abortSequence": true
+      },
+      "claim": "All post-throw observations are injected. No native exception or rollback behavior is inferred."
+    }
+  ],
+  "registrySequences": [
+    {
+      "id": "LOAD-121",
+      "operation": "logical load then one declaration then registry write",
+      "initialState": "emptyFreshRoot",
+      "inputText": "ignored invented heading\n\\:Group,1=\nLab\\:Group,1=\nLab\\Tally:Int,1,-4,12=021tail\nLab\\Flag:Bool,1=0x2A\nLab\\Ratio:Rat,1=-3 1/4\nLab\\Caption:String,1=  Card, \"Q\"=yes  \n",
+      "change": "\\Lab\\Tally:Int,1,-4,12=18",
+      "expected": {
+        "loadedTally": 17,
+        "expectedFinalTree": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 6,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Lab",
+              "type": "Group",
+              "metadata": 1,
+              "runtime": 6,
+              "label": "Group",
+              "children": [
+                {
+                  "name": "Tally",
+                  "type": "Int",
+                  "metadata": 1,
+                  "runtime": 6,
+                  "value": 18,
+                  "lower": -4,
+                  "upper": 12
+                },
+                {
+                  "name": "Flag",
+                  "type": "Bool",
+                  "metadata": 1,
+                  "runtime": 6,
+                  "value": true
+                },
+                {
+                  "name": "Ratio",
+                  "type": "Rat",
+                  "metadata": 1,
+                  "runtime": 6,
+                  "value": [
+                    -13,
+                    4
+                  ]
+                },
+                {
+                  "name": "Caption",
+                  "type": "String",
+                  "metadata": 1,
+                  "runtime": 6,
+                  "value": "  Card, \"Q\"=yes  "
+                }
+              ]
+            }
+          ]
+        },
+        "writerText": "Registry Version: 1.00\n\\:Group,1=\n\\Lab\\:Group,1=\n\\Lab\\Tally:Int,1,-4,12=18\n\\Lab\\Flag:Bool,1=1\n\\Lab\\Ratio:Rat,1=-3 1/4\n\\Lab\\Caption:String,1=  Card, \"Q\"=yes  \n"
+      }
+    },
+    {
+      "id": "LOAD-122",
+      "operation": "logical load continuing after ordinary failed line",
+      "initialState": "labeledRoot",
+      "inputText": "not a version header\nMissing\\N:Int,1=4\nBad:Int,1=oops\nGood:Int,1=13\n",
+      "expected": {
+        "childNames": [
+          "Good"
+        ],
+        "expectedFinalTree": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Good",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 6,
+              "value": 13,
+              "lower": -2147483648,
+              "upper": 2147483647
+            }
+          ]
+        },
+        "writerText": "Registry Version: 1.00\n\\:Group,1=\n\\Good:Int,1,,=13\n"
+      }
+    },
+    {
+      "id": "LOAD-123",
+      "operation": "logical header discard without validation",
+      "initialState": "labeledRoot",
+      "inputText": "Discarded:Int,1=41\nKept:Int,1=42\n",
+      "expected": {
+        "childNames": [
+          "Kept"
+        ],
+        "expectedFinalTree": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Kept",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 6,
+              "value": 42,
+              "lower": -2147483648,
+              "upper": 2147483647
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "LOAD-124",
+      "operation": "logical CR preservation",
+      "initialState": "labeledRoot",
+      "inputText": "heading\nCaption:String,1=abc\r\n",
+      "expected": {
+        "childNames": [
+          "Caption"
+        ],
+        "stringValue": "abc\r",
+        "writerText": "Registry Version: 1.00\n\\:Group,1=\n\\Caption:String,1=abc\r\n"
+      }
+    },
+    {
+      "id": "LOAD-125",
+      "operation": "ordered declarations with existing group label retained",
+      "initialState": "emptyFreshRoot",
+      "inputLines": [
+        "\\:Group,1=",
+        "Lab\\:Group,1=first",
+        "Lab\\:Group,7=second"
+      ],
+      "expected": {
+        "rootLabel": "Group",
+        "groupLabel": "Group",
+        "groupMetadata": 7,
+        "groupRuntime": 6,
+        "groupPayload": "",
+        "childNames": [
+          "Lab"
+        ],
+        "writerText": "Registry Version: 1.00\n\\:Group,1=\n\\Lab\\:Group,7=\n"
+      }
+    }
+  ],
+  "floatFormatting": [
+    {
+      "id": "FORMAT-126",
+      "operation": "direct Float writer with injected formatter",
+      "input": {
+        "name": "Gain",
+        "metadata": 1,
+        "lower": 2.2250738585072014e-308,
+        "upper": 1.7976931348623157e+308,
+        "value": 2.5
+      },
+      "injected": {
+        "valueRaw": "2,500000",
+        "localeDecimalSeparator": ","
+      },
+      "expected": {
+        "text": "Gain:Float,1,,=2.500000\n"
+      }
+    },
+    {
+      "id": "FORMAT-127",
+      "operation": "direct Float writer with injected bound and value formatters",
+      "input": {
+        "name": "Gain",
+        "metadata": 3,
+        "lower": -0.5,
+        "upper": 2.5,
+        "value": 1.25
+      },
+      "injected": {
+        "lowerRaw": "-0.500000",
+        "upperRaw": "2.500000",
+        "valueRaw": "1.250000",
+        "localeDecimalSeparator": "."
+      },
+      "expected": {
+        "text": "Gain:Float,3,-0.500000,2.500000=1.250000\n"
+      }
+    },
+    {
+      "id": "FORMAT-128",
+      "operation": "locale separator replacement only",
+      "input": {
+        "raw": "1,250,000",
+        "localeDecimalSeparator": ","
+      },
+      "expected": {
+        "text": "1.250.000"
+      },
+      "claim": "Raw text is injected solely to test every-occurrence replacement; it is not a native number format assertion."
+    },
+    {
+      "id": "FORMAT-129",
+      "operation": "Float serialization without injected formatter",
+      "input": {
+        "name": "Gain",
+        "value": 1.25
+      },
+      "expected": {
+        "disposition": "HELD_FORMATTER",
+        "text": null
+      }
+    }
+  ],
+  "streamEnvelope": {
+    "decodeCharacters": [
+      {
+        "id": "BYTES-130",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "4142",
+        "expected": {
+          "units": [
+            65,
+            66
+          ],
+          "characterMode": 0,
+          "swap": 0
+        }
+      },
+      {
+        "id": "BYTES-131",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "fffe41004200",
+        "expected": {
+          "units": [
+            65,
+            66
+          ],
+          "characterMode": 1,
+          "swap": 0
+        }
+      },
+      {
+        "id": "BYTES-132",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "feff00410042",
+        "expected": {
+          "units": [
+            65,
+            66
+          ],
+          "characterMode": 1,
+          "swap": 1
+        }
+      },
+      {
+        "id": "BYTES-133",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "ff43",
+        "expected": {
+          "units": [
+            67
+          ],
+          "characterMode": 0,
+          "swap": 0
+        }
+      },
+      {
+        "id": "BYTES-134",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "fe44",
+        "expected": {
+          "units": [
+            68
+          ],
+          "characterMode": 0,
+          "swap": 0
+        }
+      },
+      {
+        "id": "BYTES-135",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "efbbbf45",
+        "expected": {
+          "units": [
+            239,
+            187,
+            191,
+            69
+          ],
+          "characterMode": 0,
+          "swap": 0
+        }
+      },
+      {
+        "id": "BYTES-136",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "fffe4100fffe4300",
+        "expected": {
+          "units": [
+            65,
+            67
+          ],
+          "characterMode": 1,
+          "swap": 0
+        }
+      },
+      {
+        "id": "BYTES-137",
+        "operation": "auto character decode before newline normalization",
+        "inputHex": "fffe4100feff0043",
+        "expected": {
+          "units": [
+            65,
+            67
+          ],
+          "characterMode": 1,
+          "swap": 1
+        }
+      }
+    ],
+    "normalizeNewlines": [
+      {
+        "id": "NEWLINE-138",
+        "initialNewlineMode": 1,
+        "inputUnits": [
+          68,
+          13,
+          69,
+          13,
+          70
+        ],
+        "expected": {
+          "logicalUnits": [
+            68,
+            10,
+            69,
+            10,
+            70
+          ],
+          "finalNewlineMode": 2
+        }
+      },
+      {
+        "id": "NEWLINE-139",
+        "initialNewlineMode": 1,
+        "inputUnits": [
+          68,
+          10,
+          69,
+          10,
+          70
+        ],
+        "expected": {
+          "logicalUnits": [
+            68,
+            10,
+            69,
+            10,
+            70
+          ],
+          "finalNewlineMode": 3
+        }
+      },
+      {
+        "id": "NEWLINE-140",
+        "initialNewlineMode": 1,
+        "inputUnits": [
+          68,
+          13,
+          10,
+          69,
+          13,
+          10,
+          70
+        ],
+        "expected": {
+          "logicalUnits": [
+            68,
+            10,
+            69,
+            10,
+            70
+          ],
+          "finalNewlineMode": 4
+        }
+      },
+      {
+        "id": "NEWLINE-141",
+        "initialNewlineMode": 1,
+        "inputUnits": [
+          68,
+          10,
+          13,
+          69,
+          10,
+          13,
+          70
+        ],
+        "expected": {
+          "logicalUnits": [
+            68,
+            10,
+            69,
+            10,
+            70
+          ],
+          "finalNewlineMode": 5
+        }
+      },
+      {
+        "id": "NEWLINE-142",
+        "initialNewlineMode": 1,
+        "inputUnits": [
+          68,
+          10,
+          69,
+          13,
+          70
+        ],
+        "expected": {
+          "logicalUnits": [
+            68,
+            10,
+            69,
+            13,
+            70
+          ],
+          "finalNewlineMode": 3
+        },
+        "claim": "First LF selects LF primary; later CR is literal."
+      }
+    ],
+    "cycles": [
+      {
+        "id": "CYCLE-143",
+        "operation": "complete-buffer settings decode, logical load, change, fresh save",
+        "initialState": "emptyFreshRoot",
+        "inputHex": "4865616465720d0a5c3a47726f75702c313d0d0a5c556e6974733a496e742c312c2c3d350d0a",
+        "injected": {
+          "transferOutcome": "all requested bytes successful",
+          "normalizedChange": "Units:Int,1=14"
+        },
+        "expected": {
+          "detectedCharacterMode": 0,
+          "sourceSwap": 0,
+          "sourceNewlineMode": 4,
+          "loadedUnits": 5,
+          "lower": -2147483648,
+          "upper": 2147483647,
+          "finalUnits": 14,
+          "logicalAfterReread": "Registry Version: 1.00\n\\:Group,1=\n\\Units:Int,1,,=14\n",
+          "outputHex": "52656769737472792056657273696f6e3a20312e30300d0a5c3a47726f75702c313d0d0a5c556e6974733a496e742c312c2c3d31340d0a",
+          "savedCharacterMode": 0,
+          "savedSwap": 0,
+          "savedNewlineMode": 4
+        }
+      },
+      {
+        "id": "CYCLE-144",
+        "operation": "complete-buffer settings decode, logical load, change, fresh save",
+        "initialState": "emptyFreshRoot",
+        "inputHex": "fffe4800650061006400650072000a005c003a00470072006f00750070002c0031003d000a005c0055006e006900740073003a0049006e0074002c0031002c002c003d0035000a00",
+        "injected": {
+          "transferOutcome": "all requested bytes successful",
+          "normalizedChange": "Units:Int,1=14"
+        },
+        "expected": {
+          "detectedCharacterMode": 1,
+          "sourceSwap": 0,
+          "sourceNewlineMode": 3,
+          "loadedUnits": 5,
+          "lower": -2147483648,
+          "upper": 2147483647,
+          "finalUnits": 14,
+          "logicalAfterReread": "Registry Version: 1.00\n\\:Group,1=\n\\Units:Int,1,,=14\n",
+          "outputHex": "fffe520065006700690073007400720079002000560065007200730069006f006e003a00200031002e00300030000d000a005c003a00470072006f00750070002c0031003d000d000a005c0055006e006900740073003a0049006e0074002c0031002c002c003d00310034000d000a00",
+          "savedCharacterMode": 1,
+          "savedSwap": 0,
+          "savedNewlineMode": 4
+        }
+      },
+      {
+        "id": "CYCLE-145",
+        "operation": "complete-buffer settings decode, logical load, change, fresh save",
+        "initialState": "emptyFreshRoot",
+        "inputHex": "feff004800650061006400650072000a000d005c003a00470072006f00750070002c0031003d000a000d005c0055006e006900740073003a0049006e0074002c0031002c002c003d0035000a000d",
+        "injected": {
+          "transferOutcome": "all requested bytes successful",
+          "normalizedChange": "Units:Int,1=14"
+        },
+        "expected": {
+          "detectedCharacterMode": 1,
+          "sourceSwap": 1,
+          "sourceNewlineMode": 5,
+          "loadedUnits": 5,
+          "lower": -2147483648,
+          "upper": 2147483647,
+          "finalUnits": 14,
+          "logicalAfterReread": "Registry Version: 1.00\n\\:Group,1=\n\\Units:Int,1,,=14\n",
+          "outputHex": "fffe520065006700690073007400720079002000560065007200730069006f006e003a00200031002e00300030000d000a005c003a00470072006f00750070002c0031003d000d000a005c0055006e006900740073003a0049006e0074002c0031002c002c003d00310034000d000a00",
+          "savedCharacterMode": 1,
+          "savedSwap": 0,
+          "savedNewlineMode": 4
+        }
+      },
+      {
+        "id": "CYCLE-146",
+        "operation": "first fresh save with no successful load",
+        "input": {
+          "retainedCharacterMode": 3,
+          "logicalText": "Registry Version: 1.00\n\\:Group,1=\n\\Units:Int,1,,=14\n"
+        },
+        "injected": {
+          "transferOutcome": "all requested bytes successful"
+        },
+        "expected": {
+          "savedCharacterMode": 1,
+          "savedSwap": 0,
+          "savedNewlineMode": 4,
+          "outputHex": "fffe520065006700690073007400720079002000560065007200730069006f006e003a00200031002e00300030000d000a005c003a00470072006f00750070002c0031003d000d000a005c0055006e006900740073003a0049006e0074002c0031002c002c003d00310034000d000a00"
+        }
+      }
+    ],
+    "checkedTransfer": [
+      {
+        "id": "TRANSFER-147",
+        "injected": {
+          "requestedBytes": 3,
+          "apiSuccess": true,
+          "reportedBytes": 3
+        },
+        "expected": {
+          "normalCheckedWrite": true,
+          "errorOutcome": false
+        },
+        "claim": "No API called; concrete checked count result only."
+      },
+      {
+        "id": "TRANSFER-148",
+        "injected": {
+          "requestedBytes": 3,
+          "apiSuccess": true,
+          "reportedBytes": 2
+        },
+        "expected": {
+          "normalCheckedWrite": false,
+          "errorOutcome": true
+        },
+        "claim": "No API called; concrete checked count result only."
+      },
+      {
+        "id": "TRANSFER-149",
+        "injected": {
+          "requestedBytes": 3,
+          "apiSuccess": false,
+          "reportedBytes": 0
+        },
+        "expected": {
+          "normalCheckedWrite": false,
+          "errorOutcome": true
+        },
+        "claim": "No API called; concrete checked count result only."
+      },
+      {
+        "id": "TRANSFER-150",
+        "injected": {
+          "requestedBytes": 4096,
+          "apiSuccess": true,
+          "reportedBytes": 4096
+        },
+        "expected": {
+          "normalCheckedWrite": true,
+          "errorOutcome": false
+        },
+        "claim": "No API called; concrete checked count result only."
+      },
+      {
+        "id": "TRANSFER-151",
+        "injected": {
+          "requestedBytes": 4096,
+          "apiSuccess": true,
+          "reportedBytes": 4095
+        },
+        "expected": {
+          "normalCheckedWrite": false,
+          "errorOutcome": true
+        },
+        "claim": "No API called; concrete checked count result only."
+      }
+    ],
+    "retainedMode": [
+      {
+        "id": "RETAIN-152",
+        "input": {
+          "initialRetainedMode": 3,
+          "loadDisposition": "missing"
+        },
+        "expected": {
+          "retainedMode": 3,
+          "successfulLoadUpdate": false
+        }
+      },
+      {
+        "id": "RETAIN-153",
+        "input": {
+          "initialRetainedMode": 3,
+          "loadDisposition": "empty"
+        },
+        "expected": {
+          "retainedMode": 3,
+          "successfulLoadUpdate": false
+        }
+      },
+      {
+        "id": "RETAIN-154",
+        "input": {
+          "initialRetainedMode": 3,
+          "loadDisposition": "positive-size normal close",
+          "resolvedReadCharacterMode": 0
+        },
+        "expected": {
+          "retainedMode": 0,
+          "successfulLoadUpdate": true
+        }
+      }
+    ],
+    "primaryStringsBinding": {
+      "id": "PRIMARY-155",
+      "operation": "explicit primary caller eligibility mutation then registry write",
+      "input": {
+        "root": {
+          "name": "",
+          "type": "Group",
+          "metadata": 1,
+          "runtime": 4,
+          "label": "Group",
+          "children": [
+            {
+              "name": "Strings",
+              "type": "Group",
+              "metadata": 1,
+              "runtime": 6,
+              "label": "Group",
+              "children": [
+                {
+                  "name": "Word",
+                  "type": "String",
+                  "metadata": 1,
+                  "runtime": 4,
+                  "value": "hi"
+                }
+              ]
+            },
+            {
+              "name": "Units",
+              "type": "Int",
+              "metadata": 1,
+              "runtime": 6,
+              "value": 14,
+              "lower": -2147483648,
+              "upper": 2147483647
+            }
+          ]
+        }
+      },
+      "injected": {
+        "caller": "selected ordinary primary save"
+      },
+      "expected": {
+        "stringsRuntime": 2,
+        "text": "Registry Version: 1.00\n\\:Group,1=\n\\Units:Int,1,,=14\n"
+      },
+      "claim": "Only this explicit caller binding clears Strings bit 4; generic writer does not."
+    }
+  }
+}

@@ -1,0 +1,664 @@
+{
+  "schema": "independent-offline-capture-examples-v2",
+  "reviewedOn": "2026-10-28",
+  "candidateSha256": "6ce8310d14f9b064087131bfe7384b551773f1437f67a438a3086604adba10c8",
+  "provenance": "Independently invented data; no production parser or source read; not actual capture; checksums zero/unverified.",
+  "expectationPolicy": "CAPTURE-UDP-CONTENT-REVIEW-v1.txt A1-A5 as amended only by CAPTURE-UDP-CONTENT-REVIEW-v2.txt. reasonSemantic is descriptive, not a required reason-code spelling. Unspecified properties are not asserted.",
+  "cases": [
+    {
+      "name": "classic-LE-micro",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-LE-nano",
+      "captureHex": "4d3cb2a1020004000000000000000000ffff00000100000001000000020000002d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "nanoseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-BE-micro",
+      "captureHex": "a1b2c3d40002000400000000000000000000ffff0000000100000001000000020000002d0000002d02000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-BE-nano",
+      "captureHex": "a1b23c4d0002000400000000000000000000ffff0000000100000001000000020000002d0000002d02000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "nanoseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-odd-record-next-header",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b000001020301000000020000002d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 146,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 2,
+        "packetRecords": 2,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          },
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 85,
+            "recordOrdinal": 2,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-empty",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff000001000000",
+      "byteLength": 24,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 0,
+        "packetRecords": 0,
+        "sectionCount": 1,
+        "observations": [],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-complete-ip-in-truncated-frame",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002d0000003c00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": true,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-incomplete-ip",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002c0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b00000102",
+      "byteLength": 84,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [],
+        "diagnostics": [
+          {
+            "kind": "packet-skip",
+            "offset": 24,
+            "recordOrdinal": 1,
+            "reasonSemantic": "incomplete IPv4 datagram"
+          }
+        ]
+      }
+    },
+    {
+      "name": "classic-empty-udp-payload",
+      "captureHex": "a1b2c3d40002000400000000000000000000ffff0000000100000001000000020000002a0000002a02000000000202000000000108004500001c1234000040110000c0000201c63364023039a3c500080000",
+      "byteLength": 82,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-two-vlan-network-order",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff0000010000000100000002000000350000003500000002000000000202000000000188a812348100abcd08004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 93,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 24,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [
+              4660,
+              43981
+            ],
+            "timestampRaw": {
+              "seconds": 1,
+              "fraction": 2,
+              "precision": "microseconds"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "classic-fragment-mf",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002d0000002d00000002000000000202000000000108004500001f1234200040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "return",
+        "format": "pcap",
+        "containerUnits": 1,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [],
+        "diagnostics": [
+          {
+            "kind": "packet-skip",
+            "offset": 24,
+            "recordOrdinal": 1,
+            "reasonSemantic": "IPv4 fragmentation unsupported"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pcapng-LE-padding-options",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff00001400000006000000540000000000000078563412efcdab902d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b00000102030000000000000054000000",
+      "byteLength": 132,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 3,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 48,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "high": 305419896,
+              "low": 2427178479,
+              "precision": "uninterpreted"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "pcapng-BE-padding-options",
+      "captureHex": "0a0d0d0a0000001c1a2b3c4d00010000ffffffffffffffff0000001c0000000100000014000100000000ffff000000140000000600000054000000001234567890abcdef0000002d0000002d02000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b00000102030000000000000000000054",
+      "byteLength": 132,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 3,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 48,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "high": 305419896,
+              "low": 2427178479,
+              "precision": "uninterpreted"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "pcapng-mixed-sections",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff00001400000006000000500000000000000078563412efcdab902d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203000000500000000a0d0d0a0000001c1a2b3c4d00010000ffffffffffffffff0000001c0000000100000014000100000000ffff000000140000000600000050000000001234567890abcdef0000002d0000002d02000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b000001020300000000000050",
+      "byteLength": 256,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 6,
+        "packetRecords": 2,
+        "sectionCount": 2,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 48,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "high": 305419896,
+              "low": 2427178479,
+              "precision": "uninterpreted"
+            }
+          },
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 176,
+            "recordOrdinal": 2,
+            "sectionIndex": 1,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "high": 305419896,
+              "low": 2427178479,
+              "precision": "uninterpreted"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "pcapng-unknown-outer-only",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff000014000000785634120c0000000c00000006000000500000000000000078563412efcdab902d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b000001020300000050000000",
+      "byteLength": 140,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 4,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [
+          {
+            "payloadHex": "010203",
+            "sourceAddress": "192.0.2.1",
+            "sourcePort": 12345,
+            "destinationAddress": "198.51.100.2",
+            "destinationPort": 41925,
+            "recordOffset": 60,
+            "recordOrdinal": 1,
+            "sectionIndex": 0,
+            "interfaceId": 0,
+            "frameTruncated": false,
+            "checksumsVerified": false,
+            "vlanTags": [],
+            "timestampRaw": {
+              "high": 305419896,
+              "low": 2427178479,
+              "precision": "uninterpreted"
+            }
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "block-skip",
+            "offset": 48,
+            "blockType": 305419896,
+            "reasonSemantic": "unknown block"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pcapng-padding-cannot-complete-payload",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff000014000000060000004c0000000000000078563412efcdab902a0000002b00000002000000000202000000000108004500001d1234000040110000c0000201c63364023039a3c50009000000004c000000",
+      "byteLength": 124,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 3,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [],
+        "diagnostics": [
+          {
+            "kind": "packet-skip",
+            "offset": 48,
+            "recordOrdinal": 1,
+            "reasonSemantic": "incomplete IPv4 datagram"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pcapng-options-cannot-complete-payload",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff00001400000006000000500000000000000078563412efcdab902c0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b00000102deadbeef50000000",
+      "byteLength": 128,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 3,
+        "packetRecords": 1,
+        "sectionCount": 1,
+        "observations": [],
+        "diagnostics": [
+          {
+            "kind": "packet-skip",
+            "offset": 48,
+            "recordOrdinal": 1,
+            "reasonSemantic": "incomplete IPv4 datagram"
+          }
+        ]
+      }
+    },
+    {
+      "name": "classic-valid-then-incomplete-next-header",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203ff",
+      "byteLength": 86,
+      "expected": {
+        "outcome": "throw",
+        "code": "ERR_CAPTURE_FORMAT",
+        "offset": 85,
+        "reasonSemantic": "incomplete classic record header",
+        "noPartialReturn": true
+      }
+    },
+    {
+      "name": "classic-captured-greater-original-local-policy",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000001000000020000002d0000002c00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "throw",
+        "code": "ERR_CAPTURE_FORMAT",
+        "offset": 24,
+        "reasonSemantic": "captured length greater than original length",
+        "noPartialReturn": true
+      }
+    },
+    {
+      "name": "classic-invalid-fraction-local-policy",
+      "captureHex": "d4c3b2a1020004000000000000000000ffff0000010000000100000040420f002d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203",
+      "byteLength": 85,
+      "expected": {
+        "outcome": "throw",
+        "code": "ERR_CAPTURE_FORMAT",
+        "offset": 24,
+        "reasonSemantic": "classic timestamp fraction out of range",
+        "noPartialReturn": true
+      }
+    },
+    {
+      "name": "pcapng-previous-section-interface-not-visible",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff00001400000006000000500000000000000078563412efcdab902d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b0000010203000000500000000a0d0d0a0000001c1a2b3c4d00010000ffffffffffffffff0000001c0000000600000050000000001234567890abcdef0000002d0000002d02000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b000001020300000000000050",
+      "byteLength": 236,
+      "expected": {
+        "outcome": "throw",
+        "code": "ERR_CAPTURE_FORMAT",
+        "offset": 156,
+        "reasonSemantic": "unknown current-section EPB interface",
+        "noPartialReturn": true
+      }
+    },
+    {
+      "name": "pcapng-1.2-compatible-empty-section",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000200ffffffffffffffff1c000000",
+      "byteLength": 28,
+      "expected": {
+        "outcome": "return",
+        "format": "pcapng",
+        "containerUnits": 1,
+        "packetRecords": 0,
+        "sectionCount": 1,
+        "observations": [],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "pcapng-bad-epb-footer",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000000ffffffffffffffff1c000000010000001400000001000000ffff00001400000006000000500000000000000078563412efcdab902d0000002d00000002000000000202000000000108004500001f1234000040110000c0000201c63364023039a3c5000b000001020300000054000000",
+      "byteLength": 128,
+      "expected": {
+        "outcome": "throw",
+        "code": "ERR_CAPTURE_FORMAT",
+        "offset": 48,
+        "reasonSemantic": "PCAPNG block total lengths differ",
+        "noPartialReturn": true
+      }
+    },
+    {
+      "name": "pcapng-1.3-local-unsupported-version",
+      "captureHex": "0a0d0d0a1c0000004d3c2b1a01000300ffffffffffffffff1c000000",
+      "byteLength": 28,
+      "expected": {
+        "outcome": "throw",
+        "code": "ERR_CAPTURE_FORMAT",
+        "offset": 0,
+        "reasonSemantic": "local unsupported PCAPNG minor version",
+        "noPartialReturn": true
+      }
+    }
+  ],
+  "changesFromV1": [
+    {
+      "previousCase": "pcapng-1.2-local-unsupported-version",
+      "currentCase": "pcapng-1.2-compatible-empty-section",
+      "captureBytesUnchanged": true,
+      "previousOutcome": "throw ERR_CAPTURE_FORMAT",
+      "currentOutcome": "valid empty PCAPNG section",
+      "basis": "draft-ietf-opsawg-pcapng-06 section 4.1 requires minor 2 equivalence to minor 0"
+    },
+    {
+      "addedCase": "pcapng-1.3-local-unsupported-version",
+      "outcome": "throw ERR_CAPTURE_FORMAT",
+      "basis": "local profile supports only major 1 with minor 0 or 2"
+    }
+  ]
+}

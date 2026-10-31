@@ -1,0 +1,78 @@
+{
+  "scope": "Invented data-only source-informed arithmetic/checksum scenarios, not executable LSS scripts or original outputs.",
+  "arithmeticCases": [
+    {
+      "operation": ">",
+      "a": -1,
+      "b": 1,
+      "expected": -1
+    },
+    {
+      "operation": "<",
+      "a": 1,
+      "b": 32,
+      "expected": 1
+    },
+    {
+      "operation": "+",
+      "a": 2147483647,
+      "b": 1,
+      "expected": -2147483648
+    },
+    {
+      "operation": "/",
+      "a": -7,
+      "b": 2,
+      "expected": -3
+    },
+    {
+      "operation": "#",
+      "a": -7,
+      "b": 2,
+      "expected": -1
+    },
+    {
+      "operation": "/",
+      "a": 17,
+      "b": 0,
+      "expected": 0
+    },
+    {
+      "operation": "#",
+      "a": 17,
+      "b": 0,
+      "expected": 0
+    },
+    {
+      "operation": "!",
+      "a": 0,
+      "b": 0,
+      "expected": 1
+    }
+  ],
+  "checksumCases": [
+    {
+      "id": "ids-crc1021",
+      "kind": "IDS",
+      "inputHex": "313233343536373839",
+      "seed": 0,
+      "expected": 12739
+    },
+    {
+      "id": "crc16-reflected",
+      "kind": "CRC16",
+      "inputHex": "313233343536373839",
+      "seed": 65535,
+      "polynomial": 40961,
+      "expected": 19255
+    },
+    {
+      "id": "crc32-no-final-xor",
+      "kind": "CRC32",
+      "inputHex": "313233343536373839",
+      "seed": 4294967295,
+      "polynomial": 3988292384,
+      "expected": 873187033
+    }
+  ]
+}

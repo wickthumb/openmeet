@@ -1,0 +1,1208 @@
+{
+  "status": "DRAFT pending independent source-content review",
+  "provenance": "Invented complete byte patterns and transport expectations, not camera images or device output",
+  "schema": "Input byte at offset i before trailer is (17*i+3) modulo256; replace final12 bytes with metadata,index,inverse LE uint32. expectedIndex explicit. Unknown normalized bytes excluded from expected segment hashes.",
+  "cases": [
+    {
+      "id": "L20",
+      "input": {
+        "length": 20,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "f5c270ba5d93390b9ffa272345ea92a85e9c1a2003d9d383afb65354833c74a7",
+        "hex": "031425364758697a4433221107000000f8ffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 8,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 20,
+            "sha256": "1817e272ce022ebc072f86330552434142a8db3e9319147fcdfb9a3c3622d267",
+            "hex": "031425364758697a0000000007000000f8ffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 20,
+            "length": 15968
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L21",
+      "input": {
+        "length": 21,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "ad080f6c9cdd3f90132bc995670847c15c8584fa0f02f0be2e01d3fbd2e4bd54",
+        "hex": "031425364758697a8b4433221107000000f8ffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 9,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 21,
+            "sha256": "f1a75a92a0611399eedbe61e30c8c954efee9ea92a34802ed02f47fa3366db9a",
+            "hex": "031425364758697a8b0000000007000000f8ffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 21,
+            "length": 15967
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L23",
+      "input": {
+        "length": 23,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "95aa6f15c2c922cef9bac177a192a1344b11048d3e482fb4b995232c367c8604",
+        "hex": "031425364758697a8b9cad4433221107000000f8ffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 11,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 23,
+            "sha256": "0ff020e5bf1eb8307b2da6316fb101b566c7dacd397ed0bd2a3061d2641bd0a4",
+            "hex": "031425364758697a8b9cad0000000007000000f8ffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 23,
+            "length": 15965
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L31",
+      "input": {
+        "length": 31,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "0b224e5f98ec79e6c0fd44b21c468441a0bea1cc1db70ddcd924d854fb00afa3",
+        "hex": "031425364758697a8b9cadbecfe0f1021324354433221107000000f8ffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 19,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 31,
+            "sha256": "2e94cc8e7d8e37699c4bb38b8d533303fa883ad943477d79bf565cf14c066728",
+            "hex": "031425364758697a8b9cadbecfe0f1021324350000000007000000f8ffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 31,
+            "length": 15957
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L64",
+      "input": {
+        "length": 64,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "6273fdcd0f82f112731c41c66e34a9981a90208b97d6ac58b3524f98498202d1",
+        "hex": "031425364758697a8b9cadbecfe0f102132435465768798a9bacbdcedff00112233445566778899aabbccddeef001122334455664433221107000000f8ffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 52,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 64,
+            "sha256": "a04b73992f9a449536d580eb1c4797b20ecc2e7778136e989d93d620aeea49bc",
+            "hex": "031425364758697a8b9cadbecfe0f102132435465768798a9bacbdcedff00112233445566778899aabbccddeef001122334455660000000007000000f8ffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 64,
+            "length": 15924
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15984",
+      "input": {
+        "length": 15984,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "91f0475dd0de605bcda87bc6a30bd2511f2b859f7bc52bdfe38b966c8aba4182"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15972,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 15984,
+            "sha256": "1506bafb5ef62f1618467f2d6b94c19467f03900e901816d76f0621a680d4de1"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 15984,
+            "length": 4
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15985",
+      "input": {
+        "length": 15985,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "63422deba46e62911916e59664300f505d79679cc4f42b9ede6ef101852831fe"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15973,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 15985,
+            "sha256": "d64f00e24f4f738fa77b22dd10c7f830ab9bb06af0f6d8d134ec85b9044a63a9"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 15985,
+            "length": 3
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15986",
+      "input": {
+        "length": 15986,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "d1bcc14bf000f081e48d13a437ec2e9ec6a8d65a961ac57485ef3bfc736c42c0"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15974,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 15986,
+            "sha256": "12d352a1a3b7fa040e577f26ed555c63adafd6f69ff88331cdefbde0ad7dc56d"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 15986,
+            "length": 2
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15987",
+      "input": {
+        "length": 15987,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "68049fb6208d48c1bf0e752aff3fe3c62b06a91913a1ecf62088cfc9642627eb"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15975,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 15987,
+            "sha256": "89531456263becb69d85f248f5ff7dcc38a4a28b7a537e874abba7686b459a29"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "f08ae262da60d023721668c054091a1b6616867227f77954a82bdf0531dc4d78",
+            "hex": "4433221107000000f8ffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 15987,
+            "length": 1
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15988",
+      "input": {
+        "length": 15988,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "6c771d57377bb8439b7e56afd74c5d2706928b1b85e7d98ab5634f8b5d6dbee7"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15976,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "e50884f471607e4552f3690cb73d36b06089d892dd203f09820fa0693847beeb"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15989",
+      "input": {
+        "length": 15989,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "76e22178db8c7d3e6f0844ac8b0127096ae28a1b4d062e65833514e11aa4b237"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15977,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "af529e664df4821b393411e0cbc2173a01646d0c59f3d4b5acd6547a4b1eb98b"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15990",
+      "input": {
+        "length": 15990,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "6ad7a62f0da4e596cb3e9644b966d24b7acea7f665a10abede20b479d06e1702"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15978,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "db5454154b86db50383674114b74d13a04c0940c4795b2db2363d909c03e7ab2"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15991",
+      "input": {
+        "length": 15991,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "919cfe8e36a247f11a00c36092c0bb6067909de2c38e64957199c2046ee21a90"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15979,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "882bc2c6ec9d463d0e6189da8a39086658e0f5d0f535c01ea934df39963223ea"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15992",
+      "input": {
+        "length": 15992,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "ee7b826c64d37aa8aa6ff1a7961373cb5278897f52aad9e21c93ec2e95494e08"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15980,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "b046be68b7ca093529fa32b07127e621c9f4cd8787bd00a40dd75fedf546fb06"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15993",
+      "input": {
+        "length": 15993,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "ffbd477422e5a5c18b622fe45c59cc3abe71f27103f5d18aea56b6c3ad9b3f7f"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15981,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "fdf01bfdb02df780e6b7d47c3a3b73c4e1a9874e9bdd239c377653baa0a5c1df"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15994",
+      "input": {
+        "length": 15994,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "ed7064fde56031296d1327a28452dea604bc8c58520334607b80579004b868ec"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15982,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "09cefc03065026c6b88298cbf78cf118356f0874bf9a5b858273b0c6702fbcf0"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15995",
+      "input": {
+        "length": 15995,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "081bb4dae6d59515b0afe85dc18c211fea15a8b176c1509aec1385cdafe7c4ab"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15983,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "c4a8dc021e6af52879eb9dd196921afbbc8267c2b80592e672b9e053bb4690fc"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15996",
+      "input": {
+        "length": 15996,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "1963fa15a62bf1273bf3c264d5db3ec69528b9ab517fecd7d375e90971947283"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 15984,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "6bb81275bbcde8d394df06ce253df522e2f2b1b125e740b0124445b5a7960f0a"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15997",
+      "input": {
+        "length": 15997,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "b93a52bfa0d7a5fdbf74092786ea5cbf1a2bcd2f31367b72672d78b3bdc44549"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": null,
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "5360fbbdb81cb2e325f88664ad5423b7bb4422170e85f2d1a1cb370f4813be6d"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15998",
+      "input": {
+        "length": 15998,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "afb12587715eab92fe1e296140ecb5fdede8342ad92a60d14e199807c331dbab"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": null,
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "89418c9d240f4c2e2898f2aa191a73aa28d0513ee55c002b17fe924f1967ad6e"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L15999",
+      "input": {
+        "length": 15999,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "743fe67acb8086f22eaadf7700d0276b66cb0ca6fde20f9cd3abaaa7958a8a8e"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": null,
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "37863554d76084c817d5cc9bce57ce562423cbd0417cc6b9813bb2b0538b23b2"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "L16000",
+      "input": {
+        "length": 16000,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 7,
+        "sha256": "9d8367fd0c044412f53a883a1b3a0068f5105e2bd4c4c8d32cbda007ed4046bc"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967288,
+        "inverseMatches": true,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": null,
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "9d8367fd0c044412f53a883a1b3a0068f5105e2bd4c4c8d32cbda007ed4046bc"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "index-zero",
+      "input": {
+        "length": 20,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 0,
+        "inverse": 4294967295,
+        "expectedIndex": 0,
+        "sha256": "cca122b3510d7cd3a103d729a426ccf07ed3ecda391adb8aba65106adc757a32",
+        "hex": "031425364758697a4433221100000000ffffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 0,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967295,
+        "inverseMatches": true,
+        "nextIndex": 1,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 8,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 20,
+            "sha256": "a77d6483c29accd910d0520c9d9775ae4160a6d379ff62824905ce687c72f594",
+            "hex": "031425364758697a0000000000000000ffffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "e22d71d2a5165379f73ef2810927cdc976b63bde8a6ecc9b4885a1de41726a67",
+            "hex": "4433221100000000ffffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 20,
+            "length": 15968
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "index-one",
+      "input": {
+        "length": 20,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 1,
+        "inverse": 4294967294,
+        "expectedIndex": 1,
+        "sha256": "7bed9875224cfee559643faf4e5aa1274414958965fb992b93c1ed3f1f57e986",
+        "hex": "031425364758697a4433221101000000feffffff"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 1,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 4294967294,
+        "inverseMatches": true,
+        "nextIndex": 2,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 8,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 20,
+            "sha256": "978e0407752dcbb754eef5ad31189a43f4836476f3ee639e582ffb893db6484f",
+            "hex": "031425364758697a0000000001000000feffffff"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "d9677cf231d061cb8d911e21ccbd0fd1029357f5f2c87069c734d8cb35c5dd1f",
+            "hex": "4433221101000000feffffff"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 20,
+            "length": 15968
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "index-highbit",
+      "input": {
+        "length": 16000,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 2147483648,
+        "inverse": 2147483647,
+        "expectedIndex": 2147483648,
+        "sha256": "6c8935b173b73d79b6012e68968e17500e094d4109e3483a939ea0257b5846a5"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 2147483648,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 2147483647,
+        "inverseMatches": true,
+        "nextIndex": 2147483649,
+        "wrapUnverified": false,
+        "zeroWrite": null,
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "6c8935b173b73d79b6012e68968e17500e094d4109e3483a939ea0257b5846a5"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "index-wrap-mechanical-only",
+      "input": {
+        "length": 16000,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 4294967295,
+        "inverse": 0,
+        "expectedIndex": 4294967295,
+        "sha256": "51eaba55b5afcf50f4b899af0d321f87559409fb034b23473534924620de8cba"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 4294967295,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 0,
+        "inverseMatches": true,
+        "nextIndex": 0,
+        "wrapUnverified": true,
+        "zeroWrite": null,
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 16000,
+            "sha256": "51eaba55b5afcf50f4b899af0d321f87559409fb034b23473534924620de8cba"
+          }
+        ],
+        "unknownRanges": [],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "inverse-inconsistent-not-rejected",
+      "input": {
+        "length": 20,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 0,
+        "expectedIndex": 7,
+        "sha256": "b14993c100eb3fda50bec0b2dda4b4fd202e9433d172cb11d61dffe9ce2c46a6",
+        "hex": "031425364758697a443322110700000000000000"
+      },
+      "expected": {
+        "decision": "matched-index",
+        "actualIndex": 7,
+        "producerMetadataRaw": 287454020,
+        "inverseWordRaw": 0,
+        "inverseMatches": false,
+        "nextIndex": 8,
+        "wrapUnverified": false,
+        "zeroWrite": {
+          "offset": 8,
+          "length": 4
+        },
+        "knownSegments": [
+          {
+            "offset": 0,
+            "length": 20,
+            "sha256": "227f84f180e67ca2ad9a9f11c61451e552b427805499fcfee8197d73b9513899",
+            "hex": "031425364758697a000000000700000000000000"
+          },
+          {
+            "offset": 15988,
+            "length": 12,
+            "sha256": "7f55eee99b0220e167900a17604f1084ebbeeffe8bcb904d8a38bfe11408953a",
+            "hex": "443322110700000000000000"
+          }
+        ],
+        "unknownRanges": [
+          {
+            "offset": 20,
+            "length": 15968
+          }
+        ],
+        "captureCompleteNotEstablished": true
+      }
+    },
+    {
+      "id": "duplicate-index-rejected",
+      "input": {
+        "length": 20,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 7,
+        "inverse": 4294967288,
+        "expectedIndex": 8,
+        "sha256": "f5c270ba5d93390b9ffa272345ea92a85e9c1a2003d9d383afb65354833c74a7",
+        "hex": "031425364758697a4433221107000000f8ffffff"
+      },
+      "expected": {
+        "decision": "reject",
+        "actualIndex": 7,
+        "expectedIndex": 8,
+        "normalizedSegmentsAbsent": true
+      }
+    },
+    {
+      "id": "gap-index-rejected",
+      "input": {
+        "length": 16000,
+        "pattern": {
+          "multiplier": 17,
+          "increment": 3,
+          "modulus": 256
+        },
+        "metadata": 287454020,
+        "index": 9,
+        "inverse": 4294967286,
+        "expectedIndex": 7,
+        "sha256": "1186d33ac78a16af5d774950fd44fa2496c10980664a4043ac479c46a31f3c75"
+      },
+      "expected": {
+        "decision": "reject",
+        "actualIndex": 9,
+        "expectedIndex": 7,
+        "normalizedSegmentsAbsent": true
+      }
+    }
+  ]
+}

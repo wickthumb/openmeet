@@ -1,0 +1,491 @@
+{
+  "scope": "Invented source-informed opcode states. Units are intermediate UTF16 code units, not observed external wire bytes. Decimal examples assume ASCII digits and leading minus sign; sufficient allocation capacity. Single-opcode cursor is before final whole-line cursor reset.",
+  "cases": [
+    {
+      "id": "O-mode0-wide-units",
+      "op": "O",
+      "arg": 0,
+      "U": 0,
+      "X": 4,
+      "text": "az",
+      "cursor": 1,
+      "registers": [
+        305419896
+      ],
+      "expected": {
+        "units": [
+          97,
+          22136,
+          13398,
+          4660,
+          18,
+          122
+        ],
+        "cursor": 5
+      }
+    },
+    {
+      "id": "O-mode1-wide-units",
+      "op": "O",
+      "arg": 0,
+      "U": 1,
+      "X": 4,
+      "text": "",
+      "registers": [
+        305419896
+      ],
+      "expected": {
+        "units": [
+          18,
+          4660,
+          13398,
+          22136
+        ],
+        "cursor": 4
+      }
+    },
+    {
+      "id": "O-right-space",
+      "op": "O",
+      "arg": 0,
+      "U": 2,
+      "X": 5,
+      "text": "",
+      "registers": [
+        -7
+      ],
+      "expected": {
+        "text": "   -7",
+        "cursor": 5
+      }
+    },
+    {
+      "id": "O-right-zero-sign",
+      "op": "O",
+      "arg": 0,
+      "U": 3,
+      "X": 5,
+      "text": "",
+      "registers": [
+        -7
+      ],
+      "expected": {
+        "text": "-0007",
+        "cursor": 5
+      }
+    },
+    {
+      "id": "O-left-space",
+      "op": "O",
+      "arg": 0,
+      "U": 4,
+      "X": 5,
+      "text": "",
+      "registers": [
+        -7
+      ],
+      "expected": {
+        "text": "-7   ",
+        "cursor": 5
+      }
+    },
+    {
+      "id": "O-left-zero-also-space",
+      "op": "O",
+      "arg": 0,
+      "U": 5,
+      "X": 5,
+      "text": "",
+      "registers": [
+        -7
+      ],
+      "expected": {
+        "text": "-7   ",
+        "cursor": 5
+      }
+    },
+    {
+      "id": "O-overlong-prefix",
+      "op": "O",
+      "arg": 0,
+      "U": 2,
+      "X": 3,
+      "text": "",
+      "registers": [
+        12345
+      ],
+      "expected": {
+        "text": "123",
+        "cursor": 3
+      }
+    },
+    {
+      "id": "O-width-zero",
+      "op": "O",
+      "arg": 0,
+      "U": 3,
+      "X": 0,
+      "text": "abc",
+      "cursor": 1,
+      "registers": [
+        -7
+      ],
+      "expected": {
+        "text": "abc",
+        "cursor": 1
+      }
+    },
+    {
+      "id": "O-width-clamp10",
+      "op": "O",
+      "arg": 0,
+      "U": 2,
+      "X": 12,
+      "text": "",
+      "registers": [
+        1
+      ],
+      "expected": {
+        "text": "         1",
+        "cursor": 10
+      }
+    },
+    {
+      "id": "S-decimal-prefix-no-cursor-move",
+      "op": "S",
+      "arg": 1,
+      "U": 0,
+      "X": 8,
+      "text": "q-12xzz",
+      "cursor": 1,
+      "registers": [
+        0,
+        77
+      ],
+      "expected": {
+        "text": "q-12xzz",
+        "cursor": 1,
+        "register1": -12,
+        "temporaryDigits": 3
+      }
+    },
+    {
+      "id": "S-whitespace-no-digit-preserves",
+      "op": "S",
+      "arg": 1,
+      "U": 0,
+      "X": 4,
+      "text": " 12x",
+      "registers": [
+        0,
+        77
+      ],
+      "expected": {
+        "text": " 12x",
+        "cursor": 0,
+        "register1": 77,
+        "temporaryDigits": 0
+      }
+    },
+    {
+      "id": "S-decimal-width-clamp10",
+      "op": "S",
+      "arg": 1,
+      "U": 0,
+      "X": 11,
+      "text": "-2147483648",
+      "registers": [
+        0,
+        77
+      ],
+      "expected": {
+        "text": "-2147483648",
+        "cursor": 0,
+        "register1": -214748364,
+        "temporaryDigits": 10
+      }
+    },
+    {
+      "id": "S-little-endian-short-source",
+      "op": "S",
+      "arg": 1,
+      "U": 1,
+      "X": 4,
+      "units": [
+        18
+      ],
+      "registers": [
+        0,
+        77
+      ],
+      "expected": {
+        "units": [
+          18
+        ],
+        "cursor": 0,
+        "register1": 18
+      }
+    },
+    {
+      "id": "S-big-endian-short-source",
+      "op": "S",
+      "arg": 1,
+      "U": 2,
+      "X": 4,
+      "units": [
+        18
+      ],
+      "registers": [
+        0,
+        77
+      ],
+      "expected": {
+        "units": [
+          18
+        ],
+        "cursor": 0,
+        "register1": 301989888
+      }
+    },
+    {
+      "id": "S-binary-zero-width-resets",
+      "op": "S",
+      "arg": 1,
+      "U": 2,
+      "X": 0,
+      "text": "abc",
+      "registers": [
+        0,
+        77
+      ],
+      "expected": {
+        "text": "abc",
+        "cursor": 0,
+        "register1": 0
+      }
+    },
+    {
+      "id": "P-reverse-bounded",
+      "op": "P",
+      "arg": 0,
+      "X": 3,
+      "text": "abcdef",
+      "cursor": 1,
+      "expected": {
+        "text": "adcbef",
+        "cursor": 1
+      }
+    },
+    {
+      "id": "P-unknown-procedure-reverses",
+      "op": "P",
+      "arg": 9,
+      "X": -1,
+      "text": "abc",
+      "cursor": 1,
+      "expected": {
+        "text": "acb",
+        "cursor": 1
+      }
+    },
+    {
+      "id": "P-colorado-position",
+      "op": "P",
+      "arg": 1,
+      "X": 3,
+      "text": "19x",
+      "registers": [
+        0,
+        2
+      ],
+      "expected": {
+        "units": [
+          46,
+          54,
+          64
+        ],
+        "cursor": 0,
+        "register1": 5
+      }
+    },
+    {
+      "id": "P-dak-digits-and-default",
+      "op": "P",
+      "arg": 2,
+      "text": "0123456789x",
+      "expected": {
+        "units": [
+          64,
+          121,
+          36,
+          48,
+          25,
+          18,
+          2,
+          120,
+          0,
+          24,
+          255
+        ],
+        "cursor": 0
+      }
+    },
+    {
+      "id": "B-normal",
+      "op": "B",
+      "arg": 2,
+      "text": "abcdef",
+      "cursor": 3,
+      "expected": {
+        "text": "adef",
+        "cursor": 1
+      }
+    },
+    {
+      "id": "B-zero-to-start",
+      "op": "B",
+      "arg": 0,
+      "text": "abcdef",
+      "cursor": 3,
+      "expected": {
+        "text": "def",
+        "cursor": 0
+      }
+    },
+    {
+      "id": "B-X-target-total-clamp",
+      "op": "B",
+      "arg": 1,
+      "X": 1,
+      "text": "abcdef",
+      "cursor": 3,
+      "expected": {
+        "text": "def",
+        "cursor": 0
+      }
+    },
+    {
+      "id": "D-normal",
+      "op": "D",
+      "arg": 2,
+      "text": "abcdef",
+      "cursor": 3,
+      "expected": {
+        "text": "abcf",
+        "cursor": 3
+      }
+    },
+    {
+      "id": "D-zero-to-end",
+      "op": "D",
+      "arg": 0,
+      "text": "abcdef",
+      "cursor": 3,
+      "expected": {
+        "text": "abc",
+        "cursor": 3
+      }
+    },
+    {
+      "id": "D-X-target-total",
+      "op": "D",
+      "arg": 1,
+      "X": 5,
+      "text": "abcdef",
+      "cursor": 3,
+      "expected": {
+        "text": "abcef",
+        "cursor": 3
+      }
+    },
+    {
+      "id": "I-normal-cursor-stays",
+      "op": "I",
+      "arg": 2,
+      "text": "abcd",
+      "cursor": 2,
+      "expected": {
+        "text": "ab  cd",
+        "cursor": 2
+      }
+    },
+    {
+      "id": "I-X-target-total",
+      "op": "I",
+      "arg": 9,
+      "X": 6,
+      "text": "abcd",
+      "cursor": 2,
+      "expected": {
+        "text": "ab  cd",
+        "cursor": 2
+      }
+    },
+    {
+      "id": "Ic-X-fill-character",
+      "op": "I",
+      "modifier": "c",
+      "arg": 2,
+      "X": 46,
+      "text": "abcd",
+      "cursor": 2,
+      "expected": {
+        "text": "ab..cd",
+        "cursor": 2
+      }
+    },
+    {
+      "id": "I-X-smaller-no-deletion",
+      "op": "I",
+      "arg": 9,
+      "X": 2,
+      "text": "abcd",
+      "cursor": 2,
+      "expected": {
+        "text": "abcd",
+        "cursor": 2
+      }
+    },
+    {
+      "id": "L-zero-to-start-ignore-X",
+      "op": "L",
+      "arg": 0,
+      "X": 2,
+      "text": "abcd",
+      "cursor": 3,
+      "expected": {
+        "text": "abcd",
+        "cursor": 0
+      }
+    },
+    {
+      "id": "R-zero-to-end-ignore-X",
+      "op": "R",
+      "arg": 0,
+      "X": 2,
+      "text": "abcd",
+      "cursor": 1,
+      "expected": {
+        "text": "abcd",
+        "cursor": 4
+      }
+    },
+    {
+      "id": "R-U-register-count",
+      "op": "R",
+      "arg": 1,
+      "U": 2,
+      "text": "abcdef",
+      "cursor": 1,
+      "registers": [
+        0,
+        0,
+        3
+      ],
+      "expected": {
+        "text": "abcdef",
+        "cursor": 4
+      }
+    }
+  ]
+}

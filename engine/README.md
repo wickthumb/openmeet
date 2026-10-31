@@ -65,3 +65,20 @@ Persist the heat event log yourself (e.g. `openmeet/<heat>/heat.jsonl`); `reduce
 ## Start triggers
 
 `timing/starts.js` keeps a meet-wide, fsynced journal in `openmeet/starts.jsonl`. Every received trigger retains its source, clock domain, timestamp, wall-clock display time and optional capture ID. Assignments reference a heat, a selected trigger and the capture's original start trigger; each reassignment appends history. Different clock domains cannot be mixed. The console subtracts the selected start offset from elapsed times while leaving captured columns and front-camera synchronization fixed. Re-save corrected heats to update LIF exports. The current camera and manual trigger button are simulated; a future sensor adapter calls `starts.record` for every pulse, including unassigned pulses.
+
+## Network camera backend
+
+`createNetworkCameraService` adds explicit UDP control, TCP raw recording and
+start-journal integration for the experimental network-camera profile. It is
+available through the engine host and `node engine/cameras/cli.js`. The renderer
+continues to use its existing capture paths. Device configuration is explicit;
+timed image decoding, alignment preview and raw replay are integrated; hardware
+validation remains outstanding. See
+[network-camera.md](../docs/network-camera.md) for setup and recording formats.
+
+`networkCameraProtocol`, `meetDataProtocol` and `scoreboardWireProtocol` expose
+the imported independent protocol helpers without replacing existing behavior.
+
+The wider handoff adapters (settings/profiles, versioned metadata, extended results,
+weather, physical scoreboards, remote protocols and media) are documented in
+[backend-handoff-coverage.md](../docs/backend-handoff-coverage.md).

@@ -92,11 +92,69 @@ async function runCapture(id, store, gen, preview=false) {
 
 // Capture id -> {dir, sidecar}. The simulator's truth stays here in the engine: the console never receives it.
 const captures = new Map();
+const backendIntegration = core?.createBackendIntegrationService({ root:userData,
+  captureResolver:id=>captures.get(id), emit });
 const scanSources = new Map();
 const recorderGroups = new Map();
 let latestCaptureId = null;
 const cameraEnginePath = [path.join(here, '..', 'engine', 'cameras', 'index.js'), path.join(here, 'engine', 'cameras', 'index.js')].find(p => fs.existsSync(p));
 const cameraEngine = cameraEnginePath ? await import(pathToFileURL(cameraEnginePath).href) : null;
+const wireScoreboards = core?.createWireScoreboardService({ onEvent:emit });
+const remoteServers = core?.createRemoteServerService({onEvent:emit,
+  binaryProvider(context){
+    const capture=captures.get(context.captureId);if(!capture)throw Error('Unknown remote capture');
+    return core.createCaptureRemoteProvider({...context,dir:capture.dir,invalidColumns:capture.invalidColumns});
+  },
+  async textDispatch(request,context){
+    const field=(name,component=-1)=>core.remoteLookup(request,name,component);
+    const command=field('Command').value?.toLowerCase();
+    try{
+      if(command==='imagegetinfo'){
+        const capture=captures.get(context.captureId);if(!capture)throw Error('Unknown capture');
+        const store=core.openCaptureStore(capture.dir,{readOnly:true});
+        try{return [['Reply','Ok'],['ImageSize',`${store.columnCount()},${store.meta().rows}`],['Rate',String(1/store.meta().columnPeriod)]];}finally{store.close();}
+      }
+      if(command==='startcreate'){
+        const result=await core.dispatchRemoteStart(request,{
+          sourceTag:()=>context.clockOrigin??0,
+          async append(record){
+            if(!context.meetDir||typeof context.clockId!=='string')throw Error('Remote start needs a bound meet and capture clock');
+            const timeS=Number(BigInt(record.primary.ticks)-BigInt(record.secondary.ticks))/80000;
+            const trigger=(await startJournal(context.meetDir)).record({clockId:context.clockId,timeS,source:'remote-control',captureId:context.captureId});
+            await fsp.appendFile(path.join(context.meetDir,'remote-start-audit.jsonl'),JSON.stringify({record,trigger,physicalPulseConfirmed:false})+'\n');
+            emit('remote.start',{record,trigger,physicalPulseConfirmed:false});
+          },
+          trigger(request){emit('remote.start-request',{...request,captureId:context.captureId,physicalPulseConfirmed:false});return false;},
+        });return [['Reply',result.reply]];
+      }
+      if(command==='eventopen'){
+        const file=field('File',0);if(!file.present||!file.value)throw Error('Event file required');
+        const handle=await fsp.open(file.value,'r');let bytes;
+        try{const limit=64*1024*1024,size=(await handle.stat()).size;if(size>limit)throw Error('Event metadata exceeds its input budget');
+          const input=Buffer.alloc(size+1);let at=0;
+          while(at<input.length){const read=await handle.read(input,at,input.length-at,at);if(!read.bytesRead)break;at+=read.bytesRead;}
+          if(at>size)throw Error('Event metadata changed during read');bytes=input.subarray(0,at);
+        }finally{await handle.close();}
+        const archive=core.readEventArchive(bytes);
+        emit('remote.event-open',{path:file.value,archive});return [['Reply','Ok']];
+      }
+      // Unsupported actions are explicit. Print/OS providers are never inferred.
+      return [['Reply','Unknown']];
+    }catch(error){emit('remote.action-error',{message:error.message});return [['Reply','Error']];}
+  },
+});
+const networkCameras = cameraEngine?.createNetworkCameraService({ onEvent(name,data) {
+  if(name==='camera.network.columns'){
+    const capture=captures.get(data.id);
+    if(capture?.network)for(let i=0;i<data.times.length;i++)if(!data.times[i].valid)capture.invalidColumns.add(data.first+i);
+  }
+  if(name==='camera.network.start'&&data.evidence?.candidate){
+    const candidate=data.evidence.candidate;
+    wireScoreboards?.notifyGun({time:{ticks:String(BigInt(candidate.primary.ticks)-BigInt(candidate.secondary.ticks)),
+      quantum:candidate.primary.quantum,origin:candidate.primary.origin},kind:candidate.kind});
+  }
+  emit(name,data);
+} });
 const cameraConfig = cameraEngine?.createCameraConfig({
   sampleDir: path.join(userData, 'sample'),
   cameras: () => [...new Map([...scanSources.values()].map(source => [source.id, source])).values()],
@@ -331,6 +389,41 @@ const methods = {
     return { path: p, name, text, backup };
   },
   async 'camera.config.get'(params) { return cameraConfig.get(params); },
+  async 'camera.network.probe'(params) { return networkCameras.probe(params); },
+  async 'camera.network.inspect'(params) { return networkCameras.inspect(params); },
+  async 'camera.network.open'({ profile, meetDir = null, ...options }) {
+    // The host owns recording paths; callers cannot replace an existing capture.
+    const base = meetDir ? path.join(meetDir, 'openmeet', 'camera-sessions') : path.join(userData, 'camera-sessions');
+    const opened=networkCameras.open({ ...options, profile, meetDir, recordingDir: path.join(base, randomUUID()) });
+    if(opened.image){captures.set(opened.id,{id:opened.id,dir:opened.image.dir,meetDir,network:true,
+      sourceType:'network',cameraId:profile.cameraKey,cameraSources:[],sidecar:null,invalidColumns:new Set()});latestCaptureId=opened.id;}
+    return opened;
+  },
+  async 'camera.network.command'(params) { return networkCameras.command(params); },
+  async 'camera.network.status'(params) { return networkCameras.snapshot(params); },
+  async 'camera.network.image'(params) { return networkCameras.image(params); },
+  async 'camera.network.bindStart'({id,dir,triggerId}) {
+    const trigger=(await startJournal(dir)).list().triggers.find(item=>item.id===triggerId);
+    if(!trigger)throw Error('Unknown start trigger');return networkCameras.bindStart({id,clockId:trigger.clockId,timeS:trigger.timeS});
+  },
+  async 'camera.network.drain'(params) { return networkCameras.drain(params); },
+  async 'camera.network.synchronize'(params) { return networkCameras.synchronize(params); },
+  async 'camera.network.close'(params) { return networkCameras.close(params); },
+  async 'backend.profiles'(params) { return backendIntegration.profiles(params); },
+  async 'backend.settings'(params) { return backendIntegration.settings(params); },
+  async 'backend.time'(params) { return backendIntegration.time(params); },
+  async 'backend.participants'(params) { return backendIntegration.participants(params); },
+  async 'backend.event.import'(params) { return backendIntegration.eventImport(params); },
+  async 'backend.schedule'(params) { return backendIntegration.schedule(params); },
+  async 'backend.results.assign'(params) { return backendIntegration.assignResult(params); },
+  async 'remote.listen'(params) { return remoteServers.listen(params); },
+  async 'remote.list'() { return remoteServers.list(); },
+  async 'remote.close'(params) { return remoteServers.close(params); },
+  async 'backend.archive'(params) { return backendIntegration.archive(params); },
+  async 'backend.weather'(params) { return backendIntegration.weather(params); },
+  async 'backend.results.extended'(params) { return backendIntegration.extendedResults(params); },
+  async 'backend.media'(params) { return backendIntegration.media(params); },
+  async 'backend.still.export'(params) { return backendIntegration.exportStill(params); },
   async 'camera.location.save'(params) { return cameraConfig.saveLocation(params); },
   async 'camera.setup.save'(params) { return cameraConfig.saveSetup(params); },
   async 'camera.heat.assign'(params) { return cameraConfig.assignHeat(params); },
@@ -443,6 +536,7 @@ const methods = {
   async 'autotiming.predict'({ captureId, heat, startList, laneRows, fromCol = 0, toCol = null, laneGuides = null }) {
     const cap = captures.get(captureId);
     if (!cap) throw new Error('unknown capture');
+    if(cap.network&&(await methods['autotiming.info']()).stub)throw Error('Configure a timing service for the network camera or mark finishes manually');
     if(cap.sourceType==='real'&&(await methods['autotiming.info']()).stub){
       if(!core.loadSimTruth(cap.sidecar).length)throw Error('This recorded replay has no reference timing points. Configure a timing service or mark finishes manually.');
       const store=core.openCaptureStore(cap.dir,{readOnly:true});
@@ -458,6 +552,13 @@ const methods = {
       }finally{await store.close();}
     }
     const strip = await stripPng(cap.dir, fromCol, toCol,laneGuides);
+    let exactTimes=null;
+    if(cap.network){
+      for(const column of cap.invalidColumns)if(column>=strip.from&&column<strip.from+strip.columns)throw Error('This image range contains columns without valid camera timestamps');
+      const record=core.openCaptureStore(cap.dir,{readOnly:true});
+      try{const start=record.startHwTime();if(start==null)throw Error('Bind a start reference before requesting finish times');exactTimes=Array.from(record.timesOf(strip.from,strip.from+strip.columns),time=>time-start);}
+      finally{record.close();}
+    }
     const svc = await finishService();
     if (svc.stub) {
       // The stand-in is not a model: it echoes the simulator truth registered for this exact strip (sha256 of the PNG).
@@ -474,11 +575,12 @@ const methods = {
       request_id: requestId,
       heat: { event: String(heat.event), round: heat.round, heat: heat.heat, race_type: 'laned_sprint' },
       strip: { encoding: 'png', data_base64: strip.png.toString('base64'), rows: strip.rows, columns: strip.columns, channels: strip.channels, orientation: 'native' },
-      timebase: { first_column_race_time_s: strip.firstRaceTime, column_period_s: strip.period },
+      timebase: exactTimes?{column_race_times_s:exactTimes}:{ first_column_race_time_s: strip.firstRaceTime, column_period_s: strip.period },
       start_list: startList,
       // lane_rows may only name lanes on the start list (contract v1)
       ...(laneRows && laneRows.length ? { lane_rows: laneRows.filter(b => startList.some(s => s.lane === b.lane)) } : {}),
     });
+    if(exactTimes){const {enforceClosePolicy}=await import(pathToFileURL(locate('engine/autotiming/client.js')).href);res.predictions=enforceClosePolicy(res.predictions.map(item=>({...item,race_time_s:exactTimes[item.column]})));}
     return { ...res, stub: svc.stub, fromCol: strip.from, inputDerived };
   },
   async 'lif.write'({ dir, name, text }) {
@@ -528,6 +630,7 @@ const methods = {
   async 'camera.image'({ png, captureId, cameraId, includePixels = true }) {
     const cap = captures.get(captureId);
     if (captureId && !cap) throw Error('Unknown capture');
+    if(cap?.network){if(!includePixels)return {ok:true};return core.decodePng((await stripPng(cap.dir)).png);}
     let image = png;
     if (cap) {
       const source = cap.cameraSources.find(item => cameraId ? item.id === cameraId : item.png === png || item.id === scanSources.get(png)?.id);
@@ -611,7 +714,19 @@ Object.assign(methods, {
       .map(a => `http://${a.address}:${server.port}/scoreboard/`);
     return { url: server.url('classic'), port: server.port, lanUrls };
   },
-  async 'scoreboard.publish'({ state }) { return (await startScoreboard()).publish(state); },
+  async 'scoreboard.publish'({ state }) {
+    const published=(await startScoreboard()).publish(state);
+    void wireScoreboards?.publish(state).catch(error=>emit('scoreboard.wire.error',{message:error.message}));
+    return published;
+  },
+  async 'scoreboard.wire.configure'(params) { return wireScoreboards.configure(params); },
+  async 'scoreboard.wire.connect'(params) { return wireScoreboards.connect(params); },
+  async 'scoreboard.wire.reconnect'(params) { return wireScoreboards.reconnect(params); },
+  async 'scoreboard.wire.list'() { return wireScoreboards.list(); },
+  async 'scoreboard.wire.publish'({state,force=false}) { return wireScoreboards.publish(state,{force}); },
+  async 'scoreboard.wire.clock'(params) { return wireScoreboards.setClock(params); },
+  async 'scoreboard.wire.gun'(params) { return wireScoreboards.notifyGun(params); },
+  async 'scoreboard.wire.close'(params) { return wireScoreboards.close(params); },
   async 'scoreboard.list'() {
     await ensureScoreboardLibrary();
     return core.listTemplates(scoreboardRoot);
@@ -670,7 +785,7 @@ function closeOwnedServices() {
     for(const child of cropProcesses)child.kill();
     const ownedWatcher=watcher;watcher=null;
     const closeWatcher=async()=>{if(typeof ownedWatcher==='function')await ownedWatcher();else await ownedWatcher?.close();};
-    await Promise.allSettled([closeWatcher(),closeScoreboards(),closeFinishService()]);
+    await Promise.allSettled([closeWatcher(),closeScoreboards(),closeFinishService(),networkCameras?.closeAll(),wireScoreboards?.closeAll(),remoteServers?.closeAll()]);
   })();
 }
 port.on('close', () => {closeOwnedServices().catch(()=>{});});

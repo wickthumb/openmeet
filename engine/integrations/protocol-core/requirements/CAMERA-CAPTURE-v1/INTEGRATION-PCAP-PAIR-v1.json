@@ -1,0 +1,71 @@
+{
+  "status": "DRAFT pending capture-format content review",
+  "provenance": "Invented complete capture and identity pair, not original traffic or hardware output",
+  "captureHex": "d4c3b2a1020004000000000000000000ffff00000100000064000000c80000003e0000003e000000021122334455021122334405080045000030000140004011b6b0c0000205c0000206cf08a3c5001c00006b72694b2a0000001a000300010000000100000065000000c90000005a0000005a00000002112233440502112233445508004500004c000240004011b693c0000206c0000205a3c5cf0800380000948d96b42a00000001000080080000007856341240000000010000005544332211020000200300002805000003000000",
+  "captureBytes": 208,
+  "sha256": "11dae9d50924d4ccc01099b75bf1aea251113500add88f6fa5867bf75d468b07",
+  "expected": {
+    "format": "pcap",
+    "containerUnits": 2,
+    "packetRecords": 2,
+    "sectionCount": 1,
+    "diagnostics": [],
+    "observations": [
+      {
+        "sourceAddress": "192.0.2.5",
+        "sourcePort": 53000,
+        "destinationAddress": "192.0.2.6",
+        "destinationPort": 41925,
+        "payloadHex": "6b72694b2a0000001a0003000100000001000000",
+        "recordOrdinal": 1,
+        "recordOffset": 24,
+        "sectionIndex": 0,
+        "interfaceId": 0,
+        "frameTruncated": false,
+        "checksumsVerified": false,
+        "timestampRaw": {
+          "seconds": 100,
+          "fraction": 200,
+          "precision": "microseconds"
+        },
+        "vlanTags": []
+      },
+      {
+        "sourceAddress": "192.0.2.6",
+        "sourcePort": 41925,
+        "destinationAddress": "192.0.2.5",
+        "destinationPort": 53000,
+        "payloadHex": "948d96b42a00000001000080080000007856341240000000010000005544332211020000200300002805000003000000",
+        "recordOrdinal": 2,
+        "recordOffset": 102,
+        "sectionIndex": 0,
+        "interfaceId": 0,
+        "frameTruncated": false,
+        "checksumsVerified": false,
+        "timestampRaw": {
+          "seconds": 101,
+          "fraction": 201,
+          "precision": "microseconds"
+        },
+        "vlanTags": []
+      }
+    ],
+    "identity": {
+      "serialNumberRaw": 305419896,
+      "memoryStatusRaw": 64,
+      "capabilityWord": 1,
+      "macAddress": "02:11:22:33:44:55",
+      "cpuSpeedRaw": 800,
+      "romVersionRaw": 1320,
+      "cpuTypeRaw": 3,
+      "observedTimerSyncWord": 1,
+      "runningApplicationVersionKnown": false,
+      "retailModelKnown": false
+    },
+    "canonicalFlags": {
+      "modelConfirmed": false,
+      "runtimeConfirmed": false
+    }
+  },
+  "notes": "Ethernet/IP/UDP headers networkBE; proprietary UDP payloads preserve authoredLEwords; IP checksums authored correctly, UDP checksum0 per IPv4UDP. Parser still reports checksumsVerified false."
+}

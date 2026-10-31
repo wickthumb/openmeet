@@ -1,0 +1,515 @@
+{
+  "scope": "Invented data-only expectations for the explicit configured TCP CharMode0 profile. No vendor script, socket, endpoint or board was run.",
+  "schemaNote": "Tests adapt pendingHex to/from API Buffers. Hex is assertion metadata only; production API returns Buffer. Error names are original restricted-input policy. Native flush failures are modeled returns, not thrown validation errors.",
+  "parseCases": [
+    {
+      "id": "canonical-client",
+      "input": {
+        "SerialPort": "-1,192.0.2.10,5000",
+        "CharMode": 0,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "expected": {
+        "kind": "tcp-client",
+        "host": "192.0.2.10",
+        "port": 5000,
+        "charMode": 0,
+        "capacity": 32,
+        "keepAlive": false,
+        "readNewline": 0,
+        "writeNewline": 0,
+        "readTimeout": 0,
+        "writeTimeout": 0,
+        "autoReconnect": true
+      }
+    },
+    {
+      "id": "reject-listener",
+      "input": {
+        "SerialPort": "-2,192.0.2.10,5000",
+        "CharMode": 0,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "expectedError": "RangeError"
+    },
+    {
+      "id": "reject-unsupported-charmode",
+      "input": {
+        "SerialPort": "-1,192.0.2.10,5000",
+        "CharMode": 1,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "expectedError": "RangeError"
+    },
+    {
+      "id": "reject-noncanonical-octet",
+      "input": {
+        "SerialPort": "-1,192.000.2.10,5000",
+        "CharMode": 0,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "expectedError": "RangeError"
+    },
+    {
+      "id": "reject-portzero",
+      "input": {
+        "SerialPort": "-1,192.0.2.10,0",
+        "CharMode": 0,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "expectedError": "RangeError"
+    },
+    {
+      "id": "reject-zero-capacity",
+      "input": {
+        "SerialPort": "-1,192.0.2.10,5000",
+        "CharMode": 0,
+        "PortBuffer": 0,
+        "KeepAlive": false
+      },
+      "expectedError": "RangeError"
+    }
+  ],
+  "encodingCases": [
+    {
+      "id": "elapsed9999-packet",
+      "profile": {
+        "SerialPort": "-1,192.0.2.10,5000",
+        "CharMode": 0,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "units": [
+        2,
+        84,
+        61,
+        57,
+        46,
+        57,
+        57,
+        57,
+        3,
+        13,
+        10
+      ],
+      "expectedHex": "02543d392e393939030d0a"
+    },
+    {
+      "id": "low8-nul-highunit-lf",
+      "profile": {
+        "SerialPort": "-1,192.0.2.10,5000",
+        "CharMode": 0,
+        "PortBuffer": 32,
+        "KeepAlive": false
+      },
+      "units": [
+        0,
+        256,
+        65535,
+        55296,
+        10
+      ],
+      "expectedHex": "0000ff000a"
+    }
+  ],
+  "bufferCases": [
+    {
+      "id": "exact-fill-defers",
+      "state": {
+        "capacity": 4,
+        "pendingHex": ""
+      },
+      "operation": {
+        "op": "text",
+        "units": [
+          65,
+          66,
+          67,
+          68
+        ]
+      },
+      "sendResults": [],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": "41424344"
+        },
+        "attempts": [],
+        "consumedSendResults": 0,
+        "processedUnits": 4,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "next-byte-flushes-first",
+      "state": {
+        "capacity": 4,
+        "pendingHex": "41424344"
+      },
+      "operation": {
+        "op": "text",
+        "units": [
+          69
+        ]
+      },
+      "sendResults": [
+        4
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": "45"
+        },
+        "attempts": [
+          {
+            "hex": "41424344",
+            "requested": 4,
+            "returned": 4
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 1,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "explicit-full-flush",
+      "state": {
+        "capacity": 4,
+        "pendingHex": "414243"
+      },
+      "operation": {
+        "op": "flush"
+      },
+      "sendResults": [
+        3
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": ""
+        },
+        "attempts": [
+          {
+            "hex": "414243",
+            "requested": 3,
+            "returned": 3
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 0,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "partial-flush-does-not-retain-tail",
+      "state": {
+        "capacity": 4,
+        "pendingHex": "414243"
+      },
+      "operation": {
+        "op": "flush"
+      },
+      "sendResults": [
+        1
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": ""
+        },
+        "attempts": [
+          {
+            "hex": "414243",
+            "requested": 3,
+            "returned": 1
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 0,
+        "error": {
+          "kind": "short-send",
+          "nativeCode": 8004,
+          "acceptedPrefixHex": "41",
+          "unretainedSuffixHex": "4243"
+        },
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "wouldblock-zero-is-short",
+      "state": {
+        "capacity": 4,
+        "pendingHex": "414243"
+      },
+      "operation": {
+        "op": "flush"
+      },
+      "sendResults": [
+        0
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": ""
+        },
+        "attempts": [
+          {
+            "hex": "414243",
+            "requested": 3,
+            "returned": 0
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 0,
+        "error": {
+          "kind": "short-send",
+          "nativeCode": 8004,
+          "acceptedPrefixHex": "",
+          "unretainedSuffixHex": "414243"
+        },
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "negative-flush-is-uncertain",
+      "state": {
+        "capacity": 4,
+        "pendingHex": "414243"
+      },
+      "operation": {
+        "op": "flush"
+      },
+      "sendResults": [
+        -1
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": ""
+        },
+        "attempts": [
+          {
+            "hex": "414243",
+            "requested": 3,
+            "returned": -1
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 0,
+        "error": {
+          "kind": "send-error",
+          "nativeCode": 8003,
+          "acceptedPrefixHex": "",
+          "unretainedSuffixHex": "414243"
+        },
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "empty-flush-no-send",
+      "state": {
+        "capacity": 4,
+        "pendingHex": ""
+      },
+      "operation": {
+        "op": "flush"
+      },
+      "sendResults": [],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": ""
+        },
+        "attempts": [],
+        "consumedSendResults": 0,
+        "processedUnits": 0,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "overflow-failure-leaves-triggering-unit-unprocessed",
+      "state": {
+        "capacity": 4,
+        "pendingHex": ""
+      },
+      "operation": {
+        "op": "text",
+        "units": [
+          65,
+          66,
+          67,
+          68,
+          69
+        ]
+      },
+      "sendResults": [
+        1
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": ""
+        },
+        "attempts": [
+          {
+            "hex": "41424344",
+            "requested": 4,
+            "returned": 1
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 4,
+        "error": {
+          "kind": "short-send",
+          "nativeCode": 8004,
+          "acceptedPrefixHex": "41",
+          "unretainedSuffixHex": "424344"
+        },
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "two-full-automatic-flushes",
+      "state": {
+        "capacity": 4,
+        "pendingHex": ""
+      },
+      "operation": {
+        "op": "text",
+        "units": [
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74
+        ]
+      },
+      "sendResults": [
+        4,
+        4
+      ],
+      "expected": {
+        "state": {
+          "capacity": 4,
+          "pendingHex": "494a"
+        },
+        "attempts": [
+          {
+            "hex": "41424344",
+            "requested": 4,
+            "returned": 4
+          },
+          {
+            "hex": "45464748",
+            "requested": 4,
+            "returned": 4
+          }
+        ],
+        "consumedSendResults": 2,
+        "processedUnits": 10,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "composition-packet-pending",
+      "state": {
+        "capacity": 32,
+        "pendingHex": ""
+      },
+      "operation": {
+        "op": "text",
+        "units": [
+          2,
+          84,
+          61,
+          57,
+          46,
+          57,
+          57,
+          57,
+          3,
+          13,
+          10
+        ]
+      },
+      "sendResults": [],
+      "expected": {
+        "state": {
+          "capacity": 32,
+          "pendingHex": "02543d392e393939030d0a"
+        },
+        "attempts": [],
+        "consumedSendResults": 0,
+        "processedUnits": 11,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    },
+    {
+      "id": "composition-packet-full-local-return",
+      "state": {
+        "capacity": 32,
+        "pendingHex": "02543d392e393939030d0a"
+      },
+      "operation": {
+        "op": "flush"
+      },
+      "sendResults": [
+        11
+      ],
+      "expected": {
+        "state": {
+          "capacity": 32,
+          "pendingHex": ""
+        },
+        "attempts": [
+          {
+            "hex": "02543d392e393939030d0a",
+            "requested": 11,
+            "returned": 11
+          }
+        ],
+        "consumedSendResults": 1,
+        "processedUnits": 0,
+        "error": null,
+        "deliveryEstablished": false
+      }
+    }
+  ],
+  "reconnectHistory": {
+    "id": "connected-partial-close-reconnect-not-replay",
+    "authored": true,
+    "observations": [
+      "Connected with pendingABC; injected native send returns1. Local used count already0; prefixA accepted locally; BC no longer retained.",
+      "Later readiness detects peer close and can reconnect because autoReconnect and remembered endpoint are set.",
+      "A later connected observation does not restore BC or establish original board receipt. No automatic replay/acknowledgment may be inferred."
+    ],
+    "expected": {
+      "pendingAfterFailureHex": "",
+      "automaticReplayEstablished": false,
+      "remoteReceiptEstablished": false
+    }
+  },
+  "caseCount": {
+    "parse": 6,
+    "encoding": 2,
+    "buffer": 11,
+    "histories": 1
+  }
+}

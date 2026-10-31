@@ -1,0 +1,1245 @@
+{
+  "provenance": "New hand-specified invented integration and route-call expectations from source-informed prose; no formatter/controller implementation used to produce expected results",
+  "integratedCases": [
+    {
+      "id": "authored-time9_999-framed",
+      "section": "TimeRunning",
+      "defaultGroup": 17,
+      "line": "1\\02T=%s\\03\\0d\\0a",
+      "resolvedField": {
+        "kind": "text",
+        "value": "9.999"
+      },
+      "expectedUnits": [
+        2,
+        84,
+        61,
+        57,
+        46,
+        57,
+        57,
+        57,
+        3,
+        13,
+        10
+      ],
+      "expectedLow8Hex": "02543d392e393939030d0a",
+      "deviceProtocolClaim": false
+    },
+    {
+      "id": "place-with-explicit-CR",
+      "defaultGroup": 20,
+      "line": "1P%2s\\0d",
+      "resolvedField": {
+        "kind": "text",
+        "value": "3"
+      },
+      "expectedUnits": [
+        80,
+        32,
+        51,
+        13
+      ],
+      "expectedLow8Hex": "5020330d"
+    },
+    {
+      "id": "resolved-name-width-and-truncation",
+      "defaultGroup": 20,
+      "line": "4%-5.5s\\0d",
+      "resolvedField": {
+        "kind": "text",
+        "value": "ALEXANDER"
+      },
+      "expectedUnits": [
+        65,
+        76,
+        69,
+        88,
+        65,
+        13
+      ],
+      "expectedLow8Hex": "414c4558410d"
+    },
+    {
+      "id": "variable0-percent-is-literal",
+      "defaultGroup": 17,
+      "line": "0%s%%\\0d",
+      "expectedUnits": [
+        37,
+        115,
+        37,
+        37,
+        13
+      ],
+      "expectedLow8Hex": "257325250d",
+      "resolverInvocations": 0
+    },
+    {
+      "id": "binary-field-NULs-survive",
+      "defaultGroup": 17,
+      "line": "2<%s>",
+      "resolvedField": {
+        "kind": "binary32",
+        "value": 65538
+      },
+      "expectedUnits": [
+        60,
+        2,
+        0,
+        1,
+        0,
+        62
+      ],
+      "expectedLow8Hex": "3c020001003e"
+    },
+    {
+      "id": "substituted-script-mutates-register",
+      "defaultGroup": 20,
+      "line": "4[%s]",
+      "resolvedField": {
+        "kind": "text",
+        "value": "\\X3\\+0"
+      },
+      "expectedUnits": [
+        91,
+        93
+      ],
+      "expectedRegisters": [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedLow8Hex": "5b5d"
+    },
+    {
+      "id": "text-value-NUL-ends-substitution",
+      "defaultGroup": 20,
+      "line": "4<%s>AFTER",
+      "resolvedField": {
+        "kind": "text",
+        "value": "A\u0000B"
+      },
+      "expectedUnits": [
+        60,
+        65,
+        62,
+        65,
+        70,
+        84,
+        69,
+        82
+      ],
+      "expectedLow8Hex": "3c413e4146544552"
+    },
+    {
+      "id": "binary-O-retains-wide-units",
+      "script": "\\X4\\O0",
+      "registers": [
+        305419896,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedUnits": [
+        22136,
+        13398,
+        4660,
+        18
+      ],
+      "expectedLow8Hex": "78563412"
+    },
+    {
+      "id": "right-zero-signed-decimal",
+      "script": "\\U3\\X5\\O0",
+      "registers": [
+        -7,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedUnits": [
+        45,
+        48,
+        48,
+        48,
+        55
+      ],
+      "expectedLow8Hex": "2d30303037"
+    },
+    {
+      "id": "full-packet-XOR",
+      "script": "\\02AB\\03\\L0\\U1\\F0\\R0\\X1\\O0",
+      "expectedUnits": [
+        2,
+        65,
+        66,
+        3,
+        2
+      ],
+      "expectedRegisters": [
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedLow8Hex": "0241420302"
+    },
+    {
+      "id": "full-packet-ADD",
+      "script": "\\02AB\\03\\L0\\U2\\F0\\R0\\X1\\O0",
+      "expectedUnits": [
+        2,
+        65,
+        66,
+        3,
+        136
+      ],
+      "expectedRegisters": [
+        136,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedLow8Hex": "0241420388"
+    },
+    {
+      "id": "CRC-IDS-to-low8packet",
+      "script": "123456789\\L0\\F0\\R0\\X2\\O0",
+      "expectedUnits": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        12739,
+        49
+      ],
+      "expectedRegisters": [
+        12739,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedLow8Hex": "313233343536373839c331"
+    },
+    {
+      "id": "two-time-lines-share-R0",
+      "defaultGroup": 17,
+      "lines": [
+        "0\\X3\\+0",
+        "0\\U2\\X1\\O0"
+      ],
+      "timeContextPresent": true,
+      "timeUnchangedSuppression": true,
+      "registers": [
+        99,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedLineUnits": [
+        [],
+        [
+          51
+        ]
+      ],
+      "expectedRegisters": [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "resolverInvocations": 0
+    },
+    {
+      "id": "time-line-suppression-uses-post-op-R0",
+      "defaultGroup": 17,
+      "lines": [
+        "0\\X1\\=0",
+        "0A"
+      ],
+      "timeContextPresent": true,
+      "timeUnchangedSuppression": true,
+      "registers": [
+        99,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedLineUnits": [],
+      "expectedRegisters": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "resolverInvocations": 0
+    }
+  ],
+  "planCases": [
+    {
+      "id": "direct-lines-no-added-newline",
+      "now": 100,
+      "optimize": 0,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [
+              111,
+              108,
+              100
+            ],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                65
+              ],
+              [
+                66
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [
+        {
+          "routeId": "A",
+          "op": "text",
+          "units": [
+            65
+          ]
+        },
+        {
+          "routeId": "A",
+          "op": "text",
+          "units": [
+            66
+          ]
+        },
+        {
+          "routeId": "A",
+          "op": "flush"
+        }
+      ],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [
+            111,
+            108,
+            100
+          ],
+          "lastCommit": 100,
+          "holdDeadline": 0
+        }
+      ]
+    },
+    {
+      "id": "aggregate-immediate",
+      "now": 100,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [
+              111,
+              108,
+              100
+            ],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                110,
+                101,
+                119
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [
+        {
+          "routeId": "A",
+          "op": "text",
+          "units": [
+            110,
+            101,
+            119
+          ]
+        },
+        {
+          "routeId": "A",
+          "op": "flush"
+        }
+      ],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [
+            110,
+            101,
+            119
+          ],
+          "lastCommit": 100,
+          "holdDeadline": 0
+        }
+      ]
+    },
+    {
+      "id": "equal-unforced-restores-old-page-deadline",
+      "now": 100,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [
+              115,
+              97,
+              109,
+              101
+            ],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 500,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                115,
+                97,
+                109,
+                101
+              ]
+            ],
+            "previousPageDeadline": 250
+          }
+        }
+      ],
+      "expectedCalls": [],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [
+            115,
+            97,
+            109,
+            101
+          ],
+          "lastCommit": 0,
+          "pageDeadline": 250
+        }
+      ]
+    },
+    {
+      "id": "forced-empty-aggregate-is-a-real-call",
+      "now": 100,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": true,
+            "lines": [],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [
+        {
+          "routeId": "A",
+          "op": "text",
+          "units": []
+        },
+        {
+          "routeId": "A",
+          "op": "flush"
+        }
+      ],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [],
+          "lastCommit": 100
+        }
+      ]
+    },
+    {
+      "id": "deferred-multi-route-order",
+      "now": 100,
+      "optimize": 1,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                111,
+                110,
+                101
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        },
+        {
+          "routeId": "B",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                116,
+                119,
+                111
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [
+        {
+          "routeId": "A",
+          "op": "text",
+          "units": [
+            111,
+            110,
+            101
+          ]
+        },
+        {
+          "routeId": "A",
+          "op": "flush"
+        },
+        {
+          "routeId": "B",
+          "op": "text",
+          "units": [
+            116,
+            119,
+            111
+          ]
+        },
+        {
+          "routeId": "B",
+          "op": "flush"
+        }
+      ],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [
+            111,
+            110,
+            101
+          ],
+          "deferredSend": true,
+          "lastCommit": 100
+        },
+        {
+          "routeId": "B",
+          "saved": [
+            116,
+            119,
+            111
+          ],
+          "deferredSend": true,
+          "lastCommit": 100
+        }
+      ]
+    },
+    {
+      "id": "hold-renew-then-expire",
+      "optimize": 2,
+      "initial": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 50,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                65
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "steps": [
+        {
+          "now": 100,
+          "updates": [
+            {
+              "work": true,
+              "force": false,
+              "lines": [
+                [
+                  65
+                ]
+              ],
+              "previousPageDeadline": 0
+            }
+          ],
+          "expectedCalls": [],
+          "expectedState": [
+            {
+              "routeId": "A",
+              "saved": [
+                65
+              ],
+              "holdDeadline": 150,
+              "lastCommit": 0
+            }
+          ]
+        },
+        {
+          "now": 140,
+          "updates": [
+            {
+              "work": true,
+              "force": false,
+              "lines": [
+                [
+                  66
+                ]
+              ],
+              "previousPageDeadline": 0
+            }
+          ],
+          "expectedCalls": [],
+          "expectedState": [
+            {
+              "routeId": "A",
+              "saved": [
+                66
+              ],
+              "holdDeadline": 190,
+              "lastCommit": 0
+            }
+          ]
+        },
+        {
+          "now": 150,
+          "updates": [
+            {
+              "work": false,
+              "force": false,
+              "lines": [],
+              "previousPageDeadline": 0
+            }
+          ],
+          "expectedCalls": [],
+          "expectedState": [
+            {
+              "routeId": "A",
+              "holdDeadline": 190,
+              "lastCommit": 0
+            }
+          ]
+        },
+        {
+          "now": 190,
+          "updates": [
+            {
+              "work": false,
+              "force": false,
+              "lines": [],
+              "previousPageDeadline": 0
+            }
+          ],
+          "expectedCalls": [
+            {
+              "routeId": "A",
+              "op": "text",
+              "units": [
+                66
+              ]
+            },
+            {
+              "routeId": "A",
+              "op": "flush"
+            }
+          ],
+          "expectedState": [
+            {
+              "routeId": "A",
+              "holdDeadline": 0,
+              "lastCommit": 190
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ineligible-call-does-not-flush-expired-hold",
+      "now": 200,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [
+              104,
+              101,
+              108,
+              100
+            ],
+            "lastCommit": 0,
+            "holdDeadline": 150,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": false
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": false,
+            "force": false,
+            "lines": [],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "holdDeadline": 150,
+          "lastCommit": 0
+        }
+      ]
+    },
+    {
+      "id": "second-phase-lock-failure-retains-intent-only",
+      "now": 100,
+      "optimize": 1,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 0,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": false,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                110,
+                101,
+                119
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [
+            110,
+            101,
+            119
+          ],
+          "lastCommit": 100,
+          "deferredSend": true
+        }
+      ]
+    },
+    {
+      "id": "next-cycle-clears-unsent-deferred-flag",
+      "now": 200,
+      "optimize": 1,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [
+              110,
+              101,
+              119
+            ],
+            "lastCommit": 100,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": true
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 0,
+          "update": {
+            "work": false,
+            "force": false,
+            "lines": [],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "saved": [
+            110,
+            101,
+            119
+          ],
+          "lastCommit": 100,
+          "deferredSend": false
+        }
+      ]
+    },
+    {
+      "id": "minimum-delay-wrap-boundary-blocked",
+      "now": 15,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 4294967280,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 32,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                78
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "lastCommit": 4294967280,
+          "saved": []
+        }
+      ]
+    },
+    {
+      "id": "minimum-delay-wrap-boundary-eligible",
+      "now": 16,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 4294967280,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 32,
+          "updateHold": 0,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                78
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [
+        {
+          "routeId": "A",
+          "op": "text",
+          "units": [
+            78
+          ]
+        },
+        {
+          "routeId": "A",
+          "op": "flush"
+        }
+      ],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "lastCommit": 16,
+          "saved": [
+            78
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold-sum-zero-sentinel",
+      "now": 4294967280,
+      "optimize": 2,
+      "boards": [
+        {
+          "routeId": "A",
+          "state": {
+            "working": [],
+            "saved": [],
+            "lastCommit": 4294967280,
+            "holdDeadline": 0,
+            "pageDeadline": 0,
+            "deferredSend": false
+          },
+          "ready": {
+            "lock": true,
+            "transport": true,
+            "predicateA": true,
+            "predicateB": true
+          },
+          "secondPhase": {
+            "lock": true,
+            "transport": true
+          },
+          "minUpdateDelay": 0,
+          "updateHold": 16,
+          "update": {
+            "work": true,
+            "force": false,
+            "lines": [
+              [
+                78
+              ]
+            ],
+            "previousPageDeadline": 0
+          }
+        }
+      ],
+      "expectedCalls": [],
+      "expectedState": [
+        {
+          "routeId": "A",
+          "holdDeadline": 0,
+          "lastCommit": 4294967280,
+          "saved": [
+            78
+          ]
+        }
+      ]
+    }
+  ],
+  "timeComposition": {
+    "scope": "Invented software composition, not a board protocol or measured race",
+    "startTuple": {
+      "ticks": "800000",
+      "quantum": "8",
+      "origin": "1001"
+    },
+    "finishTuple": {
+      "ticks": "1599920",
+      "quantum": "80",
+      "origin": "1001"
+    },
+    "elapsedTuple": {
+      "ticks": "799920",
+      "quantum": "80",
+      "origin": "1001"
+    },
+    "appendTimeInput": {
+      "tuple": {
+        "ticks": "799920",
+        "quantum": "80",
+        "origin": "1001"
+      },
+      "requestedPrecision": "80",
+      "H": "0",
+      "L": "0",
+      "callbackSelection": "Down",
+      "RoundMethod": "1",
+      "prefix": "",
+      "characters": {
+        "minus": "-",
+        "day": "d",
+        "hour": ":",
+        "minute": ":",
+        "fraction": "."
+      }
+    },
+    "expectedFormatted": "9.999",
+    "section": "TimeRunning",
+    "decodedLine": "1\\02T=%s\\03\\0d\\0a",
+    "expectedLow8Hex": "02543d392e393939030d0a",
+    "note": "Caller adapts BigInt tuples to explicit decimal strings and uses proven start association; tuple subtraction and time formatting are existing software APIs, not newly inferred providers."
+  }
+}

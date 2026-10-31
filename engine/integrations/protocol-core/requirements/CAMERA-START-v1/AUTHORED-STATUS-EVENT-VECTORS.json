@@ -1,0 +1,248 @@
+{
+  "provenance": "Invented declarative packet vectors; not original camera or RF output; marker/serial/peer/origin and all numeric values are test-only",
+  "scope": "Matched pinned ec8l selector3 reply21payload words; no sender/poller/model negotiation or start association",
+  "byteOrder": "little-endian u32",
+  "peerExample": {
+    "address": "192.0.2.10",
+    "port": 41925
+  },
+  "request": {
+    "bytes": 32,
+    "marker": 270544960,
+    "sequence": 7,
+    "statusSubId": 11,
+    "requestFlagsInvented": [
+      0,
+      0,
+      0
+    ],
+    "hex": "403020100700000003000300040000000b000000000000000000000000000000",
+    "sha256": "d81fe5d1f3f932afbc6aba7c5e6080540b3fbbae38b42257a962013bc91c85c9"
+  },
+  "vectors": [
+    {
+      "id": "radio_subtype1_number7",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d030005700011a086010005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "af80f01af6c2ab61dfeb1f187c16a0b8869c834af88536215193ef8c49acbf4d",
+      "expected": {
+        "wireEventType": 285241349,
+        "wireEventTimestampRaw": 100000,
+        "familyHighNibble": 1,
+        "subtype": 1,
+        "sourceId": 5,
+        "number": 7,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 800000,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "configured source5 start mode ->kind2; number7; primarytick800000 q8 origin1001; secondarytick0 q1 origin-1 for configured offset0"
+    },
+    {
+      "id": "radio_subtype1_retry_same_subid",
+      "bytes": 100,
+      "hex": "bfcfdfef0800000001000080150000000b00000078563412400d030005700011a086010005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "0d22969d621b4cc993fb4715e87c5b9b8e60f528d1070b4e1b471568518f8890",
+      "expected": {
+        "wireEventType": 285241349,
+        "wireEventTimestampRaw": 100000,
+        "familyHighNibble": 1,
+        "subtype": 1,
+        "sourceId": 5,
+        "number": 7,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 800000,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "replay of same cached event before first host acceptance; new outer wire sequence, same status subId11"
+    },
+    {
+      "id": "radio_subtype1_next_subid",
+      "bytes": 100,
+      "hex": "bfcfdfef0900000001000080150000000c00000078563412400d0300060000110487010005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "09e7014913d47be70e1e3a34ffe3694a8a1af39c32b55cc4daac7ca6c1952d5a",
+      "expected": {
+        "wireEventType": 285212678,
+        "wireEventTimestampRaw": 100100,
+        "familyHighNibble": 1,
+        "subtype": 1,
+        "sourceId": 6,
+        "number": 0,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 800800,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "new status generation can consume next queued source6 event"
+    },
+    {
+      "id": "radio_subtype2",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d030005000012a086010005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "8b2a5dc4ab83de5a89d892c8a5f990a402a697f215c4ac4a7fb0029ccbf2c14e",
+      "expected": {
+        "wireEventType": 301989893,
+        "wireEventTimestampRaw": 100000,
+        "familyHighNibble": 1,
+        "subtype": 2,
+        "sourceId": 5,
+        "number": 0,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 800000,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "source5 subtype2 updates host receipt bookkeeping; not ordinary start insertion"
+    },
+    {
+      "id": "radio_subtype3",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d030005000013a086010005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "2134da46235b6ea85fbe221ec1a006cd09843f3810d66f05d5d786f7cee3cec8",
+      "expected": {
+        "wireEventType": 318767109,
+        "wireEventTimestampRaw": 100000,
+        "familyHighNibble": 1,
+        "subtype": 3,
+        "sourceId": 5,
+        "number": 0,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 800000,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "separate subtype3 notification path; no start insertion established"
+    },
+    {
+      "id": "ordinary_wired_gun_type1",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d030001000000a086010005000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "bb4022be604e3f438653b211ca3ff701fac18bd515e2393fbb9f085d03fcad58",
+      "expected": {
+        "wireEventType": 1,
+        "wireEventTimestampRaw": 100000,
+        "familyHighNibble": 0,
+        "subtype": 0,
+        "sourceId": 1,
+        "number": 0,
+        "typeBits22To23": 0,
+        "statusAuxByte": 0,
+        "model3EventTicks": 800000,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false,
+        "subtypeSourceNumberInterpretation": "not a Radio/LinkGate packed event"
+      },
+      "note": "ordinary gunqueue family; kind0 if host capability/origin gates pass; do not label this wireless start"
+    },
+    {
+      "id": "no_selected_event",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d0300000000000000000005000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "93c0cf70970b8dbacd285989e991bf64e792c40c4d41e09a955ea1f15b7f0304",
+      "expected": {
+        "wireEventType": 0,
+        "wireEventTimestampRaw": 0,
+        "familyHighNibble": 0,
+        "subtype": 0,
+        "sourceId": 0,
+        "number": 0,
+        "typeBits22To23": 0,
+        "statusAuxByte": 0,
+        "model3EventTicks": 0,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false,
+        "subtypeSourceNumberInterpretation": "not a Radio/LinkGate packed event"
+      },
+      "note": "no event selected in this scan; no exact total backlog/arrival guarantee"
+    },
+    {
+      "id": "radio_zero_event_timestamp",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d0300057000110000000005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "bce39cc3ee1db0d107f6c81118c3e9de0e4b8244f8bd0f6c3c9fc90cb30277e8",
+      "expected": {
+        "wireEventType": 285241349,
+        "wireEventTimestampRaw": 0,
+        "familyHighNibble": 1,
+        "subtype": 1,
+        "sourceId": 5,
+        "number": 7,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 0,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "radio event type remains present and raw timestamp zero is not rejected by the shown host branch"
+    },
+    {
+      "id": "radio_highbit_u32_timestamp",
+      "bytes": 100,
+      "hex": "bfcfdfef0700000001000080150000000b00000078563412400d0300057000110000008005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "d1b3611254d1938a1f22d3193a8fb2fc04d7caa2bb69483e4c989bc1b054aee1",
+      "expected": {
+        "wireEventType": 285241349,
+        "wireEventTimestampRaw": 2147483648,
+        "familyHighNibble": 1,
+        "subtype": 1,
+        "sourceId": 5,
+        "number": 7,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 17179869184,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "wire timestamp zero-extends before scale; model3 primarytick17179869184, not negative"
+    },
+    {
+      "id": "radio_stale_outer_sequence",
+      "bytes": 100,
+      "hex": "bfcfdfef0600000001000080150000000b00000078563412400d030005700011a086010005000000000000030000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "sha256": "c830a7a3060b60837adff78a2c07cf98c36a24f9407130e688330a2d854689a0",
+      "expected": {
+        "wireEventType": 285241349,
+        "wireEventTimestampRaw": 100000,
+        "familyHighNibble": 1,
+        "subtype": 1,
+        "sourceId": 5,
+        "number": 7,
+        "typeBits22To23": 0,
+        "statusAuxByte": 3,
+        "model3EventTicks": 800000,
+        "clockOriginInvented": 1001,
+        "physicalAccuracyEstablished": false,
+        "raceAssociationEstablished": false
+      },
+      "note": "own current exchange expecting7 ignores stale sequence; no host event dispatch"
+    }
+  ],
+  "negativeHistories": [
+    "wrong peer or port ignored by ordinary typed reply exchange",
+    "wrong complementary marker or stale outer sequence ignored",
+    "matching outer sequence but wrong statusSubId fails004b97f3 dispatch guard",
+    "declared word count differs from actual datagram length: no typed reply acceptance",
+    "unregistered sourceId or disabled/not-start source: no startqueue insertion despite valid transport",
+    "local cached status returns without new event side effects",
+    "two independent owners with different subIds can replace one-entry cache; retry is not universally exactly-once",
+    "many queued events require many fresh status generations; no eventarray or independent replay history exists here",
+    "newly generated distinct reply with same raw eventtimestamp has no timestamp-based dedup in this wiredecoder",
+    "timed-out exchange does not establish no gun/radio event: queued/cached state can remain"
+  ]
+}

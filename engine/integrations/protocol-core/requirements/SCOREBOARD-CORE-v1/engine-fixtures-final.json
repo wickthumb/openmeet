@@ -1,0 +1,846 @@
+{
+  "scope": "Invented data-only source-informed ASCII/UTF16-unit engine controls. No original interpreter/device executed. Formatting precedes command interpretation. Registers signed32; finite sufficient-capacity domain. Script strings are test INPUT DATA, not implementation code.",
+  "engineCases": [
+    {
+      "id": "lowercase-hex-literal",
+      "script": "\\a1",
+      "expectedUnits": [
+        161
+      ]
+    },
+    {
+      "id": "uppercase-hex-not-literal",
+      "script": "\\A1",
+      "expectedUnits": []
+    },
+    {
+      "id": "mixed-uppercase-hex-boundary",
+      "script": "\\0A",
+      "expectedUnits": [
+        65
+      ]
+    },
+    {
+      "id": "literal-backslash-is-not-reparsed",
+      "script": "\\5cA",
+      "expectedUnits": [
+        92,
+        65
+      ]
+    },
+    {
+      "id": "literal-NUL-unit-is-length-preserved",
+      "script": "a\\00b",
+      "expectedUnits": [
+        97,
+        0,
+        98
+      ]
+    },
+    {
+      "id": "trailing-backslash-consumed",
+      "script": "ab\\",
+      "expectedUnits": [
+        97,
+        98
+      ]
+    },
+    {
+      "id": "unknown-valid-command-dropped",
+      "script": "a\\Q1b",
+      "expectedUnits": [
+        97,
+        98
+      ]
+    },
+    {
+      "id": "one-decimal-argument-only",
+      "script": "\\X12\\=0",
+      "expectedUnits": [
+        50
+      ],
+      "expectedRegisters": {
+        "0": 1
+      }
+    },
+    {
+      "id": "literals-retain-pending-X",
+      "script": "\\X2A\\+1",
+      "expectedUnits": [
+        65
+      ],
+      "expectedRegisters": {
+        "1": 2
+      }
+    },
+    {
+      "id": "literal-hex-retains-pending-X",
+      "script": "\\X2\\41\\+1",
+      "expectedUnits": [
+        65
+      ],
+      "expectedRegisters": {
+        "1": 2
+      }
+    },
+    {
+      "id": "missing-argument-retains-X",
+      "script": "\\X2\\QA\\+1",
+      "expectedUnits": [
+        65
+      ],
+      "expectedRegisters": {
+        "1": 2
+      }
+    },
+    {
+      "id": "unknown-valid-command-resets-X",
+      "script": "\\X2\\Q1\\+1",
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "1": 1
+      }
+    },
+    {
+      "id": "uppercase-I-not-indirect-modifier",
+      "script": "\\XI2",
+      "expectedUnits": [
+        73,
+        50
+      ]
+    },
+    {
+      "id": "hex-argument-two-digits",
+      "script": "\\X\\ff\\=0",
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 255
+      }
+    },
+    {
+      "id": "hex-argument-uppercase-accepted",
+      "script": "\\X\\FF\\=0",
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 255
+      }
+    },
+    {
+      "id": "arith-default-operand-one",
+      "script": "\\+0\\*1\\-2",
+      "registers": [
+        4,
+        5,
+        7
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 5,
+        "1": 5,
+        "2": 6
+      }
+    },
+    {
+      "id": "arith-valid-U-wins-X",
+      "script": "\\U2\\X7\\+0",
+      "registers": [
+        1,
+        0,
+        9
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 10
+      }
+    },
+    {
+      "id": "Ui-selects-register-index-indirectly",
+      "script": "\\Ui1\\+0",
+      "registers": [
+        1,
+        2,
+        8
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 9
+      }
+    },
+    {
+      "id": "Xi-negative-falls-back-to-one",
+      "script": "\\Xi2\\+0",
+      "registers": [
+        7,
+        0,
+        -2
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 8
+      }
+    },
+    {
+      "id": "arith-temporaries-reset-after-command",
+      "script": "\\X7\\+0\\+0",
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 8
+      }
+    },
+    {
+      "id": "wrap-signed32",
+      "script": "\\+0",
+      "registers": [
+        2147483647
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": -2147483648
+      }
+    },
+    {
+      "id": "signed-divide-toward-zero",
+      "script": "\\X2\\/0",
+      "registers": [
+        -7
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": -3
+      }
+    },
+    {
+      "id": "signed-remainder-dividend-sign",
+      "script": "\\X2\\#0",
+      "registers": [
+        -7
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": -1
+      }
+    },
+    {
+      "id": "divide-zero-explicit-zero",
+      "script": "\\X0\\/0",
+      "registers": [
+        7
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 0
+      }
+    },
+    {
+      "id": "modulo-zero-explicit-zero",
+      "script": "\\X0\\#0",
+      "registers": [
+        7
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 0
+      }
+    },
+    {
+      "id": "shift-count-mod32",
+      "script": "\\X\\20\\<0",
+      "registers": [
+        7
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 7
+      }
+    },
+    {
+      "id": "right-shift-signed",
+      "script": "\\>0",
+      "registers": [
+        -3
+      ],
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": -2
+      }
+    },
+    {
+      "id": "unary-ignores-but-consumes-X",
+      "script": "\\X7\\!0\\+1",
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 1,
+        "1": 1
+      }
+    },
+    {
+      "id": "invalid-register-write-not-persistent",
+      "script": "\\X7\\=\\0a\\+0",
+      "expectedUnits": [],
+      "expectedRegisters": {
+        "0": 1
+      }
+    },
+    {
+      "id": "F-default-IDS-bounded-known-vector",
+      "script": "123456789\\L0\\F0",
+      "expectedUnits": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57
+      ],
+      "expectedRegisters": {
+        "0": 12739
+      }
+    },
+    {
+      "id": "F-XOR-full-seed-low-byte-input",
+      "script": "A\\L0\\U1\\F0",
+      "registers": [
+        305419896
+      ],
+      "expectedUnits": [
+        65
+      ],
+      "expectedRegisters": {
+        "0": 305419833
+      }
+    },
+    {
+      "id": "F-ADD-low-byte-not-full-unit",
+      "script": "\\ffA\\L0\\U2\\F0",
+      "registers": [
+        -1
+      ],
+      "expectedUnits": [
+        255,
+        65
+      ],
+      "expectedRegisters": {
+        "0": 319
+      }
+    },
+    {
+      "id": "F-only-active-suffix",
+      "script": "abc\\L2\\X1\\U2\\F0",
+      "expectedUnits": [
+        97,
+        98,
+        99
+      ],
+      "expectedRegisters": {
+        "0": 98
+      }
+    },
+    {
+      "id": "F-at-end-does-not-read-future-input",
+      "script": "a\\U2\\F0bc",
+      "registers": [
+        7
+      ],
+      "expectedUnits": [
+        97,
+        98,
+        99
+      ],
+      "expectedRegisters": {
+        "0": 7
+      }
+    },
+    {
+      "id": "F-CRC16-vector",
+      "script": "123456789\\L0\\U3\\F0",
+      "registers": [
+        65535,
+        40961
+      ],
+      "expectedUnits": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57
+      ],
+      "expectedRegisters": {
+        "0": 19255
+      }
+    },
+    {
+      "id": "F-CRC16-discards-high-seed-and-polynomial-bits",
+      "script": "123456789\\L0\\U3\\F0",
+      "registers": [
+        -1,
+        305438721
+      ],
+      "expectedUnits": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57
+      ],
+      "expectedRegisters": {
+        "0": 19255
+      }
+    },
+    {
+      "id": "F-register9-next-polynomial-register-invalid",
+      "script": "A\\L0\\U4\\F9",
+      "registers": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expectedUnits": [
+        65
+      ],
+      "expectedRegisters": {
+        "9": 0
+      }
+    },
+    {
+      "id": "F-CRC32-no-final-complement",
+      "script": "123456789\\L0\\U4\\F0",
+      "registers": [
+        -1,
+        -306674912
+      ],
+      "expectedUnits": [
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57
+      ],
+      "expectedRegisters": {
+        "0": 873187033
+      }
+    },
+    {
+      "id": "F-zero-span-IDS-resets-seed",
+      "script": "a\\L0\\X0\\F0",
+      "registers": [
+        99
+      ],
+      "expectedUnits": [
+        97
+      ],
+      "expectedRegisters": {
+        "0": 0
+      }
+    },
+    {
+      "id": "F-zero-span-add-retains-seed",
+      "script": "a\\L0\\X0\\U2\\F0",
+      "registers": [
+        99
+      ],
+      "expectedUnits": [
+        97
+      ],
+      "expectedRegisters": {
+        "0": 99
+      }
+    },
+    {
+      "id": "F-invalid-mode-defaults-IDS",
+      "script": "A\\L0\\U9\\F0",
+      "expectedUnits": [
+        65
+      ],
+      "expectedRegisters": {
+        "0": 22757
+      }
+    },
+    {
+      "id": "H-equal-true-preserves-prefix",
+      "script": "a\\He0b",
+      "expectedUnits": [
+        97
+      ],
+      "expectedHalted": true
+    },
+    {
+      "id": "H-not-equal-false-continues",
+      "script": "a\\Hn0b",
+      "expectedUnits": [
+        97,
+        98
+      ],
+      "expectedHalted": false
+    },
+    {
+      "id": "H-signed-less",
+      "script": "a\\Hl0b",
+      "registers": [
+        -1
+      ],
+      "expectedUnits": [
+        97
+      ],
+      "expectedHalted": true
+    },
+    {
+      "id": "H-signed-less-equal",
+      "script": "a\\X2\\Hm0b",
+      "registers": [
+        2
+      ],
+      "expectedUnits": [
+        97
+      ],
+      "expectedHalted": true
+    },
+    {
+      "id": "H-signed-greater",
+      "script": "a\\X2\\Hg0b",
+      "registers": [
+        3
+      ],
+      "expectedUnits": [
+        97
+      ],
+      "expectedHalted": true
+    },
+    {
+      "id": "H-signed-greater-equal-U-wins",
+      "script": "a\\U1\\X9\\Hh0b",
+      "registers": [
+        2,
+        2
+      ],
+      "expectedUnits": [
+        97
+      ],
+      "expectedHalted": true
+    },
+    {
+      "id": "H-no-modifier-does-not-halt",
+      "script": "a\\H0b",
+      "expectedUnits": [
+        97,
+        98
+      ],
+      "expectedHalted": false
+    },
+    {
+      "id": "H-unknown-modifier-does-not-halt",
+      "script": "a\\Hk0b",
+      "expectedUnits": [
+        97,
+        98
+      ],
+      "expectedHalted": false
+    }
+  ],
+  "formatCases": [
+    {
+      "id": "string-right-width-precision",
+      "kind": "text",
+      "format": "[%6.3s]",
+      "value": "WXYZ",
+      "expectedExpanded": "[   WXY]"
+    },
+    {
+      "id": "string-left-width-precision",
+      "kind": "text",
+      "format": "[%-6.3s]",
+      "value": "WXYZ",
+      "expectedExpanded": "[WXY   ]"
+    },
+    {
+      "id": "string-percent-escape",
+      "kind": "text",
+      "format": "%%:%s",
+      "value": "Z",
+      "expectedExpanded": "%:Z"
+    },
+    {
+      "id": "string-value-stops-at-NUL",
+      "kind": "text",
+      "format": "<%s>",
+      "value": "a\u0000b",
+      "expectedExpanded": "<a>"
+    },
+    {
+      "id": "expanded-value-commands-are-processed",
+      "kind": "text",
+      "format": "[%s]",
+      "value": "\\X3\\+0",
+      "expectedExpanded": "[\\X3\\+0]",
+      "expectedUnits": [
+        91,
+        93
+      ],
+      "expectedRegister0": 3
+    },
+    {
+      "id": "binary-four-little-endian-bytes",
+      "kind": "binary",
+      "format": "<%s>",
+      "value": 305419896,
+      "expectedExpanded": "<\\78\\56\\34\\12>",
+      "expectedUnits": [
+        60,
+        120,
+        86,
+        52,
+        18,
+        62
+      ]
+    },
+    {
+      "id": "binary-preserves-NUL-byte",
+      "kind": "binary",
+      "format": "%s",
+      "value": 256,
+      "expectedExpanded": "\\00\\01\\00\\00",
+      "expectedUnits": [
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "binary-width-is-not-recognized",
+      "kind": "binary",
+      "format": "%4s",
+      "value": 1,
+      "expectedExpanded": "%4s",
+      "expectedUnits": [
+        37,
+        52,
+        115
+      ]
+    },
+    {
+      "id": "binary-percent-percent-s-is-not-printf",
+      "kind": "binary",
+      "format": "%%s",
+      "value": 1,
+      "expectedExpanded": "%\\01\\00\\00\\00",
+      "expectedUnits": [
+        37,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "binary-multiple-exact-placeholders",
+      "kind": "binary",
+      "format": "%s:%s",
+      "value": 1,
+      "expectedExpanded": "\\01\\00\\00\\00:\\01\\00\\00\\00",
+      "expectedUnits": [
+        1,
+        0,
+        0,
+        0,
+        58,
+        1,
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "selectorCases": [
+    {
+      "line": "1[%s]",
+      "defaultGroup": 20,
+      "expected": {
+        "group": 20,
+        "variable": 1,
+        "format": "[%s]"
+      }
+    },
+    {
+      "line": "\\14\\10%s",
+      "defaultGroup": 17,
+      "expected": {
+        "group": 20,
+        "variable": 16,
+        "format": "%s"
+      }
+    },
+    {
+      "line": "\\110raw",
+      "defaultGroup": 20,
+      "expected": {
+        "group": 17,
+        "variable": 0,
+        "format": "raw"
+      }
+    },
+    {
+      "line": "12tail",
+      "defaultGroup": 20,
+      "expected": {
+        "group": 20,
+        "variable": 1,
+        "format": "2tail"
+      }
+    },
+    {
+      "line": "x%s",
+      "defaultGroup": 20,
+      "expected": {
+        "skip": true
+      }
+    },
+    {
+      "line": "\\14x",
+      "defaultGroup": 17,
+      "expected": {
+        "skip": true
+      }
+    }
+  ],
+  "pageCases": [
+    {
+      "id": "unknown-header-retains-current-page",
+      "lines": [
+        ";;Results[2]",
+        "0AA",
+        ";;Unknown[3]",
+        "0BB"
+      ],
+      "expected": [
+        {
+          "key": "18:2",
+          "lines": [
+            "0AA",
+            "0BB"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duplicate-page-appends-and-alias-name-matches",
+      "lines": [
+        ";;Results[2]",
+        "0AA",
+        ";;Result[2]",
+        "0BB"
+      ],
+      "expected": [
+        {
+          "key": "18:2",
+          "lines": [
+            "0AA",
+            "0BB"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "header-spelling-is-case-sensitive",
+      "lines": [
+        ";;results",
+        "0AA",
+        ";;Results",
+        "0BB"
+      ],
+      "expected": [
+        {
+          "key": "18:0",
+          "lines": [
+            "0BB"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page-number-prefix-and-no-close-required",
+      "lines": [
+        ";;Started[12tail",
+        "0AA"
+      ],
+      "expected": [
+        {
+          "key": "15:12",
+          "lines": [
+            "0AA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page-scan-failure-uses-zero",
+      "lines": [
+        ";;Started[x]",
+        "0AA"
+      ],
+      "expected": [
+        {
+          "key": "15:0",
+          "lines": [
+            "0AA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "one-unit-lines-ignored-and-semicolon-comments",
+      "lines": [
+        ";;Results",
+        "0",
+        ";0AA",
+        "0BB"
+      ],
+      "expected": [
+        {
+          "key": "18:0",
+          "lines": [
+            "0BB"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "leading-space-is-format-data",
+      "lines": [
+        ";;Results",
+        " ;;Started",
+        "0BB"
+      ],
+      "expected": [
+        {
+          "key": "18:0",
+          "lines": [
+            " ;;Started",
+            "0BB"
+          ]
+        }
+      ]
+    }
+  ]
+}

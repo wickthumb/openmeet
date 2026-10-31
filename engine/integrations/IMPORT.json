@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "source": "OpenMeet-Implementation-Handoff-20261031.zip",
+  "sourceSha256": "020216bc8e5ce6507cac815dc17826e7d58950bf1f0d78b9a845b4a937ca1aff",
+  "scope": "User-supplied independent backend implementations. Offline evidence; device validation pending.",
+  "files": [
+    {
+      "path": "camera-link/src/capture-udp.cjs",
+      "sha256": "41f2040b660c73db730ba4de4817d62722963082a77ce2943499cb1bdcca42a3",
+      "bytes": 6693
+    },
+    {
+      "path": "camera-link/src/index.cjs",
+      "sha256": "71a2d13b40a5d2e70eaf204c7635d5fb30216fe141b32f4a6a0de5478b4377bb",
+      "bytes": 3712,
+      "upstreamSha256": "7296fe14dd5994ab2101f61bae84fd1363c161254894fb620e8bda41a455ade2",
+      "integrationChanges": [
+        "Expose framing buffer state for explicit transport-drain observations."
+      ]
+    },
+    {
+      "path": "camera-link/src/node-transport.cjs",
+      "sha256": "b4a230b4b57d7487404bbdc2e607bf82f7375c9ba1c0d1844933f8a4a2735a47",
+      "bytes": 4571,
+      "upstreamSha256": "ee6ef36d70115800523b25d68bbb66f8ac84ff76bbc26b83daf494c2bcd7e724",
+      "integrationChanges": [
+        "Add cancellable unacknowledged datagram sends for explicit clock-sample operations."
+      ]
+    },
+    {
+      "path": "camera-link/src/passive-identity.cjs",
+      "sha256": "704cbf392d785b62d8a2ca58e143aaa967b9d54870ef4b60f1b16e0c2d1e5250",
+      "bytes": 2954
+    },
+    {
+      "path": "camera-link/src/race-start.cjs",
+      "sha256": "70c1687c8a7a9da36a6f6a9da3a9ae4f64e491fdbea7f4c926e16363c1465ef2",
+      "bytes": 4337
+    },
+    {
+      "path": "camera-link/src/received-block.cjs",
+      "sha256": "7dbab3a9bd10141bb00213161b89048ea7eaa9773fcb8aa42a5fa1b76234ae9f",
+      "bytes": 2135
+    },
+    {
+      "path": "camera-link/src/session.cjs",
+      "sha256": "85cdd805c7eaf55a37d88e7b960113c9d3cffa3c17da7dd642f1a14abfd02466",
+      "bytes": 17668,
+      "upstreamSha256": "65c3ca6e9b41a75cc9ac1d6dd93a3814efa655884442de7363a84d1ca208b519",
+      "integrationChanges": [
+        "Release cancellation handlers after each operation.",
+        "Add read-only configuration/identity, explicit UDP chunk retrieval, alignment mode, sample operations and framing diagnostics.",
+        "Keep uncertain command outcomes and physical acquisition completeness separate from local success."
+      ]
+    },
+    {
+      "path": "camera-link/src/start-status.cjs",
+      "sha256": "83483425c37373832ab185ff3b91cf747034736e2486f584be8d4181c8f94752",
+      "bytes": 2646
+    },
+    {
+      "path": "scoreboard/src/formatter.cjs",
+      "sha256": "0ea6de9d9ef4ad6755e281f6d328fa4b7c364785c38b1df2dca16909a5d48245",
+      "bytes": 11860
+    },
+    {
+      "path": "scoreboard/src/node-tcp.cjs",
+      "sha256": "2186ae1c96cb82379f75292a13d200af11f6e150011a2dc9cbb7108118fa568b",
+      "bytes": 7477
+    },
+    {
+      "path": "scoreboard/src/output-plan.cjs",
+      "sha256": "96a4cdbbe5ee09bff5935f3a439721b981030a7c94e0bb750951b3f226426458",
+      "bytes": 4277
+    },
+    {
+      "path": "scoreboard/src/tcp-profile.cjs",
+      "sha256": "abc2393cc56f8863faaba7d7f2eebf43bba47f67c83f35af7cc7da0113640803",
+      "bytes": 3449
+    },
+    {
+      "path": "src/ppl.cjs",
+      "sha256": "c1c33c81182bc542b76d945fc47dbc052282f002288a1444b1bfe07a27dafa3d",
+      "bytes": 5633
+    },
+    {
+      "path": "src/evt.cjs",
+      "sha256": "792d5fcb12abea2d5dcb91b1e02184418dce08d57d204df1634f822bf7cafb94",
+      "bytes": 5682
+    },
+    {
+      "path": "src/sch.cjs",
+      "sha256": "e02fe15000ec0b8c8e50723730209125a1d0fbe22c03a291e45878a626a84d55",
+      "bytes": 8218
+    },
+    {
+      "path": "src/result.cjs",
+      "sha256": "819d7e8848d7baee5a8d544301aa368d1a216d4a62f82e98ce0031690f1805e1",
+      "bytes": 4576
+    },
+    {
+      "path": "src/time.cjs",
+      "sha256": "bef6f3a63a8b390fc4a34a31170d9b824148166493701297c92e7d55d1898958",
+      "bytes": 5857
+    },
+    {
+      "path": "src/still.cjs",
+      "sha256": "e1b7ac24400cd1129963d789902444639c8e277a42a25cb6ec053515381a5383",
+      "bytes": 9584
+    },
+    {
+      "path": "camera-link/test/session.test.cjs",
+      "sha256": "027c7e912039d05aabe0634019b62e90200cbe4fd6e760a13a45f21e882e2f19",
+      "bytes": 27554
+    },
+    {
+      "path": "camera-link/test/node-transport.test.cjs",
+      "sha256": "f3c24f5b89106a84dc96e5aeea6ec2fb66d63f29444524571766e5ef363b5692",
+      "bytes": 9069
+    },
+    {
+      "path": "camera-link/test/passive-identity.test.cjs",
+      "sha256": "52ddad9695ebb0e412d8ace5789098399d0b2a6e5366a366c915139ca3a83e8c",
+      "bytes": 5949
+    },
+    {
+      "path": "scoreboard/test/node-tcp.test.cjs",
+      "sha256": "f009c5d7bf0ae0a7fee8c4e858dab5172280b2be380a542d6efa056550e3c18d",
+      "bytes": 13058
+    },
+    {
+      "path": "camera-link/test/capture-udp.test.cjs",
+      "sha256": "a3bf4fdccb989476f91258bbfb3ab8e4bdc3da66ab049626d33d0a4d22956d13",
+      "bytes": 13522,
+      "upstreamSha256": "a438632021b40b565d67a57e922c5f9fb004079d5f2624b47615f4448e1e25f4",
+      "integrationChanges": [
+        "Resolve fixtures relative to the test file for any working directory."
+      ]
+    },
+    {
+      "path": "camera-link/test/core.test.cjs",
+      "sha256": "9252e942e077b1788b1594a48399fa986e41985f78dcf66f304ae967fb4bba76",
+      "bytes": 7542
+    },
+    {
+      "path": "camera-link/test/received-block.test.cjs",
+      "sha256": "23e4c8028d29cca746124d21192451dff41487cf9b2173f330e26b3c71da1999",
+      "bytes": 5535
+    },
+    {
+      "path": "camera-link/test/start.test.cjs",
+      "sha256": "96f88b95da52e1e5a3ed04c89946be1292edc222d93fb9764d1a749465a5d45e",
+      "bytes": 7855,
+      "upstreamSha256": "433d147b895234d60cbd6c356819867bd89a7ac8f6743c7633694062fcf99c50",
+      "integrationChanges": [
+        "Resolve fixtures relative to the test file for any working directory."
+      ]
+    },
+    {
+      "path": "scoreboard/test/scoreboard.test.cjs",
+      "sha256": "672a9c6f7c767991d44c25a28f49c78b02b13297c04d24edbb52c9d48db47635",
+      "bytes": 15372
+    },
+    {
+      "path": "scoreboard/test/tcp-profile.test.cjs",
+      "sha256": "4edd9bd6657ebbf06f8e7e25a73876e03d582167b282b7bed84331b93b3b2b29",
+      "bytes": 2158
+    },
+    {
+      "path": "requirements/CAMERA-CORE-v1/OFFLINE-FIXTURES-DRAFT.json",
+      "sha256": "1f25e5bb2c5e014392fe601a3af25204546440809cc097a5922817ce321f86d5",
+      "bytes": 2341
+    },
+    {
+      "path": "requirements/CAMERA-START-v1/AUTHORED-STATUS-EVENT-VECTORS.json",
+      "sha256": "8cbeec901071f4385c16632314e5cc720bbf856830269ff8f7482509e48697bd",
+      "bytes": 10823,
+      "upstreamSha256": "1c53593803c3cf4b849f878bac0553e9987f8db2c489f1677131ec9494904b82",
+      "integrationChanges": [
+        "Neutral terminology in narrative fixture annotations; wire vectors unchanged."
+      ]
+    },
+    {
+      "path": "requirements/CAMERA-CAPTURE-v1/FIXED-EXAMPLES-v2.json",
+      "sha256": "b94c7ea0fc0733ac6d670c1c9e5c3b52cd98fc61a3c03de40fc73bc800d5e62f",
+      "bytes": 23519
+    },
+    {
+      "path": "requirements/CAMERA-CAPTURE-v1/INTEGRATION-PCAP-PAIR-v1.json",
+      "sha256": "ba2dc713ad025fceca5aa245c5ff1f0548c21746ac9d402999070704c0a179de",
+      "bytes": 2687
+    },
+    {
+      "path": "requirements/CAMERA-BLOCK-v1/MANIFEST.json",
+      "sha256": "b629bf41e8a24812e6fac95284122eced11b499e5676cbe09af10e7eb9c6f443",
+      "bytes": 1049
+    },
+    {
+      "path": "requirements/CAMERA-BLOCK-v1/RECEIVED-BLOCK-CANDIDATE-v1.txt",
+      "sha256": "308dbf31812943e33167f4bb0755426017c6c6c42d35513529f63c8a954d58ed",
+      "bytes": 3142
+    },
+    {
+      "path": "requirements/CAMERA-BLOCK-v1/RECEIVED-BLOCK-API-SUPPLEMENT-v1.txt",
+      "sha256": "2ed8e514b70f5554263fbb6c8a5207424ab60b9c5eb53ce9d2f80112a6408958",
+      "bytes": 2519
+    },
+    {
+      "path": "requirements/CAMERA-BLOCK-v1/AUTHORED-BLOCK-CASES-v1.json",
+      "sha256": "f2a9441c8adcf2448a8dc56854ec4787e4db6c955f43dce7fd3bb8b3c1544b8f",
+      "bytes": 33506
+    },
+    {
+      "path": "requirements/SCOREBOARD-CORE-v1/engine-fixtures-final.json",
+      "sha256": "d868d5e23b44afdeb9f1af47547a24ced2c6b140fbea9174f046c334e108feb6",
+      "bytes": 15465
+    },
+    {
+      "path": "requirements/SCOREBOARD-CORE-v1/scoreboard-operand-fixtures.json",
+      "sha256": "85a345ff8de407979c29b9024babcec9df609d486a7b3c620d8c86cf6aa79555",
+      "bytes": 8416
+    },
+    {
+      "path": "requirements/SCOREBOARD-CORE-v1/scoreboard-model-fixtures.json",
+      "sha256": "d2fe45a94c00dd31566063f46d3844878ef9ece8cbe312576bdf045cb5ac6b5c",
+      "bytes": 1408
+    },
+    {
+      "path": "requirements/SCOREBOARD-CORE-v1/SCOREBOARD-INTEGRATION-CASES.json",
+      "sha256": "b9a08006aca212296d0029a952220dffdb15a9077f31d64939876a1ef52cb35a",
+      "bytes": 25479
+    },
+    {
+      "path": "requirements/SCOREBOARD-TCP-v1/AUTHORED-TCP-OUTPUT-CASES.json",
+      "sha256": "6dc4539ce8f4623bdfc56d54cdbc985db2793e530872a155c03549312f3e83d6",
+      "bytes": 11214
+    },
+    {
+      "path": "src/profile.cjs",
+      "sha256": "0a01eb3decf9a3e787e709e2c5cb634d29f5cf5ca2085ffe7b2038d5801c8c13",
+      "bytes": 5027
+    }
+  ],
+  "coverage": "See docs/backend-handoff-coverage.md for runtime adapters, tests, provisional numerical policies and external validation boundaries."
+}

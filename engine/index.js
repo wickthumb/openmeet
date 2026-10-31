@@ -19,3 +19,26 @@ export {
 export * from './scoreboard/index.js';
 
 export { renderLaneGuides } from './capture/lane-guides.js';
+export { createNetworkCameraService } from './cameras/network.js';
+export { networkCameraProtocol, meetDataProtocol, scoreboardWireProtocol } from './integrations/index.js';
+export { settingsProtocol } from './integrations/index.js';
+export { createBackendIntegrationService } from './integrations/service.js';
+export * from './cameras/configuration.js';
+export * from './cameras/parameters.js';
+export * from './cameras/pixels.js';
+export * from './cameras/image-stream.js';
+export * from './cameras/control.js';
+export * from './cameras/clock-sync.js';
+export * from './cameras/replay-recording.js';
+export * from './cameras/reconstruction.js';
+export * from './capture/coordinates.js';
+export {createWireScoreboardService} from './scoreboard/wire-service.js';
+
+export * from './integrations/archive.js';
+export * from './integrations/weather.js';
+export * from './integrations/remote.js';
+export * from './meetlink/extended.js';
+export * from './capture/media.js';
+export * from './capture/media-codec.js';
+export * from './integrations/remote-capture.js';
+export * from './timing/value-format.js';
