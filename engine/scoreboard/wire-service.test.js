@@ -43,7 +43,9 @@ test('TCP listen output waits for the board, writes diagnostics and releases the
   const reservation=createServer();await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));const port=reservation.address().port;await new Promise(resolve=>reservation.close(resolve));
   const service=createWireScoreboardService({timers:fakeTimers()});t.after(()=>service.closeAll());service.configure({id:'listen',profile:{kind:'tcp-server',host:'127.0.0.1',peerAddress:'127.0.0.1',port},script:SCOREBOARD_SCRIPT,bindings:[],bindingProfile:'standard',startPaused:true});
   await service.connect({id:'listen'});assert.equal(service.list()[0].transport.state,'listening');await assert.rejects(service.setMode({id:'listen',mode:'pattern'}),{code:'ERR_SCOREBOARD_WAITING_FOR_PEER'});
-  const peer=connect(port,'127.0.0.1');peer.on('error',()=>{});t.after(()=>peer.destroy());await once(peer,'connect');const received=once(peer,'data');await service.setMode({id:'listen',mode:'pattern'});assert.equal((await received)[0].toString(),'444\r\n');
+  const peer=connect(port,'127.0.0.1');peer.on('error',()=>{});t.after(()=>peer.destroy());await once(peer,'connect');
+  const deadline=Date.now()+2000;while(service.list()[0].transport.state!=='connected'&&Date.now()<deadline)await sleep(2);assert.equal(service.list()[0].transport.state,'connected');
+  const received=once(peer,'data',{signal:AbortSignal.timeout(2000)});await service.setMode({id:'listen',mode:'pattern'});assert.equal((await received)[0].toString(),'444\r\n');
   const closed=once(peer,'close');await service.closeAll();await closed;assert.deepEqual(service.list(),[]);
 });
 test('UDP broadcast bind is cancelled when its owner closes',async()=>{
