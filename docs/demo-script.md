@@ -1,16 +1,16 @@
 # OpenMeet demo: run the race, keep the meet moving
 
-This walkthrough uses the current desktop prototype. Camera inputs are simulated; the bundled finish service echoes simulator truth and is visibly labelled **STAND-IN**. It demonstrates the operator workflow, not model accuracy. Proprietary timing and crop models are separate services and are not included in the repository or installers.
+This walkthrough uses the current desktop prototype. Camera inputs are simulated; the bundled finish service echoes simulator truth and is visibly labelled **STAND-IN**. It demonstrates the operator workflow, not model accuracy. Timing and learned occlusion models remain separate services. The approved empty-span cropper is bundled for local CPU inference.
 
 ## 1. Load the meet
 
-Open **Meet Link** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied simulator demo meet. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
+Open **Meet** and select a folder containing `lynx.evt`, `lynx.ppl` and `lynx.sch`, or open the separately supplied **OpenMeet demo**. The schedule and lane roster come from those files. Use a fresh meet folder for testing.
 
 Open **Camera setup**, select a camera and choose **Open alignment** to preview simulated input before a race. **Alignment** adds a center crosshair; **Overlays** lets you position lane guides. Stop the preview to keep a still image for editing, then **Return to race** or select **Run**. Setup does not start a race, record start triggers or write a race capture.
 
 ## 2. Capture without losing control
 
-Use **Meet** to find an event, heat or athlete, then open that heat in Run. Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
+Use **Schedule → Browse events** to find an event, heat or athlete, then open that heat in Run. Press **Start (SIM)**. The line-scan streams from the gun. It condenses only to a readable zoom floor, then scrolls. Suggested finishes arrive during capture. Leave **Capture options → Auto-stop** off: the camera keeps recording until the operator presses **Stop capture**, even after the replay's finish window ends.
 
 Optionally choose **After timeout** or **All runners marked** before starting another heat. These are explicit modes. A runner's status can resolve a DNS, DNF or DQ without manufacturing a finish time.
 
@@ -32,7 +32,7 @@ Use **Lanes ▾** on the line-scan or front-camera panel. On the front camera, c
 
 On the line-scan, drag a divider in the left lane column anytime. **Drag on image** optionally enables editing over the scan itself. Only that shared edge moves, resizing the lanes above and below it. **Overlays behind runners** hides guide segments where the image differs from the initial empty-track reference. Compare the toggle on and off; finish markers stay visible. This display feature is separate from the opaque lines optionally included in model-input copies.
 
-In Camera setup, name each finish location, assign the heat's timing camera, and choose the main and additional views separately. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. DNS and vacant lanes are identified in the gutter. With a configured private cropper, More → Hide empty spans shortens the displayed scan with explicit time breaks; Show all columns restores the complete recording. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
+In Camera setup, name each finish location, assign the heat's timing camera, and choose the main and additional views separately. A main zoom should show the same time window and calibrated runner region in the comparison, including when camera height, perspective or lane order differ. Sidebar review centers the same runner in both views. Both scans show the same labelled accepted and pending marks. DNS and vacant lanes are identified in the gutter. The pinned **Hide empty spans** control uses the built-in model to shorten the displayed scan with explicit time breaks; Show all columns restores the complete recording. Click either scan’s camera name to select another view; the original recorded source and finish times stay intact. Additional demo scan sources can represent another finish location, but real multi-camera capture and verified hardware synchronization are not implemented yet.
 
 ## 5. Correct an accidental start trigger
 
@@ -44,7 +44,7 @@ Physical start-sensor integration is still pending; the journal and assignment i
 
 ## 6. Save and move on
 
-The sidebar presents one main action for the current state. When every athlete has a finish or status, **Save results** writes `EEE-R-HH.lif` atomically. The next heat loads, and Auto-arm optionally arms it. Confirm AthleticLOCAL import on a test meet before relying on the integration at a real meet; result status conventions still require hands-on verification.
+The sidebar presents one main action for the current state. **Save results** writes `EEE-R-HH.lif` atomically even when review is incomplete. Confirmed times and explicit statuses are exported; unresolved athletes remain pending in the capture’s review metadata. Return to the recorded heat later to add their results; blank athletes are never assigned DNF automatically. The next heat loads, and Auto-arm optionally arms it. Confirm AthleticLOCAL import on a test meet before relying on the integration at a real meet; result status conventions still require hands-on verification.
 
 ## 7. Show the scoreboard
 

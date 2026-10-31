@@ -29,21 +29,43 @@ const pixelIndex = (image, x, y) => (image.layout === 'rows' ? y * image.width +
 // foreground would eventually burn stationary/slow objects into the background.
 export function scanBackground(image, sample = 24) {
   const n = Math.max(0, Math.min(Math.floor(sample), image.width));
-  const values = new Array(n), colors = new Uint8Array(image.height * 3);
-  const tolerance = new Uint8Array(image.height);
-  for (let y = 0; y < image.height; y++) {
-    let noise = 0;
-    for (let c = 0; c < 3; c++) {
-      for (let x = 0; x < n; x++) values[x] = image.data[pixelIndex(image, x, y) + (image.channels < 3 ? 0 : c)];
-      values.sort((a, b) => a - b);
-      const median = n ? values[n >> 1] : 0; colors[y * 3 + c] = median;
-      for (let x = 0; x < n; x++) values[x] = Math.abs(values[x] - median);
-      values.sort((a, b) => a - b);
-      if (n) noise = Math.max(noise, values[n >> 1]);
-    }
-    tolerance[y] = Math.max(18, Math.min(64, noise * 6));
+  // Empty pre-roll has a zero reference and the same minimum noise tolerance.
+  if(n===0){
+    return {colors:new Uint8Array(image.height*3),tolerance:new Uint8Array(image.height).fill(18)};
   }
-  return { colors, tolerance };
+  const {data,width,height,channels}=image;
+  const bytes=Number.isInteger(n)&&n<=0xffffffff&&Number.isInteger(width)&&Number.isInteger(height)&&Number.isInteger(channels)&&width>=0&&height>0&&channels>0
+    &&(data instanceof Uint8Array||data instanceof Uint8ClampedArray)&&data.length>=width*height*channels;
+  const gray=channels<3,step=image.layout==='rows'?channels:height*channels;
+  // One valid sample is its own upper median, with zero absolute deviation.
+  if(bytes&&n===1){
+    const colors=new Uint8Array(height*3),tolerance=new Uint8Array(height).fill(18);
+    for(let y=0;y<height;y++){
+      const src=(image.layout==='rows'?y*width:y)*channels,ref=y*3;
+      colors[ref]=data[src];colors[ref+1]=data[src+(gray?0:1)];colors[ref+2]=data[src+(gray?0:2)];
+    }
+    return {colors,tolerance};
+  }
+  // Native byte sorting is numeric. Retain the generic numeric-sort behavior
+  // for incomplete buffers, other sample types and unusual geometry.
+  const values=bytes?new Uint8Array(n):new Array(n),colors=new Uint8Array(height*3),tolerance=new Uint8Array(height);
+  const compare=bytes?undefined:(a,b)=>a-b;
+  for(let y=0;y<height;y++){
+    let noise=0;
+    const first=(image.layout==='rows'?y*width:y)*channels;
+    for(let c=0;c<(gray?1:3);c++){
+      if(bytes)for(let x=0,src=first+c;x<n;x++,src+=step)values[x]=data[src];
+      else for(let x=0;x<n;x++)values[x]=data[pixelIndex(image,x,y)+(gray?0:c)];
+      values.sort(compare);
+      const median=values[n>>1];colors[y*3+c]=median;
+      for(let x=0;x<n;x++)values[x]=Math.abs(values[x]-median);
+      values.sort(compare);noise=Math.max(noise,values[n>>1]);
+    }
+    // Grayscale and gray+alpha repeat the same median/MAD in all RGB channels.
+    if(gray)colors[y*3+1]=colors[y*3+2]=colors[y*3];
+    tolerance[y]=Math.max(18,Math.min(64,noise*6));
+  }
+  return {colors,tolerance};
 }
 
 // Bounded one-column lookahead. The newest column is provisional; the next call
@@ -66,23 +88,24 @@ function streamState(background, height) {
 
 function evidence(image, x, background, state, out) {
   const h = image.height, colors = background.colors, hist = state.hist;
+  const data=image.data,channels=image.channels,step=image.layout==='rows'?image.width*channels:channels;
+  const base=(image.layout==='rows'?x:x*h)*channels,gOffset=channels<3?0:1,bOffset=channels<3?0:2;
   // A median signed RGB residual estimates per-column exposure/colour drift.
   // This resists sparse foreground and spikes without learning noise from pre-roll.
   for (let c = 0; c < 3; c++) {
-    hist.fill(0);
-    for (let y = 0; y < h; y++) {
-      const v = image.data[pixelIndex(image, x, y) + (image.channels < 3 ? 0 : c)];
-      hist[v - colors[y * 3 + c] + 255]++;
+    hist.fill(0);let minimum=510;
+    for (let y = 0,src=base+(channels<3?0:c),ref=c; y < h; y++,src+=step,ref+=3) {
+      const residual=data[src]-colors[ref]+255;hist[residual]++;if(residual<minimum)minimum=residual;
     }
-    let count = 0, i = 0;
+    // Bins below the smallest observed residual are empty; the exact median is unchanged.
+    let count = 0, i = h?minimum:0;
     for (; i < 510; i++) { count += hist[i]; if (count > (h >> 1)) break; }
     state.offsets[c] = i - 255;
   }
-  for (let y = 0; y < h; y++) {
-    const src = pixelIndex(image, x, y), ref = y * 3;
-    const r = image.data[src] - state.offsets[0];
-    const g = image.data[src + (image.channels < 3 ? 0 : 1)] - state.offsets[1];
-    const b = image.data[src + (image.channels < 3 ? 0 : 2)] - state.offsets[2];
+  for (let y = 0,src=base,ref=0; y < h; y++,src+=step,ref+=3) {
+    const r = data[src] - state.offsets[0];
+    const g = data[src + gOffset] - state.offsets[1];
+    const b = data[src + bOffset] - state.offsets[2];
     const R = colors[ref], G = colors[ref + 1], B = colors[ref + 2];
     const delta = Math.max(Math.abs(r - R), Math.abs(g - G), Math.abs(b - B));
     const tolerance = background.tolerance[y];
@@ -90,11 +113,15 @@ function evidence(image, x, background, state, out) {
     out.weak[y] = delta > Math.max(7, tolerance / 2);
     // A neutral attenuation is evidence of shadow, not a foreground seed.
     // Leave it weak so an attached, otherwise visible limb/garment can survive.
-    const norm = R * R + G * G + B * B;
-    const gain = norm ? (r * R + g * G + b * B) / norm : 1;
-    const chroma = Math.max(Math.abs(r - gain * R), Math.abs(g - gain * G), Math.abs(b - gain * B));
-    const shadow = gain >= 0.55 && gain < 1 && chroma <= 7;
-    out.strong[y] = delta > tolerance && !shadow;
+    // Shadow classification cannot affect a pixel below the strong threshold.
+    out.strong[y] = 0;
+    if(delta > tolerance){
+      const norm = R * R + G * G + B * B;
+      const gain = norm ? (r * R + g * G + b * B) / norm : 1;
+      const chroma = Math.max(Math.abs(r - gain * R), Math.abs(g - gain * G), Math.abs(b - gain * B));
+      const shadow = gain >= 0.55 && gain < 1 && chroma <= 7;
+      out.strong[y] = !shadow;
+    }
   }
   // A five-row residual mean recovers low-contrast fabric through independent
   // noise. Require some evidence at the pixel itself to avoid expanding a clean
@@ -109,34 +136,36 @@ function evidence(image, x, background, state, out) {
   }
 }
 
+// The caller has already checked the middle pixel's strong evidence.
+function coherentEnds(a, ay, c, cy, middle, ref, threshold, height) {
+  if (!a || !c || ay < 0 || ay >= height || cy < 0 || cy >= height || !a.strong[ay] || !c.strong[cy]) return false;
+  const ad=a.delta,cd=c.delta,ai=ay*3,ci=cy*3;
+  return Math.abs(ad[ai]+middle[ref]+cd[ci])>threshold
+    || Math.abs(ad[ai+1]+middle[ref+1]+cd[ci+1])>threshold
+    || Math.abs(ad[ai+2]+middle[ref+2]+cd[ci+2])>threshold;
+}
+
 function resolve(column, left, right, height, tolerance) {
-  const weak = column.weak, strong = column.strong, keep = column.keep, seed = column.seed;
+  const weak = column.weak, strong = column.strong, keep = column.keep, seed = column.seed,delta=column.delta;
   keep.fill(0); seed.fill(0);
-  const line = (a, ay, b, by, c, cy, threshold) => {
-    if (!a || !b || !c || ay < 0 || ay >= height || by < 0 || by >= height || cy < 0 || cy >= height) return false;
-    if (!a.strong[ay] || !b.strong[by] || !c.strong[cy]) return false;
-    for (let ch = 0; ch < 3; ch++) {
-      if (Math.abs(a.delta[ay * 3 + ch] + b.delta[by * 3 + ch] + c.delta[cy * 3 + ch]) > threshold * 3) return true;
-    }
-    return false;
-  };
+  const sides=left&&right;
   for (let y = 0; y < height; y++) {
     if (!strong[y]) continue;
-    const threshold = tolerance[y];
-    seed[y] = line(column, y - 1, column, y, column, y + 1, threshold)
-      || line(left, y, column, y, right, y, threshold)
-      || line(left, y - 1, column, y, right, y + 1, threshold)
-      || line(left, y + 1, column, y, right, y - 1, threshold);
+    const threshold = tolerance[y]*3,ref=y*3;
+    seed[y] = coherentEnds(column,y-1,column,y+1,delta,ref,threshold,height)
+      || (sides&&(coherentEnds(left,y,right,y,delta,ref,threshold,height)
+      || coherentEnds(left,y-1,right,y+1,delta,ref,threshold,height)
+      || coherentEnds(left,y+1,right,y-1,delta,ref,threshold,height)));
     // Rasterized one-pixel limbs form staircases rather than exact straight
     // diagonals. Require coherent support on both sides within one row.
-    if (!seed[y]) for (let a = y - 1; a <= y + 1 && !seed[y]; a++) {
-      for (let b = y - 1; b <= y + 1 && !seed[y]; b++) seed[y] = line(left, a, column, y, right, b, threshold);
+    if (!seed[y]&&sides) for (let a = y - 1; a <= y + 1 && !seed[y]; a++) {
+      for (let b = y - 1; b <= y + 1 && !seed[y]; b++) seed[y] = coherentEnds(left,a,right,b,delta,ref,threshold,height);
     }
     // A high-contrast vertical pair also supports small two-pixel details.
-    if (!seed[y]) for (const j of [y - 1, y + 1]) {
+    if (!seed[y]) for (let j=y-1;j<=y+1;j+=2) {
       if (j < 0 || j >= height || !strong[j]) continue;
       for (let c = 0; c < 3; c++) {
-        if (Math.abs(column.delta[y * 3 + c] + column.delta[j * 3 + c]) > 120) seed[y] = 1;
+        if (Math.abs(delta[ref+c] + delta[j*3+c]) > 120) seed[y] = 1;
       }
     }
   }
@@ -153,10 +182,19 @@ function resolve(column, left, right, height, tolerance) {
 }
 
 function writeColumn(target, offset, column, height) {
-  for (let y = 0; y < height; y++) {
-    const bit = offset * height + y, flag = 1 << (bit & 7);
-    if (column.keep[y]) target[bit >> 3] |= flag;
-    else target[bit >> 3] &= ~flag;
+  const keep=column.keep;
+  let bit=offset*height,y=0;
+  // Preserve neighbouring columns in partial bytes; write complete bytes once.
+  if(bit&7){
+    const shift=bit&7,n=Math.min(height,8-shift),mask=((1<<n)-1)<<shift;
+    let value=0;for(;y<n;y++)value|=keep[y]<<(shift+y);
+    target[bit>>3]=(target[bit>>3]&~mask)|value;bit+=n;
+  }
+  for(;y+7<height;y+=8,bit+=8)target[bit>>3]=keep[y]|keep[y+1]<<1|keep[y+2]<<2|keep[y+3]<<3|keep[y+4]<<4|keep[y+5]<<5|keep[y+6]<<6|keep[y+7]<<7;
+  if(y<height){
+    const mask=(1<<(height-y))-1;let value=0;
+    for(let shift=0;y<height;y++,shift++)value|=keep[y]<<shift;
+    target[bit>>3]=(target[bit>>3]&~mask)|value;
   }
 }
 

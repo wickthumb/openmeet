@@ -39,7 +39,7 @@ const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++serial,
 const ev=async expression=>{const r=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||JSON.stringify(r.exceptionDetails));return r.result.value;};
 const click=selector=>ev(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e||e.disabled)throw Error('Missing enabled control '+${JSON.stringify(selector)});e.click();})()`);
 const tab=name=>ev(`(()=>{const e=[...document.querySelectorAll('#tabs button')].find(e=>e.textContent===${JSON.stringify(name)});if(!e)throw Error('Missing tab');e.click();})()`);
-const choose=async id=>{await ev(`(()=>{const e=document.querySelector('#simulationSource');if(e.disabled)throw Error('Source selector disabled');e.value=${JSON.stringify(id)};e.dispatchEvent(new Event('change'));})()`);await poll(()=>ev(`document.querySelector('#simulationSource')?.value===${JSON.stringify(id)}&&!document.querySelector('#simulationSource').disabled`),'selected source');};
+const choose=async id=>{await tab('Run');await poll(()=>ev(`!document.querySelector('#setupDialog').open`),'close setup');await ev(`(()=>{const e=document.querySelector('#quickMeet');if(e.disabled)throw Error('Meet selector disabled');e.value='source:'+${JSON.stringify(id)};e.dispatchEvent(new Event('change'));})()`);await poll(()=>ev(`document.querySelector('#quickMeet')?.value===${JSON.stringify('source:')}+${JSON.stringify(id)}&&!document.querySelector('#quickMeet').disabled`),'selected source');await tab('Settings');};
 const captureDirs=async()=>{try{return(await readdir(path.join(real.meet.dir,'openmeet/captures'),{withFileTypes:true})).filter(e=>e.isDirectory()).map(e=>path.join(real.meet.dir,'openmeet/captures',e.name));}catch{return[];}};
 try{
   const page=await poll(async()=>{try{return(await(await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(p=>p.type==='page'&&p.url.endsWith('/renderer/index.html'));}catch{return null;}},'renderer',30000);
@@ -47,15 +47,14 @@ try{
   ws.addEventListener('message',e=>{const m=JSON.parse(e.data);const p=requests.get(m.id);if(p){requests.delete(m.id);clearTimeout(p.timer);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.exception?.description||JSON.stringify(m.params));});
   await send('Runtime.enable');await send('Page.enable');
   await poll(()=>ev(`!!window.openmeet&&!!document.querySelector('#ctl .go')`),'app ready');
-  await tab('Settings');await poll(()=>ev(`document.querySelector('#simulationSource')?.options.length===3&&!document.querySelector('#simulationSource').disabled`),'catalog');
-  assert.equal(await ev(`document.querySelector('#simulationSource').value`),'builtin');
-  await choose(sourceId(ttpDir));assert.match(await ev(`document.querySelector('#simulationSource').selectedOptions[0].textContent`),/TTP simulator/);
-  await choose('builtin');
+  await tab('Settings');await poll(()=>ev(`document.querySelector('#simulationSource')?.options.length===1&&!document.querySelector('#simulationSource').disabled`),'catalog');
+  assert.equal(await ev(`document.querySelector('#simulationSource').value`),sourceId(ttpDir));assert.equal(await ev(`document.querySelector('#simulationSource').selectedOptions[0].textContent`),'OpenMeet demo');assert.equal(await ev(`document.querySelector('#simulationSource option[value="builtin"]')`),null);
+  await choose(sourceId(ttpDir));assert.match(await ev(`document.querySelector('#simulationSource').selectedOptions[0].textContent`),/OpenMeet demo/);
   await choose(sourceId(realDir));
   assert.match(await ev(`document.querySelector('#simulationSources').textContent`),/Real-recorded still timing source/);
   // Open every supplied recording through the visible Meet navigation and check its roster.
   for(const h of real.heats){
-    await tab('Meet');
+    await click('#browseEvents');
     const index=real.meet.parsed.events.filter(e=>e.entries.some(x=>x.lane)).findIndex(e=>String(e.event)===String(h.event)&&e.round===h.round&&e.heat===h.heat);
     await click(`[data-meet-heat="${index}"]`);
     const entry=real.meet.parsed.events[index].entries.find(e=>e.lane);
@@ -67,7 +66,7 @@ try{
   for(const h of real.heats){
     const events=real.meet.parsed.events.filter(e=>e.entries.some(x=>x.lane));
     const index=events.findIndex(e=>String(e.event)===String(h.event)&&e.round===h.round&&e.heat===h.heat),event=events[index];
-    await tab('Meet');await click(`[data-meet-heat="${index}"]`);
+    await click('#browseEvents');await click(`[data-meet-heat="${index}"]`);
     for(const entry of event.entries){
       const text=await ev(`document.querySelector('#list').textContent`);
       assert.ok(text.includes(entry.last)&&text.includes(entry.first)&&text.includes(entry.affiliation));verifiedEntries++;
@@ -89,7 +88,7 @@ try{
       assert.match(await ev(`document.querySelector('#ctl .go').textContent`),/Stop capture/);
     }
     await tab('Settings');assert.equal(await ev(`document.querySelector('#simulationSource').disabled`),true);
-    assert.equal(await ev(`document.querySelector('#importRealSource').disabled`),true);
+    assert.equal(await ev(`document.querySelector('#importTtpSource').disabled`),true);
     const rejected=await ev(`window.openmeet.call('demo.load',{id:'builtin'}).then(()=>false,e=>e.message)`);assert.match(rejected,/Stop capture/);
     await tab('Run');await click('#ctl .go');await poll(()=>ev(`document.querySelector('#ev .state').textContent==='REVIEW'`),'manual stop');
     const store=openCaptureStore(capDir,{readOnly:true});
@@ -122,9 +121,9 @@ try{
     console.log(`PASS: E${h.event} R${h.round} H${h.heat}, ${event.entries.length} roster entries, ${rawMeta.truth?.length||0} exact recorded references, unchanged pixels/times, manual stop`);
   }
   console.log('Verified references:',verifiedReferences,'roster entries:',verifiedEntries);
-  await tab('Settings');await choose('builtin');await choose(sourceId(realDir));
+  await choose(sourceId(ttpDir));await choose(sourceId(realDir));
   await send('Page.reload');await poll(()=>ev(`document.querySelector('#scanCameraLabel')?.textContent.includes('Recorded')||document.querySelector('#ctl .tag')?.textContent==='REPLAY'`),'source restored');
-  await tab('Settings');assert.equal(await ev(`document.querySelector('#simulationSource').value`),sourceId(realDir));
+  await tab('Settings');assert.equal(await ev(`document.querySelector('#simulationSource').value`),'');assert.equal(await ev(`document.querySelector('#quickMeet').value`),'source:'+sourceId(realDir));
   assert.deepEqual(errors,[]);
   const screenshot=await send('Page.captureScreenshot',{format:'png'});await writeFile(path.join(root,'sources.png'),Buffer.from(screenshot.data,'base64'));
   console.log('PASS: source choices, all recorded rosters, absent cameras, capture lock, manual tail, exact pixels/times and reload');

@@ -11,6 +11,8 @@ import { execFile } from 'node:child_process';
 import { validateCropResult } from './renderer/column-map.mjs';
 import { occlusionInfo, requestOcclusion } from './private-occlusion.mjs';
 import { SOURCE_TYPES, simulationCatalog, sourceId, readReplayFolder, publicReplay, recordedResults } from './simulation-sources.mjs';
+import { createMeetBackup } from './meet-backup.mjs';
+import {nativeCrop,nativeCropInfo} from './autocrop/index.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const userData = process.argv[2] || here;
@@ -54,6 +56,8 @@ async function writeAtomic(dir, name, text) {
   await fsp.rename(tmp, final);
   return final;
 }
+
+const meetBackup = createMeetBackup({ writeAtomic, onStatus: status => emit('backup.status', status) });
 
 // One logical capture (or one bounded preview) at a time. Each registered replay
 // camera has its own append-only native store; primary events keep their legacy shape.
@@ -103,27 +107,43 @@ const cameraConfig = cameraEngine?.createCameraConfig({
 
 // Auto-timing: the configured TTP finish service, or the labelled stand-in (simulator truth echo) on loopback.
 const locate = rel => [path.join(here, '..', rel), path.join(here, rel)].find(p => fs.existsSync(p));
-let finish = null;
+let finish = null, finishStarting = null;
 async function finishService() {
   if (finish) return finish;
-  const at = (await loadSettings()).autotiming || {};
-  const clientPath = locate('engine/autotiming/client.js');
-  if (!clientPath) throw new Error('auto-timing client missing from this build');
-  const { createFinishClient } = await import(pathToFileURL(clientPath).href);
-  const timeoutMs = at.timeoutMs || 300000;  // the real model's full stack has taken ~200 s per heat on CPU; the console stays usable meanwhile
-  if (at.baseUrl) return (finish = { client: createFinishClient({ baseUrl: at.baseUrl, apiKey: at.apiKey, timeoutMs }), stub: false, model: null });
-  const stubPath = locate('services/finish-api-stub/server.js');
-  if (!stubPath) throw new Error('no auto-timing service configured');
-  const { createStubServer } = await import(pathToFileURL(stubPath).href);
-  const server = createStubServer();
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  return (finish = { client: createFinishClient({ baseUrl, timeoutMs }), stub: true, baseUrl });
+  if (!finishStarting) finishStarting = (async () => {
+    const at = (await loadSettings()).autotiming || {};
+    const clientPath = locate('engine/autotiming/client.js');
+    if (!clientPath) throw new Error('auto-timing client missing from this build');
+    const { createFinishClient } = await import(pathToFileURL(clientPath).href);
+    const timeoutMs = at.timeoutMs || 300000;
+    if (at.baseUrl) return (finish = { client: createFinishClient({ baseUrl: at.baseUrl, apiKey: at.apiKey, timeoutMs }), stub: false, model: null });
+    const stubPath = locate('services/finish-api-stub/server.js');
+    if (!stubPath) throw new Error('no auto-timing service configured');
+    const { createStubServer } = await import(pathToFileURL(stubPath).href);
+    const server = createStubServer();
+    try {
+      await new Promise((resolve, reject) => {
+        const failed = error => reject(error);
+        server.once('error', failed);
+        server.listen(0, '127.0.0.1', () => { server.removeListener('error', failed); resolve(); });
+      });
+    } catch (error) { server.close(); throw error; }
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    return (finish = { client: createFinishClient({ baseUrl, timeoutMs }), stub: true, baseUrl, server });
+  })().catch(error => { finishStarting = null; throw error; });
+  return finishStarting;
+}
+async function closeFinishService() {
+  try { await finishStarting; } catch { /* startup already reported its error */ }
+  if (finish?.server) {
+    const server = finish.server;
+    await new Promise(resolve => { server.close(resolve); server.closeIdleConnections(); });
+  }
 }
 
 // The captured strip as a native-orientation PNG, read back from the capture store (the record, not the console's copy).
 // Columns [from, to] of the captured strip (to defaults to the latest), so a capture still being recorded can be read too.
-async function stripPng(dir, from = 0, to = null, laneGuides = null) {
+async function stripPng(dir, from = 0, to = null, laneGuides = null, includeImage = false) {
   const store = core.openCaptureStore(dir, { readOnly: true });
   try {
     const meta = store.meta(), total = store.columnCount(), rows = meta.rows, ch = meta.channels;
@@ -136,6 +156,7 @@ async function stripPng(dir, from = 0, to = null, laneGuides = null) {
     }
     return {
       png: core.encodePng(core.renderLaneGuides({ width: n, height: rows, channels: ch, data: rm },laneGuides), { filter: () => 1 }),
+      ...(includeImage?{image:{width:n,height:rows,channels:ch,data:rm}}:{}),
       rows, columns: n, channels: ch, from: a, firstRaceTime: store.raceTimeOf(a), period: meta.columnPeriod,
     };
   } finally { await store.close(); }
@@ -146,7 +167,8 @@ async function loadSettings() { try { return JSON.parse(await fsp.readFile(setti
 let settingsWrite = Promise.resolve();
 function saveSettings(patch) {
   const write = settingsWrite.then(async () => {
-    const s = { ...(await loadSettings()), ...patch };
+    const current = await loadSettings();
+    const s = { ...current, ...(typeof patch === 'function' ? patch(current) : patch) };
     await fsp.mkdir(userData, { recursive: true });
     const tmp = settingsPath + '.tmp';
     await fsp.writeFile(tmp, JSON.stringify(s, null, 2));
@@ -178,17 +200,45 @@ async function startJournal(dir) {
   return startJournals.get(key);
 }
 
+const cropRequests = new Set(), cropProcesses = new Set();
+const MAX_CROP_RESPONSE_BYTES = 64 * 1024 * 1024;
 async function cropperRequest(payload) {
   const settings=await loadSettings(),url=settings.cropServiceUrl||process.env.OPENMEET_CROP_URL;
-  if(url){const health=payload.operation==='health',response=await fetch(new URL(health?'/health':'/v1/column-ranges',url),{method:health?'GET':'POST',...(!health?{headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}:{}),signal:AbortSignal.timeout(health?3000:120000)});const result=await response.json();if(!response.ok)throw Error(result.error||'Auto-cropper request failed');return result;}
+  if(url) {
+    const health=payload.operation==='health',controller=new AbortController(),limit=health?64*1024:MAX_CROP_RESPONSE_BYTES;
+    const timer=setTimeout(()=>controller.abort(),health?3000:120000);cropRequests.add(controller);
+    try {
+      const response=await fetch(new URL(health?'/health':'/v1/column-ranges',url),{method:health?'GET':'POST',...(!health?{headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}:{}),signal:controller.signal});
+      if(Number(response.headers.get('content-length'))>limit) {
+        await response.body?.cancel().catch(()=>{});controller.abort();throw Error('Auto-cropper response exceeds its byte limit');
+      }
+      const chunks=[];let length=0;
+      if(response.body) {
+        const reader=response.body.getReader();
+        try {
+          for(;;) {
+            const {done,value}=await reader.read();if(done)break;
+            length+=value.byteLength;
+            if(length>limit){await reader.cancel().catch(()=>{});controller.abort();throw Error('Auto-cropper response exceeds its byte limit');}
+            chunks.push(value);
+          }
+        } finally { reader.releaseLock(); }
+      }
+      const result=JSON.parse(Buffer.concat(chunks,length).toString('utf8'));
+      if(!response.ok)throw Error(result.error||'Auto-cropper request failed');return result;
+    } finally { clearTimeout(timer);cropRequests.delete(controller); }
+  }
   const command=JSON.parse(process.env.OPENMEET_CROP_COMMAND||'null');
   if(!Array.isArray(command)||!command.length||command.some(a=>typeof a!=='string'))throw Error('Configure a private auto-cropper worker first');
   return new Promise((resolve,reject)=>{
-    const child=execFile(command[0],command.slice(1),{timeout:120000,maxBuffer:64*1024*1024,windowsHide:true},(error,stdout)=>{
+    const child=execFile(command[0],command.slice(1),{timeout:120000,maxBuffer:MAX_CROP_RESPONSE_BYTES,windowsHide:true},(error,stdout)=>{
+      cropProcesses.delete(child);
       try{const result=JSON.parse(stdout);if(error||result.error)reject(Error(result.error||'Private cropper worker failed'));else resolve(result);}catch{reject(Error(error?.message||'Invalid private cropper response'));}
-    });child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(payload));
+    });cropProcesses.add(child);child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(payload));
   });
 }
+const cropJobs = new Map();
+let nativeCropPreparing = false;
 
 const methods = {
   async ping() { return { ok: true, pid: process.pid, core: !!core, node: process.versions.node }; },
@@ -197,6 +247,23 @@ const methods = {
     if ((active || captureStarting || sourceChanging) && ['simulationSources', 'simulationSourceId', 'demoDir', 'meetDir'].some(k => k in patch)) throw Error('Stop capture or preview before changing simulation sources');
     return saveSettings(patch);
   },
+  async 'meet.folders.set'({ dir, kind, folder }) {
+    return changeSource(async () => {
+      if (!dir || !['output', 'backup'].includes(kind)) throw Error('Open an input folder first');
+      if (folder != null && (typeof folder !== 'string' || !path.isAbsolute(folder))) throw Error('Choose an absolute folder path');
+      const destination = folder ? await fsp.realpath(folder) : null;
+      if (destination) {
+        await fsp.access(destination, fs.constants.W_OK);
+        const settings = await loadSettings(), input = await fsp.realpath(dir);
+        const output = settings.resultsFor?.[dir] ? await fsp.realpath(settings.resultsFor[dir]) : input;
+        const backup = settings.backupFor?.[dir] ? await fsp.realpath(settings.backupFor[dir]).catch(() => path.resolve(settings.backupFor[dir])) : null;
+        if (kind === 'backup' && [input, output].includes(destination) || kind === 'output' && destination === backup) throw Error('Choose a separate folder for the backup');
+      }
+      const field = kind === 'output' ? 'resultsFor' : 'backupFor';
+      const settings = await saveSettings(current => ({ [field]: { ...current[field], [dir]: destination } }));
+      return { resultsDir: settings.resultsFor?.[dir] || null, backupDir: settings.backupFor?.[dir] || null };
+    });
+  },
   async 'demo.catalog'() { return simulationCatalog(await loadSettings()); },
   async 'demo.import'({ dir, type = 'ttp', name }) {
     return changeSource(async () => {
@@ -204,7 +271,7 @@ const methods = {
       const replay = await readReplayFolder(dir, readMeet, type);
       const catalog = simulationCatalog(await loadSettings());
       const source = { id: catalog.sources.find(s => s.path === replay.dir)?.id || sourceId(replay.dir), type:replay.type, name: String(name || replay.name), path: replay.dir };
-      const sources=catalog.sources.filter(s=>s.type!=='builtin'),index=sources.findIndex(s=>s.id===source.id);
+      const sources=catalog.sources.slice(),index=sources.findIndex(s=>s.id===source.id);
       if(index<0)sources.push(source);else sources[index]=source;
       await saveSettings({ simulationSources: sources });
       return source;
@@ -214,20 +281,19 @@ const methods = {
     return changeSource(async () => {
       const settings = await loadSettings(), catalog = simulationCatalog(settings);
       const source = id ? catalog.sources.find(s => s.id === id) : dir ? catalog.sources.find(s=>s.path===path.resolve(dir)) || { id: sourceId(dir), type, name: path.basename(dir), path: path.resolve(dir) } : catalog.sources.find(s => s.id === catalog.selectedId);
-      if (!source || (source.type !== 'builtin' && !SOURCE_TYPES.has(source.type))) throw Error('Unknown simulation source');
+      if (!source || !SOURCE_TYPES.has(source.type)) throw Error('Unknown simulation source');
       // Fully validate before replacing the meet watcher or the saved selection.
-      const replay = source.type === 'builtin' ? null : await readReplayFolder(source.path, readMeet, source.type);
-      if(replay){if(!id||source.type!==replay.type)source.name=replay.name;source.type=replay.type;}
+      const replay = await readReplayFolder(source.path, readMeet, source.type);
+      if(!id||source.type!==replay.type)source.name=replay.name;source.type=replay.type;if(source.type==='ttp')source.name='OpenMeet demo';
       if (typeof watcher === 'function') await watcher(); else if (watcher) await watcher.close();
       watcher = null;
-      if (replay) watcher = core?.watchMeetFolder
+      watcher = core?.watchMeetFolder
         ? core.watchMeetFolder(replay.meet.dir, async change => emit('meet.changed', { dir: replay.meet.dir, ...change, files: (await readMeet(replay.meet.dir)).files }))
         : watchPlain(replay.meet.dir);
-      const sources=catalog.sources.filter(s=>s.type!=='builtin'),index=sources.findIndex(s=>s.id===source.id);
-      if(replay){if(index<0)sources.push(source);else sources[index]=source;}
-      await saveSettings({ simulationSources: sources, simulationSourceId: source.id, demoDir: source.path, meetDir: replay?.meet.dir || null });
-      if (!replay) scanSources.clear();
-      return { source, ...(replay ? registerReplay(replay) : { heats: [], meet: null }) };
+      const sources=catalog.sources.slice(),index=sources.findIndex(s=>s.id===source.id);
+      if(index<0)sources.push(source);else sources[index]=source;
+      await saveSettings({ simulationSources: sources, simulationSourceId: source.id, demoDir: source.path, meetDir: replay.meet.dir });
+      return { source, ...registerReplay(replay) };
     });
   },
   async 'starts.list'({ dir }) { return (await startJournal(dir)).list(); },
@@ -242,6 +308,7 @@ const methods = {
     if (!dir) throw new Error('no folder given');
     emit('roots.add', [dir]);
     const meet = await readMeet(dir);
+    if (!meet.parsed?.events.some(event => event.entries.some(entry => entry.lane))) throw Error('No start lists found in this input folder');
     if (typeof watcher==='function')await watcher();else if(watcher)await watcher.close();
     watcher = core?.watchMeetFolder
       ? core.watchMeetFolder(dir, async change => emit('meet.changed', { dir, ...change, files: (await readMeet(dir)).files }))
@@ -249,7 +316,7 @@ const methods = {
     return meet;
   },
   // Build and write one heat's results with the engine core: {dir, heat: LifHeat, results: LifResult[]}.
-  async 'lif.save'({ dir, heat, results, captureId, review }) {
+  async 'lif.save'({ dir, meetDir, heat, results, captureId, review }) {
     if (!core) throw new Error('engine core missing from this build');
     if (!dir) throw new Error('no meet folder open');
     const name = core.lifName(heat.event, heat.round, heat.heat);
@@ -257,7 +324,11 @@ const methods = {
     if(captureId && captures.has(captureId)) await core.writeLifAtomic(captures.get(captureId).dir,name,text);
     if(captureId&&review&&captures.has(captureId))await fsp.writeFile(path.join(captures.get(captureId).dir,'review.json'),JSON.stringify(review,null,2));
     const p = await core.writeLifAtomic(dir, name, text);
-    return { path: p, name, text };
+    const capture = captures.get(captureId), input = capture?.meetDir || meetDir;
+    const backupDir = input ? (await loadSettings()).backupFor?.[input] : null;
+    if (input && backupDir) void meetBackup.run({ meetDir: input, backupDir, captureDir: capture?.dir, captureId, name, text, review });
+    const backup = input && backupDir ? { state: 'copying' } : null;
+    return { path: p, name, text, backup };
   },
   async 'camera.config.get'(params) { return cameraConfig.get(params); },
   async 'camera.location.save'(params) { return cameraConfig.saveLocation(params); },
@@ -326,7 +397,8 @@ const methods = {
       const trigger = journal?.record({ clockId: 'simulated-meet-clock', timeS: pulseMs / 1000,
         wallTimeMs: pulseMs, source: 'Simulated camera start', captureId: id }) || null;
       if (trigger) journal.assign({ heatKey: key || source.heatKey, triggerId: trigger.id, referenceTriggerId: trigger.id });
-      captures.set(id, { dir, sidecar, trigger, cameraId: source.id, sourceType: source.sourceType,
+      const backupDir = meetDir ? (await loadSettings()).backupFor?.[meetDir] : null;
+      captures.set(id, { dir, meetDir, sidecar, trigger, cameraId: source.id, sourceType: source.sourceType,
         cameraSources: source.group.map(item => ({ id: item.id, png: item.png })),
         sourceColumns: source.size.width, sourceRef: { kind: 'recorded-results', label: 'Recorded results', path: source.sidecar } });
       const group = new cameraEngine.ReplayRecorderGroup({ id, dir, primaryId: source.id, core, speed, emit, trigger, heatKey: source.heatKey, heatAssignment,
@@ -342,6 +414,7 @@ const methods = {
         if (active === current) active = null;
         const primary = snapshot.cameras.find(camera => camera.id === source.id);
         emit('capture.end', { id, columns: primary.columns });
+        if (backupDir) void meetBackup.run({ meetDir, backupDir, captureDir: dir, captureId: id });
       });
       await group.ready;
       return { id, dir, front: frontRec, trigger, ...group.snapshot() };
@@ -415,7 +488,7 @@ const methods = {
   },
   async 'autocrop.info'() {
     const settings=await loadSettings(),configured=!!(settings.cropServiceUrl||process.env.OPENMEET_CROP_URL||process.env.OPENMEET_CROP_COMMAND);
-    if(!configured)return {configured:false};
+    if(!configured)return nativeCropInfo();
     try{const info=await cropperRequest({operation:'health'});return {configured:true,ready:info.ready===true,contract:info.contract};}catch{return {configured:true,ready:false};}
   },
   async 'occlusion.info'() { return occlusionInfo(); },
@@ -435,12 +508,22 @@ const methods = {
   async 'autocrop.run'({captureId}) {
     const cap=captures.get(captureId);if(!cap)throw Error('No captured image is available');
     if(active?.id===captureId)throw Error('Stop capture before hiding empty spans');
-    const strip=await stripPng(cap.dir),digest=createHash('sha256').update(strip.png).digest('hex'),requestId=randomUUID();
-    const output=await cropperRequest({request_id:requestId,image_sha256:digest,image:{encoding:'png',data_base64:strip.png.toString('base64')},mode:'both'});
-    if(output.image_sha256!==digest||output.request_id!==requestId)throw Error('Cropper returned a different image');
-    validateCropResult(output.result,strip.columns,'storage-display');validateCropResult(output.result,strip.columns,'inference-safe');
-    const record={...output,first_column_race_time_s:strip.firstRaceTime,column_period_s:strip.period,at:new Date().toISOString()};
-    await fsp.writeFile(path.join(cap.dir,'autocrop.json'),JSON.stringify(record));return record;
+    if(cropJobs.has(captureId))return cropJobs.get(captureId);
+    const job=(async()=>{
+      const settings=await loadSettings(),external=!!(settings.cropServiceUrl||process.env.OPENMEET_CROP_URL||process.env.OPENMEET_CROP_COMMAND);
+      if(!external&&nativeCropPreparing)throw Error('Empty-span analysis is already running');
+      if(!external)nativeCropPreparing=true;
+      try {
+        const strip=await stripPng(cap.dir,0,null,null,!external),digest=createHash('sha256').update(strip.png).digest('hex'),requestId=randomUUID();
+        const output=external?await cropperRequest({request_id:requestId,image_sha256:digest,image:{encoding:'png',data_base64:strip.png.toString('base64')},mode:'both'}):{request_id:requestId,image_sha256:digest,...await nativeCrop(strip.image,{transfer:true})};
+        if(output.image_sha256!==digest||output.request_id!==requestId)throw Error('Cropper returned a different image');
+        validateCropResult(output.result,strip.columns,'storage-display');validateCropResult(output.result,strip.columns,'inference-safe');
+        const record={...output,first_column_race_time_s:strip.firstRaceTime,column_period_s:strip.period,at:new Date().toISOString()};
+        await fsp.writeFile(path.join(cap.dir,'autocrop.json'),JSON.stringify(record));return record;
+      } finally {if(!external)nativeCropPreparing=false;}
+    })();
+    cropJobs.set(captureId,job);
+    try {return await job;}finally{if(cropJobs.get(captureId)===job)cropJobs.delete(captureId);}
   },
   async 'camera.image'({ png, captureId, cameraId, includePixels = true }) {
     const cap = captures.get(captureId);
@@ -479,9 +562,10 @@ function watchPlain(dir) {
 port.on('message', async e => {
   const { id, method, params } = e.data || {};
   const fn = methods[method];
+  if(portClosed)return;
   if (!fn) return port.postMessage({ id, error: `unknown method ${method}` });
-  try { port.postMessage({ id, result: await fn(params || {}) }); }
-  catch (err) { port.postMessage({ id, error: err.message || String(err) }); }
+  try {const result=await fn(params || {});if(!portClosed)port.postMessage({id,result});}
+  catch (err) {if(!portClosed)port.postMessage({ id, error: err.message || String(err) });}
 });
 
 // ==================== SCOREBOARD V1 (engine-owned service) ====================
@@ -578,12 +662,24 @@ function stopOwnedCapture() {
   captureStartStop = true;
   if (active) { active.stop = true; active.controller.abort(); }
 }
-port.on('close', () => { closeScoreboards().catch(() => {}); });
-process.once('disconnect', () => {
-  stopOwnedCapture();
-  closeScoreboards().catch(() => {});
+let closingServices = null;
+function closeOwnedServices() {
+  return closingServices ||= (async()=>{
+    stopOwnedCapture();
+    for(const controller of cropRequests)controller.abort();
+    for(const child of cropProcesses)child.kill();
+    const ownedWatcher=watcher;watcher=null;
+    const closeWatcher=async()=>{if(typeof ownedWatcher==='function')await ownedWatcher();else await ownedWatcher?.close();};
+    await Promise.allSettled([closeWatcher(),closeScoreboards(),closeFinishService()]);
+  })();
+}
+port.on('close', () => {closeOwnedServices().catch(()=>{});});
+process.once('disconnect', () => {closeOwnedServices().catch(()=>{});});
+process.once('exit', () => {
+  for (const controller of scoreboardAgents) controller.abort();
+  for (const controller of cropRequests) controller.abort();
+  for (const child of cropProcesses) child.kill();
 });
-process.once('exit', () => { for (const controller of scoreboardAgents) controller.abort(); });
 // ========================== END SCOREBOARD V1 ================================
 
 // ==================== BILLBOARD (separate display artwork library) ============

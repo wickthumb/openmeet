@@ -1,0 +1,131 @@
+{
+  "source": "Frozen pre-audit frontOverlayAlpha output over procedural RGBA fixtures; SHA-256 covers every alpha byte.",
+  "cases": [
+    {
+      "width": 1,
+      "height": 1,
+      "seed": 1,
+      "kind": "noise",
+      "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    },
+    {
+      "width": 1,
+      "height": 1,
+      "seed": 1,
+      "kind": "runner",
+      "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    },
+    {
+      "width": 1,
+      "height": 1,
+      "seed": 1,
+      "kind": "random",
+      "sha256": "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89"
+    },
+    {
+      "width": 13,
+      "height": 10,
+      "seed": 1,
+      "kind": "noise",
+      "sha256": "e7d832bb69df53e6f74c26238b8f020e5c51ad9c18dc8c6f9f6fa9350662f7f3"
+    },
+    {
+      "width": 13,
+      "height": 10,
+      "seed": 1,
+      "kind": "runner",
+      "sha256": "58a83f7b6d2915fef31563058e4ab1839f7135c30cbbc0afe4e8f56e63cb43fa"
+    },
+    {
+      "width": 13,
+      "height": 10,
+      "seed": 1,
+      "kind": "random",
+      "sha256": "e55a5c27736a8761c8e96acec072102325e08cb2d0dbb4d4702cfe38f8ab0709"
+    },
+    {
+      "width": 80,
+      "height": 50,
+      "seed": 1,
+      "kind": "noise",
+      "sha256": "68c5f18d405dd0fb9bb038be9c3c8f56a524921d4abf748060e06567331dfbbd"
+    },
+    {
+      "width": 80,
+      "height": 50,
+      "seed": 1,
+      "kind": "runner",
+      "sha256": "deb777e4713da691c2b8155a1595f826b874257738c5ce841c21aa075262f40b"
+    },
+    {
+      "width": 80,
+      "height": 50,
+      "seed": 1,
+      "kind": "random",
+      "sha256": "fc19b1997119425765295aeab72d76faa6927d4f83985d328c26f20468d6cc76"
+    },
+    {
+      "width": 64,
+      "height": 64,
+      "seed": 1,
+      "kind": "noise",
+      "sha256": "f47a8ec3e9aff2318d896942282ad4fe37d6391c82914f54a5da8a37de1300c6"
+    },
+    {
+      "width": 64,
+      "height": 64,
+      "seed": 1,
+      "kind": "runner",
+      "sha256": "b8aae89ef3f6bfc12331e9f98eeae01f494e8557f8eabd6e9c10908d46d59de0"
+    },
+    {
+      "width": 64,
+      "height": 64,
+      "seed": 1,
+      "kind": "random",
+      "sha256": "ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7"
+    },
+    {
+      "width": 641,
+      "height": 360,
+      "seed": 1,
+      "kind": "noise",
+      "sha256": "051f69480847ac2263eaf18b9b0b0a2c73df151bb3b02186e647b6791996c4f3"
+    },
+    {
+      "width": 641,
+      "height": 360,
+      "seed": 1,
+      "kind": "runner",
+      "sha256": "71c17f3d1a7730cf1e9dac76d63968eb0510775cdb90f4faa9ccf831d2bc88e0"
+    },
+    {
+      "width": 641,
+      "height": 360,
+      "seed": 1,
+      "kind": "random",
+      "sha256": "8ffda6b87fc3fb232dfd85ca99367b4e52b67588790dd3c97ceea6d86d063893"
+    },
+    {
+      "width": 640,
+      "height": 360,
+      "seed": 1,
+      "kind": "noise",
+      "sha256": "1516b21572cdecd2baad775e49c4a2d235b7ce37c9692d90df6b9e0df92f820c"
+    },
+    {
+      "width": 640,
+      "height": 360,
+      "seed": 1,
+      "kind": "runner",
+      "sha256": "28059563db6749d7c289de2f61928c5544b921aeed51b75e978085ed16ab2ecc"
+    },
+    {
+      "width": 640,
+      "height": 360,
+      "seed": 1,
+      "kind": "random",
+      "sha256": "2a589ae1f2fa2a6328223ff195a29c9244bec633dca49139f6f231e1d79c0eb2"
+    }
+  ]
+}

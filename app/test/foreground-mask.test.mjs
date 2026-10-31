@@ -1,5 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import * as candidate from '../renderer/scan-overlays.mjs';
 const {scanBackground,writeForegroundMask}=candidate;
 const W=320,H=160;
@@ -116,4 +118,54 @@ test('state is bounded after many target tiles and does not retain source images
  const st=bg._foreground;
  let bytes=0;const seen=new Set();function walk(v){if(!v||typeof v!=='object'||seen.has(v))return;seen.add(v);if(ArrayBuffer.isView(v)){bytes+=v.byteLength;return;}for(const a of Object.values(v))walk(a);}walk(bg);
  assert.ok(bytes<37*40+3000,`${bytes}`);assert.ok(!Object.values(st).includes(ref.data));
+});
+
+test('foreground hot paths retain baseline masks across layouts, tile lookahead and partial bytes',()=>{
+ const vectors=JSON.parse(readFileSync(new URL('./fixtures/scan-foreground-vectors.json',import.meta.url),'utf8'));
+ for(const {width,height,channels,kind,seed,hashes}of vectors.cases)for(const layout of ['columns','rows']){
+  let state=seed>>>0;
+  const random=()=>{state^=state<<13;state^=state>>>17;state^=state<<5;return state>>>0;};
+  const reference=new Uint8Array(width*height*channels),data=reference.slice();
+  for(let x=0;x<width;x++)for(let y=0;y<height;y++)for(let c=0;c<channels;c++){
+   const i=((layout==='rows'?y*width+x:x*height+y)*channels)+c;
+   const base=c===3?random()%256:kind==='black'?0:kind==='white'?255:50+(y*7%101)+(c*29%45);
+   reference[i]=base;let v=base;
+   if(c!==3){
+    if(kind==='noise'||kind==='runner')v=base+Math.round(x/width*22)+(random()%17)-8;
+    if(kind==='random')v=random()%256;
+    if(kind==='dense')v=255-base;
+    if(kind==='bright')v=base+36;
+    if(kind==='shadow'&&x>width*.15&&x<width*.85&&y>height*.45&&y<height*.8)v=Math.round(base*.7);
+    if((kind==='runner'||kind==='black'||kind==='white')&&x>width*.3&&x<width*.65&&y>height*.15&&y<height*.45)v=channels===1?230:[20,190,210][c];
+    if(kind==='spikes'&&random()%73===0)v=random()%256;
+    if(kind==='stair'&&x>1&&x<width-1&&Math.abs(y-(2+x%(height-4)))<=1)v=channels===1?240:[20,210,160][c];
+   }
+   data[i]=Math.max(0,Math.min(255,v));
+  }
+  const image={data,width,height,channels,layout},ref={...image,data:reference},original=data.slice();
+  for(const [mode,[step,tile,offset]]of [[Math.max(1,width),false,0],[1,false,3],[7,true,1],[64,true,3]].entries()){
+   const background=scanBackground(ref),joined=new Uint8Array(Math.ceil((width+offset)*height/8)).fill(165),tiles=[];
+   for(let x=0;x<width;x+=step){
+    const n=Math.min(step,width-x),target=tile?new Uint8Array(Math.ceil((n+offset)*height/8)).fill(165):joined;
+    writeForegroundMask(target,tile?offset:x+offset,chunk(image,x,n),background);if(tile)tiles.push(target);
+   }
+   const actual=createHash('sha256').update(Buffer.concat(tile?tiles:[joined])).digest('hex');
+   assert.equal(actual,hashes[mode],`${width}x${height} ${channels}ch ${kind} ${layout} mode ${mode}`);
+  }
+  assert.deepEqual(data,original);
+ }
+});
+
+test('replaying and rewriting target tiles retains baseline provisional and completed mask bytes',()=>{
+ const {replaySha256}=JSON.parse(readFileSync(new URL('./fixtures/scan-foreground-vectors.json',import.meta.url),'utf8'));
+ const width=29,height=13,channels=4,data=new Uint8Array(width*height*channels);
+ for(let x=0;x<width;x++)for(let y=0;y<height;y++)for(let c=0;c<channels;c++)data[(x*height+y)*channels+c]=c===3?(x*y*13)%256:80+y*3+c*9;
+ const reference={data,width,height,channels},image={...reference,data:data.slice()};
+ for(let x=5;x<23;x++)for(let y=3;y<8;y++)image.data.set([20,210,160,x*y%256],(x*height+y)*channels);
+ const background=scanBackground(reference),targets=[165,90,255].map(v=>new Uint8Array(Math.ceil(40*height/8)).fill(v)),hash=createHash('sha256');
+ for(const [target,offset,start,n]of [[0,3,0,7],[0,10,7,7],[1,1,14,9],[0,0,0,29],[0,5,3,11],[0,16,14,8],[2,2,22,7],[2,0,0,29]]){
+  writeForegroundMask(targets[target],offset,chunk(image,start,n),background);
+  for(const bytes of targets)hash.update(bytes);
+ }
+ assert.equal(hash.digest('hex'),replaySha256);
 });

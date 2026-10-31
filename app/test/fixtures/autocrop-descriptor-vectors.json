@@ -1,0 +1,65 @@
+{
+  "source": "Frozen pre-optimization descriptor; data[i]=(i*17+29+(i>>3))&255",
+  "cases": [
+    {
+      "width": 1,
+      "height": 1,
+      "channels": 1,
+      "sha256": "a1a4f5721c1c4610af7f71078f3a68c330536d679803b0e0507ee8dc10c5dfca"
+    },
+    {
+      "width": 15,
+      "height": 17,
+      "channels": 4,
+      "sha256": "022769cbe0daaa9b85952a47b40f373ddf29321a4d9f01cc237b67811b3040c3"
+    },
+    {
+      "width": 255,
+      "height": 1,
+      "channels": 3,
+      "sha256": "c510e5e39a544d65d6f06dc98cd4276d5eb30daec7a9da6d06d601f245d02a67"
+    },
+    {
+      "width": 256,
+      "height": 1,
+      "channels": 3,
+      "sha256": "31d759bec56d8f7a7dcd8262bb616ea6135ed1bd7e2eae897ef7a83424f6e58b"
+    },
+    {
+      "width": 257,
+      "height": 1,
+      "channels": 3,
+      "sha256": "a92e55d8409d0bdd31b98aa2fd999e8b3ddc3f54007ec6f507b307854c6f358c"
+    },
+    {
+      "width": 255,
+      "height": 17,
+      "channels": 1,
+      "sha256": "e98a49978cca518947e98abf0394cc7d810577612ddc7aa98c97583acab68ed4"
+    },
+    {
+      "width": 256,
+      "height": 32,
+      "channels": 4,
+      "sha256": "22f3bfccd81a623e37beddadc408a1f0ff5a408102e306719af1e4b717aaedd2"
+    },
+    {
+      "width": 257,
+      "height": 33,
+      "channels": 3,
+      "sha256": "eb2443007123674a30de63c1109b76e4438dd934202ef451f7fcbde563e5b80d"
+    },
+    {
+      "width": 511,
+      "height": 65,
+      "channels": 1,
+      "sha256": "2dc7eb51df244791a01f70bf72b57d17deb192b9f83ccd3da0dbf2a3205fcac9"
+    },
+    {
+      "width": 512,
+      "height": 640,
+      "channels": 4,
+      "sha256": "b526a925546c65c5128203f8fd5b9978849b49395f26efddb6b55026c941d76e"
+    }
+  ]
+}

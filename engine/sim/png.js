@@ -84,7 +84,7 @@ export function decodePng(input) {
   const expected = height * (stride + 1);
   let raw;
   try {
-    raw = inflateSync(Buffer.concat(idat), { maxOutputLength: expected + 1 });
+    raw = inflateSync(idat.length === 1 ? idat[0] : Buffer.concat(idat), { maxOutputLength: expected + 1 });
   } catch (err) {
     throw fail(`zlib: ${/** @type {Error} */ (err).message}`);
   }
@@ -102,14 +102,11 @@ export function decodePng(input) {
         raw.copy(out, dst, src, src + stride);
         break;
       case 1:
-        for (let i = 0; i < stride; i++) {
-          out[dst + i] = (raw[src + i] + (i >= bpp ? out[dst + i - bpp] : 0)) & 0xff;
-        }
+        unfilterSub(raw, out, src, dst, stride, channels);
         break;
       case 2:
-        for (let i = 0; i < stride; i++) {
-          out[dst + i] = (raw[src + i] + (y > 0 ? out[up + i] : 0)) & 0xff;
-        }
+        if (y === 0) raw.copy(out, dst, src, src + stride);
+        else for (let i = 0; i < stride; i++) out[dst + i] = raw[src + i] + out[up + i];
         break;
       case 3:
         for (let i = 0; i < stride; i++) {
@@ -136,4 +133,29 @@ export function decodePng(input) {
     }
   }
   return { width, height, channels, data: out };
+}
+
+// Sub filtering adds the previous pixel's same channel. Keep those values
+// in registers instead of rereading every output byte. Isolate this loop
+// so other filters retain the small decoder's cold-start performance.
+function unfilterSub(raw, out, src, dst, stride, channels) {
+  if (channels === 3) {
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < stride; i += 3) {
+      out[dst + i] = r = (r + raw[src + i]) & 255;
+      out[dst + i + 1] = g = (g + raw[src + i + 1]) & 255;
+      out[dst + i + 2] = b = (b + raw[src + i + 2]) & 255;
+    }
+  } else if (channels === 4) {
+    let r = 0, g = 0, b = 0, a = 0;
+    for (let i = 0; i < stride; i += 4) {
+      out[dst + i] = r = (r + raw[src + i]) & 255;
+      out[dst + i + 1] = g = (g + raw[src + i + 1]) & 255;
+      out[dst + i + 2] = b = (b + raw[src + i + 2]) & 255;
+      out[dst + i + 3] = a = (a + raw[src + i + 3]) & 255;
+    }
+  } else {
+    let value = 0;
+    for (let i = 0; i < stride; i++) out[dst + i] = value = (value + raw[src + i]) & 255;
+  }
 }

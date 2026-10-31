@@ -154,6 +154,13 @@ export class CameraSetupConsole {
 
   refresh(){return this.load();}
 
+  hasUnsavedChanges(){
+    const heat=this._heatDraft,saved=this.config?.heats?.[heat?.key];
+    const heatDirty=heat?.dirty&&(heat.locationId!==saved?.locationId||heat.timingCameraId!==saved?.timingCameraId);
+    return [...this.drafts.values()].some(draft=>draft.dirty)||!!heatDirty||!!this._finishName?.trim();
+  }
+  discardChanges(){this.drafts.clear();this._heatDraft=null;this._finishName='';this._notice='';this._paint();}
+
   refreshRecorders(){
     const context=this._syncContext();
     if(this._recorderPromise)return this._recorderPromise;

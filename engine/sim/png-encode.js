@@ -1,5 +1,5 @@
-// Test-only minimal PNG encoder: zlib deflate + CRC32. Lets tests build
-// PNGs with a chosen filter per row, split IDATs and extra chunks.
+// Minimal PNG encoder with byte-stable output. Wide rows use specialized
+// filtering; narrow rows retain the original low-overhead implementation.
 import { crc32, deflateSync } from 'node:zlib';
 
 const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -35,6 +35,7 @@ function paeth(a, b, c) {
  */
 export function encodePng(img, o = {}) {
   const { width: w, height: h, channels: ch, data } = img;
+  if (w * ch > 4) return encodeWidePng(img, o);
   const filterOf = o.filter ?? ((y) => y % 5);
   const stride = w * ch;
   const raw = Buffer.alloc(h * (stride + 1));
@@ -67,6 +68,55 @@ export function encodePng(img, o = {}) {
   const split = o.idatSplit ?? z.length;
   const idats = [];
   for (let i = 0; i < z.length; i += split) idats.push(pngChunk('IDAT', z.subarray(i, i + split)));
+  return Buffer.concat([SIG, pngChunk('IHDR', ihdr), ...(o.extraChunks ?? []), ...idats, pngChunk('IEND', Buffer.alloc(0))]);
+}
+
+// Avoid a second IDAT-sized allocation while assembling large encoded images.
+function largePngChunk(type, body) {
+  const label = Buffer.from(type, 'latin1');
+  const out = Buffer.allocUnsafe(8 + label.length + body.length);
+  out.writeUInt32BE(body.length, 0);
+  out.set(label, 4);
+  out.set(body, 4 + label.length);
+  out.writeUInt32BE(crc32(out.subarray(4, 4 + label.length + body.length)), 4 + label.length + body.length);
+  return out;
+}
+
+function encodeWidePng(img, o = {}) {
+  const { width: w, height: h, channels: ch, data } = img;
+  const filterOf = o.filter ?? ((y) => y % 5);
+  const stride = w * ch;
+  const raw = Buffer.alloc(h * (stride + 1));
+  for (let y = 0; y < h; y++) {
+    const f = filterOf(y), src = y * stride, dst = y * (stride + 1) + 1, up = src - stride;
+    raw[dst - 1] = f;
+    if (f === 0 || (f === 2 && y === 0)) {
+      for (let i = 0; i < stride; i++) raw[dst + i] = data[src + i];
+    } else if (f === 1) {
+      for (let i = 0; i < ch && i < stride; i++) raw[dst + i] = data[src + i];
+      for (let i = ch; i < stride; i++) raw[dst + i] = data[src + i] - data[src + i - ch];
+    } else if (f === 2) {
+      for (let i = 0; i < stride; i++) raw[dst + i] = data[src + i] - data[up + i];
+    } else if (f === 3) {
+      for (let i = 0; i < stride; i++) raw[dst + i] = data[src + i] - Math.floor(((i >= ch ? data[src + i - ch] : 0) + (y > 0 ? data[up + i] : 0)) / 2);
+    } else if (f === 4) {
+      for (let i = 0; i < stride; i++) raw[dst + i] = data[src + i] - paeth(i >= ch ? data[src + i - ch] : 0, y > 0 ? data[up + i] : 0, i >= ch && y > 0 ? data[up + i - ch] : 0);
+    } else {
+      for (let i = 0; i < stride; i++) raw[dst + i] = data[src + i];
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = o.ihdr?.depth ?? 8;
+  ihdr[9] = o.ihdr?.colour ?? COLOUR[ch];
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = o.ihdr?.interlace ?? 0;
+  const z = deflateSync(raw);
+  const split = o.idatSplit ?? z.length;
+  const idats = [];
+  for (let i = 0; i < z.length; i += split) idats.push(largePngChunk('IDAT', z.subarray(i, i + split)));
   return Buffer.concat([SIG, pngChunk('IHDR', ihdr), ...(o.extraChunks ?? []), ...idats, pngChunk('IEND', Buffer.alloc(0))]);
 }
 

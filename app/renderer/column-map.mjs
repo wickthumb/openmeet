@@ -35,8 +35,12 @@ export function originalCoordinate(map,display) {
 }
 export function visibleColumnPieces(map,start,end,width=map?.width) {
   if(!map)return end>start?[{start,end,displayStart:start,displayEnd:end}]:[];
-  return map.spans.flatMap(s=>{
+  const pieces=[];
+  for(const s of map.spans){
+    if(s.displayEnd<=start)continue;
+    if(s.displayStart>=end)break;
     const a=Math.max(start,s.displayStart),b=Math.min(end,s.displayEnd);
-    return b>a?[{start:s.start+a-s.displayStart,end:s.start+b-s.displayStart,displayStart:a,displayEnd:b}]:[];
-  });
+    if(b>a)pieces.push({start:s.start+a-s.displayStart,end:s.start+b-s.displayStart,displayStart:a,displayEnd:b});
+  }
+  return pieces;
 }

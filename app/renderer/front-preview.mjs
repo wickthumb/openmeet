@@ -9,6 +9,7 @@ export class FrontFrameCache {
   constructor({load,onReady=()=>{},limit=48,concurrency=3}) {
     this.load=load;this.onReady=onReady;this.limit=limit;this.concurrency=concurrency;
     this.frames=new Map();this.pending=new Set();this.failed=new Set();this.queue=[];this.target=null;this.disposed=false;
+    this.pinned=null;
   }
   get(index) {
     const value=this.frames.get(index);
@@ -29,7 +30,11 @@ export class FrontFrameCache {
       Promise.resolve().then(()=>this.load(index)).then(value=>{
         if(this.disposed){value.close?.();return;}
         this.frames.set(index,value);
-        while(this.frames.size>this.limit){const key=[...this.frames.keys()].find(k=>k!==this.target);this.frames.get(key)?.close?.();this.frames.delete(key);}
+        while(this.frames.size>this.limit){
+          let key;
+          for(const candidate of this.frames.keys())if(candidate!==this.target&&candidate!==this.pinned){key=candidate;break;}
+          if(key==null)break;this.frames.get(key)?.close?.();this.frames.delete(key);
+        }
         if(index===this.target)this.onReady(index);
       }).catch(()=>{if(!this.disposed){this.failed.add(index);if(index===this.target)this.onReady(index);}}).finally(()=>{this.pending.delete(index);this.pump();});
     }
@@ -55,10 +60,13 @@ export function linkedCameraRange(view,{rows,height,width,period,timeOrigin,othe
   const result={t0:timeOrigin+view.c0*period,spp:width*period/(view.zx*Math.max(1,otherWidth)),
     r0:Math.max(0,Math.min(1,top/rows)),rv:Math.min(1,span/rows)};
   if(span>=rows-0.5)return result;
-  const pairs=(mainLanes||[]).flatMap(b=>{
-    const main=cameraLaneBody(mainLanes,b.lane),other=cameraLaneBody(otherLanes,b.lane);
-    return main&&other?[{main,other}]:[];
-  });
+  const pairs=[];
+  const lanes=mainLanes||[];
+  for(let i=0;i<lanes.length;i++){
+    if(!(i in lanes))continue;
+    const b=lanes[i],main=cameraLaneBody(mainLanes,b.lane),other=cameraLaneBody(otherLanes,b.lane);
+    if(main&&other)pairs.push({main,other});
+  }
   if(!pairs.length)return result;
   const focused=pairs.find(p=>p.main.lane===view.focusLane&&p.main.feet>=top&&p.main.head<=top+span);
   let visible=pairs.filter(p=>(!finishLanes?.length||finishLanes.includes(p.main.lane))&&p.main.center>=top&&p.main.center<=top+span);

@@ -1,4 +1,6 @@
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {LiveFollow} from '../renderer/live-follow.mjs';
 
@@ -45,4 +47,20 @@ test('rate changes and invalid observations cannot rewind or corrupt the display
   for(const args of [[3,1900,800],[Infinity,1900,800],[2000,NaN,800],[2000,1900,Infinity],[2000,1900,0]])follow.observe(...args);
   assert.equal(JSON.stringify(follow),snapshot);
   assert.ok(follow.sample(1816)<=1600);
+});
+
+test('cached packet statistics preserve every baseline presentation-clock result',()=>{
+  const vectors=JSON.parse(readFileSync(new URL('./fixtures/live-follow-vectors.json',import.meta.url),'utf8'));
+  for(const fixture of vectors.cases){
+    const follow=new LiveFollow(),hash=createHash('sha256');let available=0,random=fixture.seed;
+    for(let frame=0;frame<fixture.frames;frame++){
+      random=(Math.imul(random,1664525)+1013904223)>>>0;
+      const now=frame*(1000/(fixture.seed%2?60:144))+(frame>1200?3000:0),rate=[800,6000,500,1250][Math.floor(frame/600)];
+      if(frame%(fixture.seed%7+1)===0){available+=[1,64,200][random%3];follow.observe(available,now+(random%41)-20,rate);}
+      if(frame%29===0)follow.observe(available,now,rate);
+      if(frame%97===0){follow.observe(available-1,now,rate);follow.observe(available,NaN,rate);follow.observe(available,now,0);}
+      const position=follow.sample(now);hash.update(JSON.stringify([position,follow.available,follow.anchor,follow.lastAt,follow.rate,follow.bufferMs??null,follow.resumed])+'\n');
+    }
+    assert.equal(hash.digest('hex'),fixture.sha256,'Presentation clock changed for seed '+fixture.seed);
+  }
 });

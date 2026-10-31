@@ -3,27 +3,26 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-export const BUILTIN_SOURCE = { id: 'builtin', type: 'builtin', name: 'Simple built-in', path: null };
 export const SOURCE_TYPES = new Set(['ttp', 'real']);
 
 export function simulationCatalog(settings = {}) {
-  const sources = [BUILTIN_SOURCE];
+  const sources = [];
   for (const s of Array.isArray(settings.simulationSources) ? settings.simulationSources : []) {
     if (!s || !SOURCE_TYPES.has(s.type) || typeof s.path !== 'string' || !path.isAbsolute(s.path)) continue;
     const dir = path.resolve(s.path);
     if (sources.some(x => x.path === dir)) continue;
     const id = typeof s.id === 'string' && s.id && s.id !== 'builtin' ? s.id : sourceId(dir);
     if (sources.some(x => x.id === id)) continue;
-    sources.push({ id, type: s.type, name: String(s.name || path.basename(dir)), path: dir });
+    sources.push({ id, type: s.type, name: s.type==='ttp'?'OpenMeet demo':String(s.name || path.basename(dir)), path: dir });
   }
   // Keep existing demoDir setups working, including their next app launch.
   if (typeof settings.demoDir === 'string' && settings.demoDir && !sources.some(s => s.path === path.resolve(settings.demoDir))) {
     const dir = path.resolve(settings.demoDir);
-    sources.push({ id: sourceId(dir), type: 'ttp', name: 'TTP simulator', path: dir });
+    sources.push({ id: sourceId(dir), type: 'ttp', name: 'OpenMeet demo', path: dir });
   }
   const selected = sources.find(s => s.id === settings.simulationSourceId)
-    || (!settings.simulationSourceId && typeof settings.demoDir==='string' && sources.find(s => s.path === path.resolve(settings.demoDir))) || BUILTIN_SOURCE;
-  return { sources, selectedId: selected.id };
+    || (!settings.simulationSourceId && typeof settings.demoDir==='string' && sources.find(s => s.path === path.resolve(settings.demoDir))) || sources.find(s=>s.type==='ttp') || sources[0];
+  return { sources, selectedId: selected?.id || null };
 }
 
 export const sourceId = dir => 'folder-' + createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 16);

@@ -11,7 +11,7 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/scan-overlays.test.mjs test/front-preview.test.mjs test/foreground-mask.test.mjs test/scan-toolbar.test.mjs test/column-map.test.mjs test/front-occlusion.test.mjs test/private-occlusion.test.mjs test/occlusion-state.test.mjs test/live-follow.test.mjs test/replay-sources.test.mjs test/billboard.test.mjs test/camera-state.test.mjs test/camera-setup.test.mjs",
+    "test": "node --test test/scan-overlays.test.mjs test/front-preview.test.mjs test/front-media-lifecycle.test.mjs test/camera-viewport.test.mjs test/roster-alignment.test.mjs test/source-image-cache.test.mjs test/capture-request.test.mjs test/service-host.test.mjs test/main-lifecycle.test.mjs test/foreground-mask.test.mjs test/scan-toolbar.test.mjs test/column-map.test.mjs test/autocrop.test.mjs test/front-occlusion.test.mjs test/private-occlusion.test.mjs test/occlusion-state.test.mjs test/live-follow.test.mjs test/replay-sources.test.mjs test/billboard.test.mjs test/camera-state.test.mjs test/camera-setup.test.mjs",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
@@ -34,6 +34,8 @@
       "engine-host.mjs",
       "billboard-host.mjs",
       "simulation-sources.mjs",
+      "meet-backup.mjs",
+      "autocrop/**",
       "private-occlusion.mjs",
       "renderer/**",
       {

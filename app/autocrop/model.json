@@ -1,0 +1,67 @@
+{
+  "format": "openmeet-autocrop",
+  "version": 1,
+  "id": "ttp-autocrop-v1",
+  "approved": true,
+  "threshold": 0.05,
+  "rows": 32,
+  "source_checkpoint_sha256": "0d4910d91219b0719206bb978513f1d0f3e5438b023ee6a42b7313deac395ddc",
+  "weights_sha256": "8b3895b390fd36f8840c988a97fb9ac354ed3d3f2935ea51041834acd821aac3",
+  "layers": [
+    {
+      "shape": [
+        24,
+        96,
+        1
+      ],
+      "offset": 0,
+      "bias_offset": 2304,
+      "dilation": 1,
+      "relu": true
+    },
+    {
+      "shape": [
+        24,
+        24,
+        5
+      ],
+      "offset": 2328,
+      "bias_offset": 5208,
+      "dilation": 1,
+      "relu": true
+    },
+    {
+      "shape": [
+        24,
+        24,
+        5
+      ],
+      "offset": 5232,
+      "bias_offset": 8112,
+      "dilation": 4,
+      "relu": true
+    },
+    {
+      "shape": [
+        24,
+        24,
+        5
+      ],
+      "offset": 8136,
+      "bias_offset": 11016,
+      "dilation": 16,
+      "relu": true
+    },
+    {
+      "shape": [
+        1,
+        24,
+        1
+      ],
+      "offset": 11040,
+      "bias_offset": 11064,
+      "dilation": 1,
+      "relu": false
+    }
+  ]
+}

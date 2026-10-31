@@ -246,7 +246,7 @@ The workspace is a **tiling layout, like Hyprland**: a split tree, so panels nev
 - Double-click a header to maximise that panel.
 - The layout is saved per computer.
 
-**Meet navigation.** The top Meet tab provides event/heat and athlete search, recorded/upcoming filters, direct review selection and a return to the active recording. Schedule-file reordering preserves selected and captured work. Recording and automatic timing continue independently of the selected review heat. The Meet Link tab remains responsible for folder interoperability.
+**Meet navigation.** The Meet tab contains input, output and optional backup folders. The sidebar Meet/Event/Round/Heat selectors and Schedule → Browse events provide direct navigation, event/athlete search, recorded/upcoming filters and a return to the active recording. Schedule-file reordering preserves selected and captured work. Recording and automatic timing continue independently of the selected review heat. The single Meet tab handles folder interoperability.
 
 **Line-scan** (bottom region, full width minus the sidebar).
 
@@ -442,10 +442,10 @@ A visible test pattern verifies that display path, not the precision of race tim
 
 Add a hardware adapter registry to the native engine. Each adapter declares identification criteria, supported operating systems, transport, supported actions, profile schema and diagnostic tests. Keep discovery and configuration out of the renderer. Connection profiles store device identity, selected interface, model/controller details, public manual references, configuration, test observations and the last verified capability set. Test traffic is labelled and isolated from official race results.
 
-AI/vision inference remains behind separate service APIs. This public app ships integration code, profiles and API clients; proprietary timing/cropping models, weights, training data and model implementations remain outside the repository and installers.
+Timing and learned occlusion inference remain behind separate service APIs. The approved empty-span cropper ships in the app and runs on the CPU; other model weights, training data and private implementations remain external.
 
 Acceptance for the first real integration: a novice can identify and connect one specified physical device, see a diagnostic output, confirm it, run the normal meet output, and reconnect from its saved profile. Hardware-in-the-loop evidence is required before listing that model as supported.
 
 ## 10. Reversible empty-span hiding
 
-The approved cropper is called through a private external worker or HTTP API. OpenMeet validates its `autocrop-ranges-v2` response and renders kept spans through the original-column map. Breaks visibly mark omitted time. Show all columns reverses the view; raw columns, timestamps and finish marks stay in the original coordinate system. Timing requests keep original capture context. See [the adapter contract](autocrop-api.md). The failed lane model is not integrated; lane placement remains camera calibration.
+The approved cropper runs natively in a background worker with its frozen weights bundled in the app. Python and network access are unnecessary. Explicitly configured external providers remain supported. OpenMeet validates its `autocrop-ranges-v2` response and renders kept spans through the original-column map. Breaks visibly mark omitted time. Show all columns reverses the view; raw columns, timestamps and finish marks stay in the original coordinate system. Timing requests keep original capture context. See [the adapter contract](autocrop-api.md). The failed lane model is not integrated; lane placement remains camera calibration.

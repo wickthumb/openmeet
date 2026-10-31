@@ -64,7 +64,7 @@ A stationary line-scan scene repeats nearly the same column over time. Estimate 
 - Preserve the original capture and timestamps. Render replacement backgrounds only in the display; timing marks, evidence exports and proprietary model requests continue to reference original pixels.
 - Define how artwork maps to captured column time, so scrolling, zooming and replay produce a stable design.
 - Evaluate foreground separation on bodies, limbs, overlapping runners, lane lines, shadows and gradual or sudden lighting changes. Show the original image whenever separation is uncertain.
-- Any proprietary segmentation or cropping model remains in a separate service; this public app contains only its API client and display integration.
+- The approved empty-span cropper is bundled for local CPU inference. Proprietary segmentation and timing models remain separate services.
 
 Acceptance: with the option disabled, capture and review remain unchanged; with it enabled, finish columns and saved times remain identical. Background design is presentation, never replacement timing evidence.
 

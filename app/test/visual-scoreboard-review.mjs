@@ -35,7 +35,7 @@ try{
  const startLog=()=>ev(`window.openmeet.call('starts.list',{dir:${JSON.stringify(path.join(dir,'meet'))}})`),triggers=(await startLog()).triggers.length;
  const timePrefix=await readFile(path.join(liveCapture,'times.f64'));
  const modalChecks=[];await send('Emulation.setDeviceMetricsOverride',{width:1080,height:680,deviceScaleFactor:1,mobile:false});
- for(const label of ['Meet','Camera setup','Scoreboard','Network','Meet Link','Auto-Timing','Starts','Settings']){
+ for(const label of ['Meet','Camera setup','Scoreboard','Network','Auto-Timing','Starts','Settings']){
    const before=(await stat(path.join(liveCapture,'columns.bin'))).size;await tab(label);await poll(()=>ev(`document.querySelector('#setupDialog').open`),label+' dialog');
    assert.equal(await ev(`document.querySelector('#setupDialog').matches(':modal')`),true);
    if(label==='Camera setup')assert.equal(await ev(`document.querySelector('#cameraAlign').disabled`),true);

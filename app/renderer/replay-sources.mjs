@@ -1,14 +1,13 @@
 export function sourceLabel(source) {
   if (source?.type === 'real') return `REAL MEET REPLAY · ${source.name}`;
-  if (source?.type === 'ttp') return `TTP simulator · ${source.name}`;
-  return 'Simple built-in';
+  if (source?.type === 'ttp') return 'OpenMeet demo';
+  return 'Choose an input folder or OpenMeet demo';
 }
 
 export function sourceChoices(catalog) {
-  const sources = catalog?.sources || [{ id: 'builtin', type: 'builtin', name: 'Simple built-in', path: null }];
+  const sources = (catalog?.sources || []).filter(source=>source.type==='ttp');
   const choices = sources.map(s => ({ value: s.id, label: sourceLabel(s) }));
-  if (!sources.some(s => s.type === 'ttp')) choices.push({ value: 'import:ttp', label: 'TTP simulator · Import folder…' });
-  if (!sources.some(s => s.type === 'real')) choices.push({ value: 'import:real', label: 'REAL MEET REPLAY · Import folder…' });
+  if (!sources.length) choices.push({ value: 'import:ttp', label: 'Choose OpenMeet demo folder…' });
   return choices;
 }
 

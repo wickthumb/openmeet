@@ -41,17 +41,33 @@ async function readJson(req) {
   let length = 0;
   // Event listeners allow a 413 response without destroying the request socket.
   await new Promise((resolveBody, rejectBody) => {
-    req.on('data', chunk => {
+    const cleanup = () => {
+      req.off('data', onData); req.off('end', onEnd);
+      req.off('error', onError); req.off('aborted', onAborted);
+    };
+    const fail = error => {
+      cleanup();
+      chunks.length = 0;
+      // Keep draining an oversized request, without retaining its accepted prefix.
+      // An aborted IncomingMessage can emit error after aborted; consume it until close.
+      const ignoreError = () => {};
+      req.on('error', ignoreError); req.once('close', () => req.off('error', ignoreError));
+      req.resume();
+      rejectBody(error);
+    };
+    const onData = chunk => {
       length += chunk.length;
       if (length > MAX_BODY_BYTES) {
-        rejectBody(new StubError(413, 'payload_too_large', 'JSON body exceeds 64 MiB.'));
+        fail(new StubError(413, 'payload_too_large', 'JSON body exceeds 64 MiB.'));
       } else {
         chunks.push(chunk);
       }
-    });
-    req.once('end', resolveBody);
-    req.once('error', rejectBody);
-    req.once('aborted', () => rejectBody(invalid()));
+    };
+    const onEnd = () => { cleanup(); resolveBody(); };
+    const onError = error => fail(error);
+    const onAborted = () => fail(invalid());
+    req.on('data', onData); req.once('end', onEnd);
+    req.once('error', onError); req.once('aborted', onAborted);
   });
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw invalid(); }
 }

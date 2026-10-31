@@ -133,6 +133,11 @@ export function createScoreboardServer({ root, host = '0.0.0.0', port = 0 }) {
       if (!(await lstat(file)).isFile()) throw forbidden();
       const handle = await open(file, 'r');
       try {
+        if (req.method === 'HEAD') {
+          const stat = await handle.stat();
+          res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Content-Length': stat.size });
+          res.end(); return;
+        }
         const bytes = await handle.readFile();
         res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Content-Length': bytes.length });
         res.end(req.method === 'HEAD' ? undefined : bytes);

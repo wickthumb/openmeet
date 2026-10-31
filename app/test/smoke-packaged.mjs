@@ -126,7 +126,9 @@ try {
   console.log(`ping: ${JSON.stringify(ping)}`);
   assert.equal(ping?.ok, true, 'Engine ping failed');
   assert.equal(ping?.core, true, 'Packaged engine core was not loaded');
-  console.log('PASS: packaged OpenMeet engine returned core: true');
+  const crop=await cdp.call('Runtime.evaluate',{expression:"window.openmeet.call('autocrop.info')",awaitPromise:true,returnByValue:true});
+  assert.equal(crop.exceptionDetails,undefined);assert.equal(crop.result.value?.provider,'native');assert.equal(crop.result.value?.ready,true,'Packaged native cropper did not load');
+  console.log('PASS: packaged engine and built-in cropper ready');
 } catch (error) {
   console.error(`FAIL: ${error.message}`);
   if (logs) console.error(logs);

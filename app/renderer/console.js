@@ -10,6 +10,10 @@ import { SetupDialog } from './setup-dialog.mjs';
 import { CameraSetupConsole } from './camera-setup.mjs';
 import { heatCameraKey,cameraProfileToken,sameFinish,cameraViewLabel } from './camera-state.mjs';
 import { LiveFollow } from './live-follow.mjs';
+import { switchCameraViewport } from './camera-viewport.mjs';
+import { dismissOnBackdrop, confirmDiscardChanges } from './dialog-dismiss.mjs';
+import { SourceImageCache } from './source-image-cache.mjs';
+import { rosterLaneLayout } from './roster-alignment.mjs';
 import { sourceLabel, sourceChoices, replayCameras, replayHeatKey, replayReferenceTiming, replayStartList } from './replay-sources.mjs';
 
 (() => {
@@ -156,11 +160,11 @@ const attemptsByHeat = new Map();
 const attemptKey = h => JSON.stringify([S.meet?.dir || 'sample', h.ev, h.rd, h.ht]);
 
 const S = {
-  idx: 0, tab: 'run', selLane: null, selCol: null, entryNumber: '', source: 'replay', apiOnline: true,
+  idx: 0, tab: 'run', selLane: null, hoverLane: null, selCol: null, entryNumber: '', source: 'replay', apiOnline: true,
   rosterOrder: store.get('rosterOrder','lane'),
   autoStop: store.get('autoStop','manual'), stopAfter: store.get('stopAfter',60),
   autoArm: store.get('autoArm', true), autoMark: store.get('autoMark', true),
-  flip: store.get('flip', false), lanes: store.get('lanes', false), zoomTool: false,
+  flip: store.get('flip', false), lanes: store.get('lanes', true), zoomTool: false,
   files: [], view: { c0: 0, zx: 1, r0: 0, zy: 1, user: false, zoomed: false }, drag: null,
   layout: null, max: null, rects: {},
   meet: null,   // {dir, files} when a real meet folder is open (Electron); null = built-in sample meet
@@ -172,9 +176,9 @@ const OM = window.openmeet || null;   // the Electron bridge; absent when this p
 const occlusionAvailability=OM?new OcclusionAvailability(()=>OM.call('occlusion.info'),()=>{S.occlusionInfo=occlusionAvailability.info;updateModelMaskStatus();invalidate();}):null;
 const windStr = h => (h.wind == null ? '—' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1) + ' m/s');
 const cur = () => HEATS[S.idx];
-function meetDisplayName(){return S.meet ? (S.meet.demo ? S.simulationSource?.name||'OpenMeet Demo Meet' : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'OpenMeet Sample Meet';}
+function meetDisplayName(){return S.meet ? (S.meet.demo ? (S.simulationSource?.type==='ttp'?'OpenMeet demo':S.simulationSource?.name||'Replay meet') : S.meet.dir.split(/[\\/]/).filter(Boolean).slice(-1)[0]) : 'Choose meet';}
 const runningHeat = () => HEATS.find(h=>h.state==='running')||null;
-const scanSourceViews=new Map();
+const scanSourceViews=new SourceImageCache();
 const viewHeat = () => S.cameraSetup?.heat || scanPresentation(cur());
 function scanPresentation(h) {
   if(!h.asset)return h;
@@ -190,31 +194,52 @@ function scanPresentation(h) {
 }
 const scanCacheKey=(h,descriptor)=>`${h.captureId||'source'}:${descriptor.png}`;
 async function loadScanSource(h,descriptor) {
-  let source=scanSourceViews.get(scanCacheKey(h,descriptor));
-  if(source){if(h.captureId&&!source.saved.has(h.captureId)){await OM.call('camera.image',{png:descriptor.png,captureId:h.captureId,includePixels:false});source.saved.add(h.captureId);}return source;}
-  const image=await OM.call('camera.image',{png:descriptor.png,captureId:h.captureId}),canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
-  const g=canvas.getContext('2d'),rgba=g.createImageData(image.width,image.height),channels=image.channels;
-  for(let i=0;i<image.width*image.height;i++){rgba.data[i*4]=image.data[i*channels];rgba.data[i*4+1]=image.data[i*channels+(channels>2?1:0)];rgba.data[i*4+2]=image.data[i*channels+(channels>2?2:0)];rgba.data[i*4+3]=255;}g.putImageData(rgba,0,0);
-  const pixels={...image,layout:'rows'},mask=new Uint8Array(Math.ceil(image.width*image.height/8));writeForegroundMask(mask,0,pixels,scanBackground(pixels));
-  source={img:canvas,mask,rows:image.height,w:image.width,t:descriptor.meta.first_column_race_time_s,p:descriptor.meta.column_period_s,meta:descriptor.meta,id:descriptor.id,label:descriptor.label,saved:new Set(h.captureId?[h.captureId]:[])};
-  scanSourceViews.set(scanCacheKey(h,descriptor),source);return source;
+  const key=scanCacheKey(h,descriptor),captureId=h.captureId;
+  return scanSourceViews.load(key,()=>OM.call('camera.image',{png:descriptor.png,captureId}),image=>{
+    if(captureId!==h.captureId)return null;
+    const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+    const g=canvas.getContext('2d'),rgba=g.createImageData(image.width,image.height),channels=image.channels;
+    for(let i=0;i<image.width*image.height;i++){rgba.data[i*4]=image.data[i*channels];rgba.data[i*4+1]=image.data[i*channels+(channels>2?1:0)];rgba.data[i*4+2]=image.data[i*channels+(channels>2?2:0)];rgba.data[i*4+3]=255;}g.putImageData(rgba,0,0);
+    const pixels={...image,layout:'rows'},mask=new Uint8Array(Math.ceil(image.width*image.height/8));writeForegroundMask(mask,0,pixels,scanBackground(pixels));
+    return {img:canvas,mask,rows:image.height,w:image.width,t:descriptor.meta.first_column_race_time_s,p:descriptor.meta.column_period_s,meta:descriptor.meta,id:descriptor.id,label:descriptor.label};
+  });
 }
 async function chooseScanView(role,id) {
-  const h=cur(),scans=h.asset?.lineScans;if(!scans?.some(s=>s.id===id)||h.viewLoading)return;
+  const h=cur(),scans=h.asset?.lineScans;if(!scans?.some(s=>s.id===id))return;
+  if(h.viewLoading){h.pendingView={role,id};return;}
   finishHeightFrame();
   const previous=viewHeat(),main=role==='main'?id:previous.asset.mainCameraId,comparison=role==='comparison'?id:previous.asset.comparisonCameraId;
   const selected=cameraAsset(h.asset,{main,comparison:main===comparison?previous.asset.mainCameraId:comparison});
   overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;
   if(S.cameraSetup){await stopCameraSetup(true);if(S.cameraSetup)return;await chooseScanView(role,id);await startCameraSetup();return;}
+  const meet=S.meet,captureId=h.captureId;
+  const current=()=>S.meet===meet&&cur()===h&&h.captureId===captureId;
   h.viewLoading=true;renderTools();
   try {
-    for(const cameraId of [selected.mainCameraId,selected.comparisonCameraId])if(cameraId&&cameraId!==h.asset.mainCameraId)await loadScanSource(h,scans.find(s=>s.id===cameraId));
-    const linked=linkedCameraRange(S.view,{rows:rowsOf(previous),height:scanH(),width:scanW(),period:periodOf(previous),timeOrigin:previous.tOpen,otherWidth:scanW(),otherRows:selected.primarySize.height,mainLanes:(previous.displayMeta||previous.asset.primaryMeta).lane_rows,otherLanes:selected.primaryMeta.lane_rows});
+    for(const cameraId of [selected.mainCameraId,selected.comparisonCameraId])if(cameraId&&cameraId!==h.asset.mainCameraId){if(!await loadScanSource(h,scans.find(s=>s.id===cameraId)))return;}
+    if(!current())return;
+    const fromRows=rowsOf(previous),fromFrame=cameraFrame(previous),toRows=selected.primarySize.height,toFrame=cameraFrame(h,selected.mainCameraId);
+    const viewport=role==='main'?switchCameraViewport(h.cameraViewport,S.view,scanH(),
+      {id:previous.asset.mainCameraId,rows:fromRows,top:fromFrame.top*fromRows,bottom:fromFrame.bottom*fromRows,lanes:(previous.displayMeta||previous.asset.primaryMeta).lane_rows},
+      {id:selected.mainCameraId,rows:toRows,top:toFrame.top*toRows,bottom:toFrame.bottom*toRows,lanes:selected.primaryMeta.lane_rows}):null;
     h.viewCameraId=selected.mainCameraId;h.viewCompareId=selected.comparisonCameraId;S.bview.linked=true;
-    if(role==='main'){if(!S.view.zoomed)fitScanHeight(viewHeat());else{S.view.r0=linked.r0*selected.primarySize.height;S.view.zy=scanH()/(linked.rv*selected.primarySize.height);}}
+    if(viewport){S.view.r0=viewport.r0;S.view.zy=viewport.zy;h.cameraViewport=viewport.state;}
     store.set(cameraRoleKey(),{main:selected.mainCameraId,comparison:selected.comparisonCameraId});
     renderUI();
-  }catch(err){toast('Camera view could not load: '+err.message,true);}finally{h.viewLoading=false;renderTools();}
+  }catch(err){if(current())toast('Camera view could not load: '+err.message,true);}finally{h.viewLoading=false;renderTools();const pending=h.pendingView;h.pendingView=null;if(pending&&cur()===h)void chooseScanView(pending.role,pending.id);}
+}
+
+function renderCameraSwitches() {
+  let group=document.getElementById('cameraSwitches');
+  if(!group){group=h_('div','camera-switches');group.id='cameraSwitches';group.setAttribute('role','group');group.setAttribute('aria-label','Switch line-scan camera');$('#scanCameraLabel').after(group);}
+  const scans=cur().asset?.lineScans||[],selected=viewHeat().asset?.mainCameraId;
+  group.hidden=scans.length<2;group.replaceChildren();
+  scans.slice(0,9).forEach((scan,index)=>{
+    const button=h_('button','btn sm'+(scan.id===selected?' primary':''),String(index+1));
+    button.dataset.camera=scan.id;button.title=`${cameraLabel(viewHeat(),scan.id)} · Alt+${index+1} · [ / ] to cycle`;
+    button.setAttribute('aria-label',`Camera ${index+1}: ${cameraLabel(viewHeat(),scan.id)}`);button.setAttribute('aria-keyshortcuts',`Alt+${index+1}`);button.setAttribute('aria-pressed',String(scan.id===selected));
+    button.disabled=!!(S.cameraSetup?.starting||S.cameraSetup?.stopping);button.onclick=()=>chooseScanView('main',scan.id);group.append(button);
+  });
 }
 let sourceMenu=null;
 function showSourceMenu(role,anchor) {
@@ -242,15 +267,7 @@ function showSourceMenu(role,anchor) {
 }
 
 // ---------------------------------------------------------------- shared-folder files (what RunMeet's AthleticLOCAL writes, and what OpenMeet writes back)
-const q = v => (/[",]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v));
-function evtText() {
-  const out = ['; lynx.evt written by the meet manager (read-only for OpenMeet)'];
-  HEATS.forEach(h => {
-    out.push([h.ev, h.rd, h.ht, h.name].map(q).join(','));
-    h.athletes.forEach(a => out.push((a.pre ? '\\' + a.pre : '') + ',' + [a.id, a.lane, a.last, a.first, a.team.name].map(q).join(',')));
-  });
-  return out.join('\n');
-}
+const q = value => /[",]/.test(String(value)) ? '"' + String(value).replace(/"/g, '""') + '"' : String(value);
 function todStr(d) {
   return `${pad(d.getHours(), 2)}:${pad(d.getMinutes(), 2)}:${pad(d.getSeconds(), 2)}.${pad(d.getMilliseconds(), 3)}0`;
 }
@@ -478,7 +495,7 @@ function applyProposals(h, props, meta = {}) {
   h.req = 'done'; h.reqMs = Math.round(performance.now() - h.reqStart);
   h.proposals.forEach(p => {
     const mk = h.marks[p.lane];
-    if (h.status[p.lane] || h.dismissed?.[p.lane]) return;
+    if (h.saves || h.status[p.lane] || h.dismissed?.[p.lane]) return;
     if (p.decision === 'auto' && (!mk || mk.src === 'auto')) h.marks[p.lane] = { col: p.col, src: 'auto',...(h.sourceRef?{sourceRef:h.sourceRef}:{}) };
     else if (p.decision === 'review' && mk && mk.src === 'auto') delete h.marks[p.lane];   // a live auto-accept the final pass flags goes back to review
   });
@@ -546,13 +563,16 @@ function requestProposals(h) {
   if(h.replaySourceType==='real'&&S.atInfo?.stub&&!replayReferenceTiming(h)){h.req='error';h.reqErr='No reference timing points are available. Configure a timing service, or mark finishes manually';renderUI();return;}
   if (!S.apiOnline) { h.req = 'offline'; renderUI(); return; }
   h.req = 'pending'; h.reqStart = performance.now(); renderUI();
+  const runVersion=h.runVersion,captureId=h.captureId;
+  const current=()=>h.runVersion===runVersion&&h.captureId===captureId;
   if (h.asset && OM && h.captureId) {
     // Engine-fed heat: the engine reads the strip from the capture store and calls the finish service.
-    OM.call('autotiming.predict', predictParams(h)).then(res => applyProposals(h, toProps(res).sort((a, b) => a.col - b.col), res))
-      .catch(err => { h.req = 'error'; h.reqErr = err.message; renderUI(); });
+    OM.call('autotiming.predict', predictParams(h)).then(res => {if(current())applyProposals(h, toProps(res).sort((a, b) => a.col - b.col), res);})
+      .catch(err => {if(current()){h.req = 'error'; h.reqErr = err.message; renderUI();}});
     return;
   }
   setTimeout(() => {
+    if(!current())return;
     if (!S.apiOnline) { h.req = 'offline'; renderUI(); return; }
     applyProposals(h, makeProposals(h), { model: 'sim-0', stub: true });
   }, Math.max(250, 900 / SPEED));
@@ -609,7 +629,7 @@ function go(i) {
   if (S.cameraSetup || i < 0 || i >= HEATS.length) return;
   finishHeightFrame();
   overlayMenu?.overlaySettingsCleanup?.();overlayMenu?.remove();overlayMenu=null;toolbarPopover?.close(false);sourceMenu?.close(false);
-  S.idx = i; S.selLane = null; S.selCol = null; S.entryNumber = ''; S.hoverCol = null;
+  S.idx = i; S.markSelection=null; S.selLane = null; S.selCol = null; S.entryNumber = ''; S.hoverCol = null;
   S.bview.linked = true; Object.assign(S.fview, { s: 1, x: 0, y: 0 }); applyFrontView();
   const h = cur();
   rememberScanGeometry(h);ensureStrip(h);
@@ -621,6 +641,7 @@ function arm() { if(S.cameraSetup)return; const h = cur(); if (h.state !== 'load
 function disarm() { const h = cur(); if (h.state === 'armed') { h.state = 'loaded'; renderUI(); } }
 async function fire() {
   if(S.cameraSetup||S.sourceChanging||!replayCameras(cur()).primary)return;
+  if(OM&&!S.meet){toast('Choose an input folder in Meet or open the OpenMeet demo in Settings.');return;}
   const h = cur();
   if (h.state !== 'armed'||runningHeat()||h.starting) return;
   if(h.asset&&OM&&!S.cameraConfig){h.starting=true;await cameraSetupConsole.load();h.starting=false;if(!S.cameraConfig){toast('Camera configuration could not load. Capture has not started.',true);return;}}
@@ -697,7 +718,7 @@ function confirmRaceReset() {
   if(running)act('Stop capture',stopCapture);
   act(running?'Stop & restart':'Restart race',restartRace);
   dialog.append(title,detail,actions);dialog.addEventListener('close',()=>{dialog.remove();document.querySelector('#raceReset')?.focus();},{once:true});
-  document.body.append(dialog);dialog.showModal();
+  dismissOnBackdrop(dialog);document.body.append(dialog);dialog.showModal();
 }
 function selectAttempt(index) {
   const h=cur();if(h.state==='running'||h.stopping)return;
@@ -732,6 +753,7 @@ function setMark(lane, col) {
   if (h.dismissed) delete h.dismissed[lane];
   const display=p?.col===col?null:viewHeat().displaySource,time=colTime(h,col),nativeColumn=display?(time-display.t)/display.p-0.5:null;
   if(display&&(nativeColumn<-.5||nativeColumn>=display.w-.5)){toast('This camera has no captured image at that time.',true);return;}
+  S.markSelection = { heat: h, lane };
   h.marks[lane] = { col, src, ...(display?{cameraId:display.id,cameraColumn:nativeColumn}:{cameraId:h.asset?.mainCameraId}) };
   if (h.status[lane] && h.status[lane] !== 'DQ') delete h.status[lane];
   editHeat(h); renderUI();
@@ -763,9 +785,9 @@ const resolved = (h, a) => !!(h.marks[a.lane] || h.status[a.lane]);
 function lifRequest(h) {
   const d = h.startTOD, tod = d ? d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000 : null;
   return {
-    dir: S.meet.resultsDir || S.meet.dir, captureId:h.captureId || null,review:{at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,cameraSetups:h.cameraSetups||null,cameraLocations:h.cameraLocations||null,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0,...(h.sourceRef?{sourceRef:h.sourceRef}:{})},
+    dir: S.meet.resultsDir || S.meet.dir, meetDir: S.meet.dir, captureId:h.captureId || null,review:{version:2,heat:{event:h.ev,round:h.rd,heat:h.ht,name:h.name},athletes:h.athletes,pendingLanes:h.athletes.filter(a=>!resolved(h,a)).map(a=>a.lane),proposals:h.proposals||[],at:new Date().toISOString(),cameraId:h.asset?.mainCameraId,cameraSetups:h.cameraSetups||null,cameraLocations:h.cameraLocations||null,timeOrigin:h.tOpen,columnPeriod:periodOf(h),marks:h.marks,status:h.status,startCorrection:h.startCorrection||0,...(h.sourceRef?{sourceRef:h.sourceRef}:{})},
     heat: { event: h.ev, round: h.rd, heat: h.ht, name: h.name, wind: h.wind == null ? '' : (h.wind >= 0 ? '+' : '') + h.wind.toFixed(1), windUnit: h.wind == null ? '' : 'm/s', startTimeOfDay: tod },
-    results: h.athletes.map(a => {
+    results: h.athletes.filter(a=>resolved(h,a)).map(a => {
       const st = h.status[a.lane], mk = h.marks[a.lane];
       return { id: a.id, lane: a.lane, last: a.last, first: a.first, affiliation: a.team.name, startTimeOfDay: tod, ...(st ? { status: st } : {}), ...(mk && (!st || st === 'DQ') ? { time: raceTime(h, mk.col) } : {}) };
     }),
@@ -773,7 +795,7 @@ function lifRequest(h) {
 }
 async function save() {
   const h = cur();
-  if (h.saving || h.state !== 'review' || !h.athletes.every(a => resolved(h, a))) return;
+  if (h.saving || h.state !== 'review') return;
   let where = '';
   if (OM && S.meet) {
     h.saving = true;
@@ -789,11 +811,13 @@ async function save() {
   const f = S.files.find(x => x.name === h.lifName);
   const entry = { name: h.lifName, at: new Date(), bytes: h.lif.length, v: h.saves, text: h.lif, path: where };
   if (f) Object.assign(f, entry); else S.files.push(entry);
+  const pending=h.athletes.filter(a=>!resolved(h,a)).length;
+  const later=pending?` ${pending} athlete${pending===1?'':'s'} saved for later review.`:'';
   const nextI = S.idx + 1, nxt = HEATS[nextI], again = h.saves > 1 ? ` (rewrite ${h.saves})` : '';
-  if (nxt && nxt.state === 'loaded') {
-    toast(`Wrote ${h.lifName}${again}. Next heat loaded${S.autoArm ? ' and armed' : ''}.`);
+  if (nxt && ['loaded','armed'].includes(nxt.state)) {
+    toast(`Wrote ${h.lifName}${again}. Next heat loaded${S.autoArm ? ' and armed' : ''}.${later}`);
     setTimeout(() => { if (cur() === h && h.state === 'saved') go(nextI); }, 900);
-  } else toast(`Wrote ${h.lifName}${again}.${nxt ? '' : ' Schedule complete.'}`);
+  } else toast(`Wrote ${h.lifName}${again}.${nxt ? '' : ' Schedule complete.'}${later}`);
   renderUI();
 }
 
@@ -801,7 +825,7 @@ async function save() {
 const andList = a => (a.length < 2 ? String(a[0]) : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
 function warnings(h) {
   const w = [];
-  if(h.cameraSetupChanged)w.push({k:'warn',t:'Camera setup changed during capture. Check this race before saving.'});
+  if(h.cameraSetupChanged)w.push({k:'warn',t:'Camera setup changed during capture. Review this race now or after saving.'});
   if (h.state === 'running') return [...w,{ k: 'info', t: S.autoMark ? 'Capturing. Suggested times appear as athletes finish; you can mark as they come in.' : 'Capturing. You can mark finishes as they come in.' }];
   if (h.state === 'loaded') return [{ k: 'info', t: 'Heat loaded from lynx.evt. Arm when the starter is ready.' }];
   if (h.state === 'armed') return [{ k: 'info', t: 'Armed. Waiting for the start signal.' }];
@@ -812,23 +836,23 @@ function warnings(h) {
   const rev = (h.proposals || []).filter(p => p.decision === 'review' && !h.marks[p.lane] && !h.status[p.lane]);
   if (rev.length) {
     const close = rev.filter(p => p.reason.startsWith('close'));
-    if (close.length) w.push({ k: 'warn', t: `Lanes ${andList(close.map(p => p.lane))}: close finish. Check ${close.length === 2 ? 'both' : 'each'} before saving.` });
+    if (close.length) w.push({ k: 'warn', t: `Lanes ${andList(close.map(p => p.lane))}: close finish. Check ${close.length === 2 ? 'both' : 'each'} now or return after saving.` });
     const low = rev.filter(p => !p.reason.startsWith('close'));
-    if (low.length) w.push({ k: 'warn', t: `Lane ${andList(low.map(p => p.lane))}: low-confidence proposal. Check it before saving.` });
+    if (low.length) w.push({ k: 'warn', t: `Lane ${andList(low.map(p => p.lane))}: low-confidence proposal. Review now or return after saving.` });
   }
   if (h.req === 'done') {
     h.athletes.filter(a => !resolved(h, a) && !(h.proposals || []).some(p => p.lane === a.lane))
-      .forEach(a => w.push({ k: 'warn', t: `Lane ${a.lane}: no finish detected. Mark it, or set DNF.` }));
+      .forEach(a => w.push({ k: 'warn', t: `Lane ${a.lane}: no finish detected. Leave pending or add a time/status later.` }));
   }
   const open = h.athletes.filter(a => !resolved(h, a)).length;
-  if (open && !w.length) w.push({ k: 'warn', t: `${open} athlete${open > 1 ? 's' : ''} still need a time or a status.` });
+  if (open && !w.length && h.state!=='saved') w.push({ k: 'info', t: `${open} athlete${open===1?' is':'s are'} pending. Save now and review later.` });
   if (!open && h.state === 'review') w.push({ k: 'ok', t: 'Every athlete has a time or a status. Ready to save.' });
-  if (h.state === 'saved') w.push({ k: 'ok', t: `Saved ${h.lifName} to the meet folder.` });
+  if (h.state === 'saved') w.push({ k: open?'warn':'ok', t: open?`Saved. ${open} athlete${open===1?'':'s'} awaiting later review.`:`Saved ${h.lifName} to the output folder.` });
   return w;
 }
 
 // ---------------------------------------------------------------- header + sidebar
-const TABS = [['run', 'Run'], ['events', 'Meet'], ['alignment', 'Camera setup'], ['board', 'Scoreboard'], ['network', 'Network'], ['meet', 'Meet Link'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
+const TABS = [['run', 'Run'], ['meet', 'Meet'], ['alignment', 'Camera setup'], ['board', 'Scoreboard'], ['network', 'Network'], ['api', 'Auto-Timing'], ['starts', 'Starts'], ['settings', 'Settings']];
 function renderTabs() {
   const n = $('#tabs'); n.innerHTML = '';
   TABS.forEach(([k, label]) => {
@@ -847,7 +871,7 @@ function renderStatus() {
   // quiet by default: a dot and a word; detail on hover; only a problem gets colour and words
   const chips = [
     ['Cameras', true, replayCameras(cur()).folder ? 'Local recorded inputs; see Accessories for available cameras' : 'Built-in simulated cameras'],
-    [S.meet || !OM ? 'Meet folder' : 'Sample meet', true, S.meet ? 'Watching ' + S.meet.dir : OM ? 'No meet folder open (Meet Link)' : 'Watching C:\\Meets\\2026-10-28-sim\\'],
+    [S.meet || !OM ? 'Meet folder' : 'Choose meet', true, S.meet ? 'Watching ' + S.meet.dir : OM ? 'Choose an input folder in Meet' : 'Watching C:\\Meets\\2026-10-28-sim\\'],
     ['Internet', true, 'Online'],
     ['Auto-timing', S.apiOnline, S.apiOnline ? 'Reachable' : 'unreachable'],
   ];
@@ -859,13 +883,37 @@ function renderStatus() {
 function tickTod() { const t = $('#tod'); if (t) t.textContent = new Date().toTimeString().slice(0, 8); }
 
 function renderSide() {
-  if(S.cameraSetup){renderSetupSidebar();return;}
+  if(S.cameraSetup){setHoveredLane(null);renderSetupSidebar();$('#list').classList.remove('lane-aligned');$('#list').dataset.rosterKey='';return;}
   const h = cur();
   const stLabel = { loaded: 'LOADED', armed: 'ARMED', running: 'RUNNING', review: 'REVIEW', saved: 'SAVED' }[h.state];
   $('#ev').innerHTML = `
-    <div class="ev-top"><span class="kicker">Event ${h.ev} · Round ${h.rd} · Heat ${h.ht}${h.of?` of ${h.of}`:''}</span><span class="state ${h.state}">${stLabel}</span></div>
-    <div class="ev-name">${h.name}</div>
+    <div class="quick-meet"><label for="quickMeet">Meet</label><select id="quickMeet" aria-label="Meet" ${runningHeat()||S.sourceChanging||!OM?'disabled':''}></select></div>
+    <div class="ev-top"><div class="quick-race">
+      <label>Event <select id="quickEvent" aria-label="Event" ${S.sourceChanging?'disabled':''}>${[...new Map(HEATS.map(heat=>[String(heat.ev),heat])).values()].map(heat=>`<option value="${esc(heat.ev)}" ${heat.ev===h.ev?'selected':''}>${esc(heat.ev)} · ${esc(heat.name)}</option>`).join('')}</select></label>
+      <label>Round <select id="quickRound" aria-label="Round" ${S.sourceChanging?'disabled':''}>${[...new Set(HEATS.filter(heat=>heat.ev===h.ev).map(heat=>heat.rd))].map(round=>`<option ${round===h.rd?'selected':''}>${round}</option>`).join('')}</select></label>
+      <label>Heat <select id="quickHeat" aria-label="Heat" ${S.sourceChanging?'disabled':''}>${HEATS.map((heat,index)=>({heat,index})).filter(({heat})=>heat.ev===h.ev&&heat.rd===h.rd).map(({heat,index})=>`<option value="${index}" ${index===S.idx?'selected':''}>${heat.ht}${heat.of?' / '+heat.of:''}</option>`).join('')}</select></label>
+    </div></div>
+    <div class="ev-heading"><div class="ev-name">${esc(h.name)}</div><span class="state ${h.state}">${stLabel}</span></div>
     <div class="ev-sub">${S.idx + 1} of ${HEATS.length} in schedule · ${h.athletes.length} athletes${h.replaySourceType==='real'?' · Real-recorded replay':''}</div>`;
+  const jump=(event,round,heat)=>{
+    const candidates=HEATS.map((item,index)=>({item,index})).filter(({item})=>String(item.ev)===String(event));
+    const next=candidates.find(({item})=>String(item.rd)===String(round)&&String(item.ht)===String(heat))||candidates.find(({item})=>String(item.rd)===String(round))||candidates[0];
+    if(next)go(next.index);
+  };
+  $('#quickEvent').onchange=e=>jump(e.target.value,h.rd,h.ht);
+  $('#quickRound').onchange=e=>jump(h.ev,e.target.value,h.ht);
+  $('#quickHeat').onchange=e=>go(Number(e.target.value));
+  const selectedMeet=S.meet?(S.meet.demo?`source:${S.simulationSource.id}`:`folder:${S.meet.dir}`):'';
+  const meets=new Map(selectedMeet?[[selectedMeet,meetDisplayName()]]:[]);
+  for(const source of S.simulationCatalog?.sources||[])if(!meets.has('source:'+source.id))meets.set('source:'+source.id,source.name);
+  for(const dir of S.recentMeets||[])if(!meets.has('folder:'+dir)&&dir!==S.meet?.dir)meets.set('folder:'+dir,dir.split(/[\\/]/).filter(Boolean).at(-1));
+  $('#quickMeet').innerHTML=(selectedMeet?'':'<option value="" disabled selected>Choose meet…</option>')+[...meets].map(([value,name])=>`<option value="${esc(value)}">${esc(name)}</option>`).join('')+'<option value="choose">Choose input folder…</option>';
+  $('#quickMeet').value=selectedMeet;
+  $('#quickMeet').onchange=async e=>{
+    const value=e.target.value;
+    try{if(value==='choose'){const dir=await OM.pickFolder('Choose input folder');if(dir)await openMeet(dir);}else if(value.startsWith('folder:'))await openMeet(value.slice(7));else await openDemo(null,{id:value.slice(7)});}
+    catch(error){toast('Could not change meet: '+error.message,true);}finally{renderUI();}
+  };
   const active=runningHeat();
   if(active&&active!==h){const back=h_('button','background-capture',`Recording E${active.ev} · H${active.ht} — return to live`);back.onclick=()=>{S.tab='run';go(HEATS.indexOf(active));};$('#ev').append(back);}
   const ctl = $('#ctl'); ctl.innerHTML = '';
@@ -877,12 +925,10 @@ function renderSide() {
   prev.title='Previous heat';prev.setAttribute('aria-label','Previous heat');prev.disabled=S.idx===0;prev.onclick=()=>go(S.idx-1);
   next.title='Next heat';next.setAttribute('aria-label','Next heat');next.disabled=S.idx===HEATS.length-1;next.onclick=()=>go(S.idx+1);
   nav.append(prev,h_('span','dimtext',`Heat ${h.ht}${h.of?` of ${h.of}`:''}`),next);ctl.append(nav);
-  const ready=h.state==='review'&&h.athletes.every(a=>resolved(h,a));
   if(running)btn(h.stopping?'Stopping…':'Stop capture','go wide',stopCapture,h.stopping);
   else if(h.state==='loaded')btn('Arm heat','primary wide',arm);
   else if(h.state==='armed')btn(`Start <span class="tag sim">${h.replaySourceType==='real'?'REPLAY':'SIM'}</span>`,'go wide',fire,!!runningHeat()||S.sourceChanging||!replayCameras(h).primary);
-  else if(h.state==='review'&&ready)btn(h.saves?'Save corrected results':'Save results','go wide',save);
-  else if(h.state==='review')btn('Review next finish','primary wide',()=>{const a=h.athletes.find(a=>!resolved(h,a));if(a)selectLane(a.lane);});
+  else if(h.state==='review')btn(h.saving?'Saving…':h.saves?'Save corrected results':'Save results','go wide',save,h.saving);
   else btn('Next heat','primary wide',()=>go(S.idx+1),S.idx===HEATS.length-1);
   const reset=btn(ICON.revert+(running?'Stop/reset':'Restart'),'warn race-reset',confirmRaceReset,h.stopping||h.saving);
   reset.id='raceReset';reset.title=running?'Stop or restart this race':'Restart this race';reset.setAttribute('aria-haspopup','dialog');
@@ -906,13 +952,20 @@ function renderSide() {
   progress.querySelectorAll('[data-order]').forEach(b=>{b.onclick=()=>{S.rosterOrder=b.dataset.order;store.set('rosterOrder',S.rosterOrder);renderSide();};});$('#warn').append(progress);
 
   const { pl } = places(h);
-  const list = $('#list'); list.innerHTML = '';
+  const list = $('#list'),rosterKey=JSON.stringify([S.meet?.dir,h.ev,h.rd,h.ht]);
+  const sameHeat=list.dataset.rosterKey===rosterKey,scrollTop=sameHeat?list.scrollTop:0,sameSelection=sameHeat&&list.dataset.selection===String(S.selLane);
+  const existing=new Map(sameHeat?[...list.children].filter(row=>row.dataset.lane).map(row=>[Number(row.dataset.lane),row]):[]),rows=[];
+  list.dataset.rosterKey=rosterKey;list.dataset.selection=String(S.selLane);
+  if(!sameHeat)setHoveredLane(null);
   const orderColumn=a=>h.status[a.lane]?Infinity:(h.marks[a.lane]?.col??h.proposals?.find(p=>p.lane===a.lane)?.col??Infinity);
   [...h.athletes].sort((a,b)=>{
     if(S.rosterOrder==='finish'){const ac=orderColumn(a),bc=orderColumn(b);if(ac!==bc)return ac<bc?-1:1;}
     return a.lane-b.lane;
   }).forEach(a => {
-    const row = h_('div', 'row' + (S.selLane === a.lane ? ' sel' : ''));
+    const row = existing.get(a.lane)||h_('div','row');
+    if(!row.firstChild)row.innerHTML='<div class="lane"></div><div class="who"></div><div class="res"></div>';
+    row.classList.toggle('sel',S.selLane===a.lane);
+    row.dataset.lane=a.lane;
     const mk = h.marks[a.lane], st = h.status[a.lane], p = h.proposals && h.proposals.find(x => x.lane === a.lane);
     let res;
     if (st) {
@@ -925,12 +978,17 @@ function renderSide() {
     } else {
       res = `<span class="t prop">${running ? 'racing' : '—'}</span><span class="sub">${h.state === 'review' || h.state === 'saved' ? 'no time' : 'pending'}</span>`;
     }
-    row.innerHTML = `
-      <div class="lane">${a.lane}</div>
-      <div class="who"><div class="nm">${a.last}, ${a.first}</div><div class="sc">${a.team.name}${a.id==null||a.id===''?'':` <span class="athlete-id">· #${esc(a.id)}</span>`}</div></div>
-      <div class="res">${res}</div>`;
+    const who=`<div class="nm">${a.last}, ${a.first}</div><div class="sc">${a.team.name}${a.id==null||a.id===''?'':` <span class="athlete-id">· #${esc(a.id)}</span>`}</div>`;
+    if(row.querySelector('.lane').textContent!==String(a.lane))row.querySelector('.lane').textContent=a.lane;
+    if(row._whoHtml!==who){row.querySelector('.who').innerHTML=who;row._whoHtml=who;}
+    if(row._resultHtml!==res){row.querySelector('.res').innerHTML=res;row._resultHtml=res;}
     row.onclick = e => { if (e.target.closest('button,select,input')) return; selectLane(a.lane); };
-    if (S.selLane === a.lane) {
+    row.onmouseenter=()=>setHoveredLane(a.lane);
+    row.onmouseleave=()=>{if(S.hoverLane===a.lane)setHoveredLane(null);};
+    const controlsKey=S.selLane===a.lane?JSON.stringify([a.first,a.last,st||'',mk?fmtT(raceTime(h,mk.col)):null,p&&!mk&&!st?[p.col,official(raceTime(h,p.col))]:null]):'';
+    if(row._controlsKey!==controlsKey){
+      row.querySelector('.rowctl')?.remove();row._controlsKey=controlsKey;
+      if (S.selLane === a.lane) {
       const rc = h_('div', 'rowctl');
       if (p && !mk && !st) {
         const accept = h_('button', 'btn sm primary', 'Accept time');
@@ -943,18 +1001,32 @@ function renderSide() {
       status.onchange=e=>setStatus(a.lane,e.target.value);rc.append(status);
       if(mk){const exact=h_('span','num dimtext',fmtT(raceTime(h,mk.col))+' s');rc.append(exact);const clear=h_('button','btn sm clear-athlete');clear.innerHTML=ICON.trash;clear.title='Clear finish mark';clear.setAttribute('aria-label','Clear finish mark');clear.onclick=deleteSelectedFinish;rc.append(clear);}
       row.append(rc);
+      }
     }
-    list.append(row);
+    rows.push(row);
   });
+  // Keep live rows attached, including their hover, focused controls and lane
+  // positions. Only a genuine order or roster change moves/removes a node.
+  const wanted=new Set(rows);
+  for(const row of [...list.children])if(!wanted.has(row))row.remove();
+  rows.forEach((row,index)=>{if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);});
+  if(S.hoverLane!=null&&!rows.some(row=>Number(row.dataset.lane)===S.hoverLane))setHoveredLane(null);
+  rosterAlignmentRevision++;
+  // Apply new content sizes in this same update, before the browser can paint
+  // a normal-flow roster between two aligned frames.
+  renderLaneGutter(viewHeat());
+  if(!list.classList.contains('lane-aligned')&&(sameSelection||!sameHeat))list.scrollTop=scrollTop;
+  invalidate();
 }
 function selectLane(lane) {
   S.entryNumber = '';
   S.selLane = lane;
   const h = cur();
+  S.markSelection = null;
   if (lane != null) {
     const mk = h.marks[lane], p = h.proposals && h.proposals.find(x => x.lane === lane);
     const col = mk ? mk.col : p ? p.col : null;
-    if (col != null) { S.selCol = col; S.hoverCol = null; focusFinish(col); }
+    if (col != null) { S.selCol = col; S.markSelection = { heat: h, lane }; S.hoverCol = null; focusFinish(col); }
   }
   renderUI();
 }
@@ -1006,22 +1078,23 @@ function renderSchedule() {
     if (key !== lastKey) { html += `<div class="sch-ev"><span class="num">E${esc(h.ev)}</span> ${esc(h.name)} <span class="dimtext">· R${h.rd}</span></div>`; lastKey = key; }
     const win = h.state === 'saved' || h.state === 'review' ? places(h).fin[0] : null;
     const done = h.athletes.filter(a => resolved(h, a)).length;
-    const detail = h.state === 'saved' ? `<span class="num">${win ? official(raceTime(h, h.marks[win.lane].col)) : '—'}</span> · <span class="num">${h.lifName}</span>`
+    const detail = h.state==='saved'&&done<h.athletes.length?`${done} / ${h.athletes.length} reviewed · review later`:h.state === 'saved' ? `<span class="num">${win ? official(raceTime(h, h.marks[win.lane].col)) : '—'}</span> · <span class="num">${h.lifName}</span>`
       : h.state === 'review' ? `${done} / ${h.athletes.length} resolved` : `${h.athletes.length} athletes`;
     html += `<div class="sch-row${i === S.idx ? ' cur' : ''}" data-i="${i}"><span class="num">H${h.ht}</span><span class="sch-d">${detail}</span><span class="state ${h.state}">${label[h.state]}</span></div>`;
   });
-  box.innerHTML = html;
+  box.innerHTML = '<div class="schedule-actions"><button id="browseEvents" class="btn sm" aria-haspopup="dialog">Browse events</button></div>' + html;
+  box.querySelector('#browseEvents').onclick=()=>{S.tab='events';renderUI();};
   box.querySelectorAll('.sch-row').forEach(r => { r.onclick = () => go(+r.dataset.i); });
 }
 function renderAcc() {
   const h = cur();
-  const cameras=replayCameras(h),recorded=h.replaySourceType==='real',source=recorded?'real-recorded replay':h.asset?'TTP simulator':'built-in sim';
+  const cameras=replayCameras(h),recorded=h.replaySourceType==='real',source=recorded?'real-recorded replay':h.asset?'OpenMeet demo':'not loaded';
   const start = { loaded: 'idle', armed: 'armed', running: 'fired', review: 'fired', saved: 'fired' }[h.state];
   const cap = h.state === 'running' ? (h.liveCol >= 0 ? 'capturing' : 'waiting') : 'idle';
   const facts=h.captureId&&S.cameraRecorders?.captureId===h.captureId?S.cameraRecorders.cameras:[];
   const scans=h.asset?.lineScans||[];
   const rows = [
-    ...(scans.length?scans.map(scan=>{const fact=facts.find(c=>c.id===scan.id),state=fact?.state||'available';return [state==='error'?'warn':'ok',cameraLabel(h,scan.id),'',fact?`${state} · ${fact.columns||0} columns`:`${source} · available`];}):[['ok','Simulated line-scan','',`built-in sim · ${cap}`]]),
+    ...(scans.length?scans.map(scan=>{const fact=facts.find(c=>c.id===scan.id),state=fact?.state||'available';return [state==='error'?'warn':'ok',cameraLabel(h,scan.id),'',fact?`${state} · ${fact.columns||0} columns`:`${source} · available`];}):[['ok','Simulated line-scan','',`not loaded`]]),
     [cameras.front?'ok':'', 'Front camera', '', cameras.front?(cameras.folder?'recording available':'sim · streaming'):'absent'],
     ['ok', 'Start system', '', `replay clock · ${start}`],
     h.wind == null ? ['', 'Wind gauge', '', 'not connected'] : ['ok', 'Wind gauge', '.41', ['review', 'saved'].includes(h.state) ? `sim · ${windStr(h)}` : 'sim · ready'],
@@ -1031,20 +1104,21 @@ function renderAcc() {
 }
 
 function renderSimulationSources(body) {
-  const card=h_('div','card');card.id='simulationSources';card.append(h_('h3','','Simulation source'));
+  const card=h_('div','card');card.id='simulationSources';card.append(h_('h3','','OpenMeet demo'));
   const label=h_('label'),select=h_('select');select.id='simulationSource';select.setAttribute('aria-label','Simulation source');
   for(const choice of sourceChoices(S.simulationCatalog)){const o=h_('option','',choice.label);o.value=choice.value;select.append(o);}
-  select.value=S.simulationSource?.id||'builtin';select.disabled=!OM||!!runningHeat()||S.sourceChanging;
+  if(S.simulationSource?.type!=='ttp'){const placeholder=h_('option','','Choose demo…');placeholder.value='';placeholder.disabled=true;select.prepend(placeholder);}
+  select.value=S.simulationSource?.type==='ttp'?S.simulationSource.id:'';select.disabled=!OM||!!runningHeat()||S.sourceChanging;
   select.title=sourceLabel(S.simulationSource);
   select.onchange=()=>select.value.startsWith('import:')?importSimulationSource(select.value.slice(7)):openDemo(null,{id:select.value});
   label.append(select);card.append(label);
   const buttons=h_('p');
-  for(const [type,text]of[['ttp','Import TTP folder…'],['real','Import real meet replay…']]){
+  for(const [type,text]of[['ttp','Choose demo folder…']]){
     const b=h_('button','btn sm',text);b.id=type==='real'?'importRealSource':'importTtpSource';b.disabled=select.disabled;b.onclick=()=>importSimulationSource(type);buttons.append(b,document.createTextNode(' '));
   }
   card.append(buttons);
   if(S.simulationSource?.path)card.append(h_('p','num',S.simulationSource.path));
-  card.append(h_('p','dimtext',runningHeat()?'Stop capture before changing sources. The current recording stays active.':S.sourceChanging?'Opening source…':S.simulationSource?.type==='real'?'Real-recorded still timing source · original pixels and native column times. Saved reference suggestions are labelled RECORDED RESULTS.':'Simple built-in uses generated sample images. TTP and real meet sources load local folders with their own start lists.'));
+  card.append(h_('p','dimtext',runningHeat()?'Stop capture before changing sources. The current recording stays active.':S.sourceChanging?'Opening source…':S.simulationSource?.type==='real'?'Real-recorded still timing source · original pixels and native column times. Saved reference suggestions are labelled RECORDED RESULTS.':'OpenMeet demo uses the TTP simulator recordings and its own start lists.'));
   if(!OM)card.append(h_('p','dimtext','Folder sources are available in the desktop app.'));
   body.prepend(card);
 }
@@ -1263,26 +1337,26 @@ function renderStarts(body) {
 
 function renderMeetNavigator(body) {
   if(!body.querySelector('#meetNavigator')){
-    body.innerHTML='<div id="meetNavigator" class="meet-navigator"><div class="meet-nav-controls"><input type="search" id="meetSearch" placeholder="Find event or athlete" aria-label="Find event or athlete"><select id="meetFilter" aria-label="Filter heats"><option value="all">All heats</option><option value="recorded">Recorded</option><option value="upcoming">To run</option></select></div><div id="meetNavSummary"></div><div id="meetEventList"></div></div>';
+    body.innerHTML='<div id="meetNavigator" class="meet-navigator"><div class="meet-nav-controls"><input type="search" id="meetSearch" placeholder="Find event or athlete" aria-label="Find event or athlete"><select id="meetFilter" aria-label="Filter heats"><option value="all">All heats</option><option value="recorded">Recorded</option><option value="pending">Needs review</option><option value="upcoming">To run</option></select></div><div id="meetNavSummary"></div><div id="meetEventList"></div></div>';
     const search=body.querySelector('#meetSearch'),filter=body.querySelector('#meetFilter');search.value=S.meetQuery||'';filter.value=S.meetFilter||'all';
     search.oninput=()=>{S.meetQuery=search.value;renderMeetNavigator(body);};search.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();body.querySelector('[data-meet-heat]')?.click();}};
     filter.onchange=()=>{S.meetFilter=filter.value;renderMeetNavigator(body);};
   }
   const signature=JSON.stringify([S.idx,S.meetQuery,S.meetFilter,HEATS.map(h=>[h.ev,h.rd,h.ht,h.name,h.state,h.saves,h.offSchedule,h.athletes.filter(a=>resolved(h,a)).length])]);
   const list=body.querySelector('#meetEventList');if(list.dataset.signature===signature)return;list.dataset.signature=signature;
-  const terms=(S.meetQuery||'').toLowerCase().trim().split(/\s+/).filter(Boolean),groups=new Map();let count=0;
+  const terms=(S.meetQuery||'').toLowerCase().trim().split(/\s+/).filter(Boolean),groups=[];let count=0;
   HEATS.forEach((h,i)=>{
     const recorded=['review','saved'].includes(h.state);
-    if(S.meetFilter==='recorded'&&!recorded||S.meetFilter==='upcoming'&&recorded)return;
+    if(S.meetFilter==='recorded'&&!recorded||S.meetFilter==='upcoming'&&recorded||S.meetFilter==='pending'&&(!recorded||h.athletes.every(a=>resolved(h,a))))return;
     const text=`${h.ev} ${h.name} round ${h.rd} heat ${h.ht} ${h.athletes.map(a=>a.first+' '+a.last+' '+a.team.name).join(' ')}`.toLowerCase();if(!terms.every(t=>text.includes(t)))return;
-    const key=`${h.ev}:${h.rd}`;if(!groups.has(key))groups.set(key,{heat:h,items:[]});groups.get(key).items.push({h,i});count++;
+    const key=`${h.ev}:${h.rd}`;if(groups.at(-1)?.key!==key)groups.push({key,heat:h,items:[]});groups.at(-1).items.push({h,i});count++;
   });
   list.replaceChildren();
-  for(const {heat,items}of groups.values()){
+  for(const {heat,items}of groups){
     const section=h_('section','meet-event');section.append(h_('h3','',`E${heat.ev} · ${heat.name}`),h_('p','meet-round',`Round ${heat.rd}`));
     const heats=h_('div','meet-heat-grid');
     for(const {h,i}of items){const button=h_('button','meet-heat'+(i===S.idx?' selected':''));button.dataset.meetHeat=i;button.setAttribute('aria-current',i===S.idx?'true':'false');const done=h.athletes.filter(a=>resolved(h,a)).length,attempts=attemptsByHeat.get(attemptKey(h));
-      button.innerHTML=`<span><b>Heat ${h.ht}</b><span class="state ${h.state}">${h.state==='running'?'RECORDING':h.state.toUpperCase()}</span></span><small>${['review','saved'].includes(h.state)?`${done} / ${h.athletes.length} resolved`:`${h.athletes.length} athletes`}${attempts?.length>1?` · ${attempts.length} attempts`:''}${h.offSchedule?' · Off schedule':''}</small>`;
+      button.innerHTML=`<span><span><span class="meet-heat-order num" title="Position in meet order">${i+1}.</span> <b>Heat ${h.ht}</b></span><span class="state ${h.state}">${h.state==='running'?'RECORDING':h.state==='saved'&&done<h.athletes.length?'REVIEW LATER':h.state.toUpperCase()}</span></span><small>${['review','saved'].includes(h.state)?`${done} / ${h.athletes.length} resolved`:`${h.athletes.length} athletes`}${attempts?.length>1?` · ${attempts.length} attempts`:''}${h.offSchedule?' · Off schedule':''}</small>`;
       button.onclick=()=>{S.tab='run';go(i);};heats.append(button);
     }section.append(heats);list.append(section);
   }
@@ -1299,7 +1373,7 @@ function renderDrawer() {
   const body=$('#drawerBody');body.classList.toggle('billboardbody',!!S.billboardPanel);body.classList.toggle('camera-setup-body',S.tab==='alignment'&&!S.billboardPanel);
   if(S.billboardPanel){$('#drawerTitle').textContent='Camera setup · Billboards';body.classList.remove('boardbody');billboards.render(body);return;}
   if (S.tab === 'run') return;
-  $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)[1];
+  $('#drawerTitle').textContent = TABS.find(t => t[0] === S.tab)?.[1] || 'Schedule';
   body.classList.toggle('boardbody', S.tab === 'board');
   if (S.tab === 'board') { renderBoard(body); return; }
   body.dataset.tab = S.tab;
@@ -1311,7 +1385,7 @@ function renderDrawer() {
     const h=cur(),cameras=replayCameras(h),period=periodOf(h),real=h.replaySourceType==='real';
     const row=(name,available,detail)=>`<tr><td>${esc(name)}</td><td>Local</td><td>${available?esc(detail):'absent'}</td></tr>`;
     body.innerHTML=`<div class="card"><h3>Camera inputs</h3>
-      <p>${real?'Real-recorded still timing source':h.asset?'TTP simulator folder':'Simple built-in simulator'} · replay clock</p>
+      <p>${real?'Real-recorded still timing source':h.asset?'OpenMeet demo':'No demo loaded'} · replay clock</p>
       <table class="tbl"><tr><th>Device</th><th>Connection</th><th>State</th></tr>
       ${row(h.asset?.mainCameraLabel||'Primary line-scan',cameras.primary,`${(1/period).toFixed(1)} columns/s`)}
       ${row(h.asset?.comparisonCameraLabel||'Backup line-scan',cameras.comparison,h.asset?.backupMeta?`${(1/h.asset.backupMeta.column_period_s).toFixed(1)} columns/s`:'simulated')}
@@ -1322,46 +1396,7 @@ function renderDrawer() {
     const camerasCard=h_('div','card');camerasCard.append(h_('h3','','Camera views'));renderCameraRoles(camerasCard);body.prepend(camerasCard);
     renderSimulationSources(body);
   } else if (S.tab === 'meet') {
-    const last = S.files[S.files.length - 1], entries = HEATS.reduce((n, h) => n + h.athletes.length, 0);
-    const kb = n => (n == null ? '' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' kB');
-    const fileRow = f => { const m = S.meet.files[f]; return `<tr><td class="num">${f}</td><td>${m ? kb(m.size) : 'absent'}</td><td>${m ? new Date(m.mtimeMs).toTimeString().slice(0, 8) : '—'}</td><td><span class="dot ${m ? 'ok' : ''}"></span> ${m ? 'watching' : f === 'lynx.evt' ? 'required' : 'optional'}</td></tr>`; };
-    const folderCard = !OM ? null : `
-      <div class="card"><h3>Meet folder</h3>
-        ${S.meet ? `<p class="num">${esc(S.meet.dir)}</p>` : '<p>No meet folder is open, so the built-in sample meet is loaded. Point this at the folder your meet manager (RunMeet through AthleticLOCAL, Hy-Tek, ...) writes lynx.evt to.</p>'}
-        <p><button class="btn sm primary" id="openMeet">Open meet folder…</button> <button class="btn sm" id="openDemo">Open demo meet…</button> ${S.meet ? '<button class="btn sm" id="closeMeet">Use the sample meet</button>' : ''}</p>
-        ${S.meet?.demo ? `<p class="dimtext">${esc(sourceLabel(S.simulationSource))} · local recording</p>` : ''}
-        ${S.meet ? `<table class="tbl"><tr><th>Input (meet manager writes)</th><th>Size</th><th>Modified</th><th>State</th></tr>${['lynx.evt', 'lynx.ppl', 'lynx.sch'].map(fileRow).join('')}</table>
-        <p>${HEATS.length} laned heats, ${entries} entries.</p>
-        <p>Results folder: <span class="num">${esc(S.meet.resultsDir || S.meet.dir)}</span>${S.meet.resultsDir ? '' : ' <span class="dimtext">(same as the meet folder)</span>'}
-          <button class="btn sm" id="pickResults">Change…</button>${S.meet.resultsDir ? ' <button class="btn sm" id="sameResults">Use the meet folder</button>' : ''}</p>
-        <p class="dimtext">AthleticLOCAL: its Start Lists folder is the meet folder; its Results folder is the results folder.</p>
-        <pre class="file">${esc((S.meet.files['lynx.evt'] || {}).text || '')}</pre>` : ''}
-      </div>`;
-    body.innerHTML = folderCard ? folderCard + resultsCard(last) : `
-      <div class="card"><h3>Meet folder</h3>
-        <p class="num">C:\\Meets\\2026-10-28-sim\\  <span class="dimtext">(mapped as X: on the meet-manager laptop)</span></p>
-        <table class="tbl"><tr><th>Input (meet manager writes)</th><th>Contents</th><th>State</th></tr>
-          <tr><td class="num">lynx.evt</td><td>${HEATS.length} heats, ${entries} entries</td><td><span class="dot ok"></span> watching</td></tr>
-          <tr><td class="num">lynx.ppl</td><td>${entries} people</td><td><span class="dot ok"></span> watching</td></tr>
-          <tr><td class="num">lynx.sch</td><td>${HEATS.length} entries in run order</td><td><span class="dot ok"></span> watching</td></tr>
-        </table>
-        <pre class="file">${esc(evtText())}</pre>
-      </div>${resultsCard(last)}`;
-    if (OM) {
-      $('#openMeet').onclick = async () => { const dir = await OM.pickFolder('Open meet folder'); if (dir) openMeet(dir); };
-      if ($('#closeMeet')) $('#closeMeet').onclick = closeMeet;
-      const setResults = async dir => {
-        S.meet.resultsDir = dir;
-        const s = await OM.call('settings.get').catch(() => ({}));
-        OM.call('settings.set', { patch: { resultsFor: { ...(s.resultsFor || {}), [S.meet.dir]: dir } } }).catch(() => {});
-        renderUI();
-      };
-      if ($('#pickResults')) $('#pickResults').onclick = async () => { const dir = await OM.pickFolder('Results folder (the meet manager reads LIF files here)'); if (dir) setResults(dir); };
-      if ($('#sameResults')) $('#sameResults').onclick = () => setResults(null);
-      $('#openDemo').onclick = () => importSimulationSource('ttp');
-      for(const id of ['openMeet','openDemo','closeMeet'])if($('#'+id))$('#'+id).disabled=!!runningHeat()||S.sourceChanging;
-    }
-    renderSimulationSources(body);
+    renderMeetFolders(body);
   } else if (S.tab === 'api') {
     const reference=cur().replaySourceType==='real'&&S.atInfo?.stub&&replayReferenceTiming(cur());
     body.innerHTML = `
@@ -1397,16 +1432,42 @@ function renderDrawer() {
   }
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-function resultsCard(last) {
-  return `
-      <div class="card"><h3>Results written (the meet manager imports these)</h3>
-        ${S.files.length ? `<table class="tbl"><tr><th>File</th><th>Written</th><th>Bytes</th><th>Version</th></tr>${S.files.map(f => `<tr><td class="num" title="${esc(f.path || '')}">${f.name}</td><td class="num">${f.at.toTimeString().slice(0, 8)}</td><td class="num">${f.bytes}</td><td class="num">${f.v}</td></tr>`).join('')}</table>
-        <p>Last written: <span class="num">${last.name}</span> (thousandths; the meet manager rounds up to hundredths)</p><pre class="file">${esc(last.text)}</pre>` : '<p>No results yet. Saving a heat writes <span class="num">EEE-R-HH.lif</span> atomically (temp file, then rename).</p>'}
-      </div>`;
+function renderMeetFolders(body) {
+  const meet=S.meet, busy=!!runningHeat()||!!S.cameraSetup||S.sourceChanging;
+  const row=(kind,title,description,value,reset)=>`<section class="meet-folder-row" aria-labelledby="${kind}FolderLabel">
+    <div><h3 id="${kind}FolderLabel">${title}</h3><p>${description}</p><div class="meet-folder-path num">${esc(value)}</div></div>
+    <div class="meet-folder-actions"><button class="btn ${kind==='input'?'primary':''}" data-folder="${kind}" ${!OM||busy||kind!=='input'&&!meet?'disabled':''}>${kind==='input'&&meet||kind==='output'&&meet?.resultsDir||kind==='backup'&&meet?.backupDir?'Change…':'Choose folder…'}</button>${reset?`<button class="btn sm" data-reset="${kind}" ${busy?'disabled':''}>${reset}</button>`:''}</div></section>`;
+  body.innerHTML=`<div class="meet-overview"><h2>${esc(meetDisplayName())}</h2><p>${new Set(HEATS.map(h=>h.ev)).size} events · ${new Set(HEATS.map(h=>JSON.stringify([h.ev,h.rd]))).size} rounds · ${HEATS.length} heats · ${HEATS.reduce((sum,h)=>sum+h.athletes.length,0)} athlete entries</p></div>
+  <div class="meet-content"><section class="meet-information" aria-labelledby="meetOrderTitle"><h3 id="meetOrderTitle">Order of events</h3><p class="dimtext">In start-list order. Select a heat to open it.</p><div id="meetSchedule"></div></section><section class="meet-folders" aria-labelledby="meetFoldersTitle"><h3 id="meetFoldersTitle">Meet folders</h3>
+    ${row('input','Input folder','Start lists from your meet manager.',meet?.dir||'No input folder selected')}
+    ${row('output','Output folder','Saved results for your meet manager.',meet?.resultsDir||'Same as input folder',meet?.resultsDir?'Use input folder':null)}
+    ${row('backup','Backup folder <span class="dimtext">Optional</span>','Copies completed recordings and saved results.',meet?.backupDir||'No backup folder selected',meet?.backupDir?'Remove':null)}
+    <p class="meet-folder-status ${meet?.backupStatus?.state==='error'?'backup-error':''}" role="status">${busy?'Stop capture or camera preview to change folders.':meet?.backupStatus?.state==='error'?'Backup failed: '+esc(meet.backupStatus.message):meet?.backupStatus?.state==='copying'?'Copying backup…':meet?.backupStatus?.state==='complete'?'Last backup completed at '+esc(new Date(meet.backupStatus.at).toLocaleTimeString()):''}</p>
+  </section></div>`;
+  renderMeetNavigator(body.querySelector('#meetSchedule'));
+  body.querySelectorAll('[data-folder]').forEach(button=>button.onclick=async()=>{
+    const kind=button.dataset.folder, selectedMeet=S.meet;
+    try {
+      const folder=await OM.pickFolder({input:'Choose input folder',output:'Choose output folder',backup:'Choose backup folder (optional)'}[kind]);
+      if(!folder||S.meet!==selectedMeet)return;
+      if(kind==='input')await openMeet(folder);else await setMeetFolder(kind,folder);
+    }catch(error){toast('Could not choose folder: '+error.message,true);}
+  });
+  body.querySelectorAll('[data-reset]').forEach(button=>button.onclick=()=>setMeetFolder(button.dataset.reset,null));
+}
+async function setMeetFolder(kind,folder) {
+  const meet=S.meet;
+  if(!OM||!meet||runningHeat()||S.cameraSetup||S.sourceChanging)return;
+  S.sourceChanging=true;renderUI();
+  try {
+    const folders=await OM.call('meet.folders.set',{dir:meet.dir,kind,folder});
+    Object.assign(meet,folders);meet.backupStatus=null;
+  }catch(error){toast('Could not change folder: '+error.message,true);}
+  finally{S.sourceChanging=false;renderUI();}
 }
 
 // ---------------------------------------------------------------- scoreboards (engine serves them; a coding agent builds them)
-const B = { started: false, starting: false, port: null, lanUrls: [], list: [], sel: 'classic', running: false, snapshot: null, log: '' };
+const B = { prompts: new Map(), submitted: new Map(), started: false, starting: false, port: null, lanUrls: [], list: [], sel: 'classic', running: false, snapshot: null, log: '' };
 const boardUrl = name => `http://127.0.0.1:${B.port}/scoreboard/${name}/`;
 // Live state for every scoreboard (docs/scoreboard-v1.md).
 function boardState() {
@@ -1463,6 +1524,7 @@ function renderBoard(body) {
         <pre class="file" id="bLog"></pre></div>`;
     $('#bNew').onclick = () => newBoard('classic');
     $('#bNewTicker').onclick = () => newBoard('results-ticker');
+    $('#bPrompt').oninput=e=>B.prompts.set(B.sel,e.target.value);
     $('#bBuild').onclick = buildBoard;
     $('#bUndo').onclick = async () => {
       if (!B.snapshot) return;
@@ -1504,6 +1566,7 @@ function renderBoard(body) {
     list.append(row);
   });
   $('#bNet').innerHTML = B.lanUrls.length ? 'On the network (TV, OBS browser source):<br>' + B.lanUrls.map(u => `<span class="num">${esc(u)}${esc(B.sel)}/</span>`).join('<br>') : `Local: <span class="num">${esc(boardUrl(B.sel))}</span>`;
+  if(document.activeElement!==$('#bPrompt'))$('#bPrompt').value=B.prompts.get(B.sel)||'';
   $('#bBuild').disabled = B.running; $('#bUndo').disabled = B.running || !B.snapshot;
   $('#bLog').textContent = B.log || 'The agent edits only this board\'s folder. Each build can be undone.';
 }
@@ -1521,9 +1584,11 @@ async function newBoard(from) {
 async function buildBoard() {
   const req = $('#bPrompt').value.trim();
   if (!req || B.running) return;
+  const submittedBoard=B.sel;
   B.running = true; B.log = `> ${$('#bAgent').value}: ${req}\n`; renderDrawer();
   try {
     const r = await OM.call('scoreboard.agent', { name: B.sel, request: req, preset: $('#bAgent').value });
+    if(r.code===0&&!r.restored)B.submitted.set(submittedBoard,req);
     B.snapshot = r.snapshotId || null;
     B.log += `\n[done: exit ${r.code}${r.restored ? ', the board broke the contract and was restored' : ''}]`;
     reloadPreview();
@@ -1556,7 +1621,7 @@ function overlayStyle(kind,camera=viewHeat().asset?.mainCameraId||'primary',nati
   const highlight=kind==='scan'?{...reviewHighlightDefaults,...(saved.pendingColor?{pendingColor:saved.pendingColor}:{}),...(saved.pendingOpacity!=null?{pendingOpacity:saved.pendingOpacity}:{} )}:{};
   if(kind==='scan'&&!saved.pendingStyleVersion){if(saved.pendingColor==='#ffb020')highlight.pendingColor=reviewHighlightDefaults.pendingColor;if(saved.pendingOpacity===0.12)highlight.pendingOpacity=reviewHighlightDefaults.pendingOpacity;}
   const rows=kind==='scan'?(nativeRows||rowsForCamera(camera)):null,scale=kind==='scan'&&saved.resolutionRows>0?rows/saved.resolutionRows:1;
-  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'learned',needsFinish:false,...reviewHighlightDefaults,...inactiveLaneDefaults}),...saved,...highlight,
+  return {...overlayDefaults,...(kind==='front'?{fontSize:28,opacity:0.5,enabled:false,behindRunners:false,laneCount:8,placement:'anchors',firstScale:1,lastScale:0.55}:{enabled:S.lanes,behindRunners:true,occlusionMethod:'learned',needsFinish:true,...reviewHighlightDefaults,...inactiveLaneDefaults}),...saved,...highlight,
     positions:Object.fromEntries(Object.entries(saved.positions||{}).map(([lane,b])=>[lane,kind==='scan'?{...b,top:b.top*scale,bottom:b.bottom*scale}:{...b}])),
     boundaries:Object.fromEntries(Object.entries(saved.boundaries||{}).map(([key,row])=>[key,row*scale])),sizes:{...(saved.sizes||{})},...(kind==='scan'?{resolutionRows:rows}:{})};
 }
@@ -1686,7 +1751,7 @@ function showOverlaySettings(kind, anchor) {
       </details>
     ` : ''}`;
 
-  const uiDefaults = { needsFinish: false, ...reviewHighlightDefaults, ...inactiveLaneDefaults };
+  const uiDefaults = { needsFinish: true, ...reviewHighlightDefaults, ...inactiveLaneDefaults };
   const inputs = [...menu.querySelectorAll('[data-key]')];
   const endSizes = [...menu.querySelectorAll('[data-end-size]')];
   const syncRange = input => {
@@ -2028,10 +2093,10 @@ function showToolbarDialog(kind) {
   }else{
     const intro=h_('p','toolbar-dialog-intro','Select a column, type a lane or hip number, then press Enter.');body.append(intro);
     for(const group of ['Marking','View','Timing','Results']){const section=h_('section','toolbar-help-section');section.append(h_('h3','',group));for(const tool of SCAN_TOOLS.filter(t=>t.group===group)){const row=h_('div','toolbar-help-row');row.innerHTML=`<div><b>${tool.label}</b>${tool.shortcut?`<kbd>${tool.shortcut}</kbd>`:''}</div><p>${tool.help}</p>`;section.append(row);}body.append(section);}
-    const gestures=h_('p','toolbar-help-gestures');gestures.textContent='Wheel: scroll · Ctrl/Cmd + wheel: zoom · Drag: pan · Arrow keys: nudge the selected column · Shift + arrow: 10 columns';body.append(gestures);
+    const gestures=h_('p','toolbar-help-gestures');gestures.textContent='Wheel: scroll · Ctrl/Cmd + wheel: zoom · Drag: pan · Left/Right: adjust selected mark or column · Shift + arrow: 10 columns · Alt + 1–9: choose camera · [ / ]: cycle cameras';body.append(gestures);
     const footer=h_('div','toolbar-dialog-footer'),done=h_('button','btn primary','Got it');done.onclick=()=>dialog.close();footer.append(done);dialog.append(footer);
   }
-  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('close',()=>{dialog.remove();document.querySelector('#tools [data-more]')?.focus();},{once:true});document.body.append(dialog);dialog.showModal();
+  dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('close',()=>{dialog.remove();document.querySelector('#tools [data-more]')?.focus();},{once:true});dismissOnBackdrop(dialog);document.body.append(dialog);dialog.showModal();
 }
 let toolbarRenderKey='';
 function renderTools() {
@@ -2067,7 +2132,7 @@ function syncCursor() { scanCv.classList.toggle('zoom', S.zoomTool); }
 
 function renderUI() {
   invalidate();
-  renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderSchedule(); renderDrawer(); renderTools();
+  renderTabs(); renderStatus(); renderSide(); renderRace(); renderAcc(); renderProps(); renderSchedule(); renderDrawer(); renderTools();renderCameraSwitches();
   if(!S.cameraSetup)publishBoard();
   updateFrontOverlay();
   updateTs();
@@ -2138,10 +2203,11 @@ async function openMeet(dir) {
     const r = await OM.call('meet.open', { dir });
     if (!r.parsed || !r.parsed.events.some(e => e.entries.some(x => x.lane))) { toast(`No laned heats found in ${dir} (lynx.evt missing or empty).`, true); return; }
     const s = await OM.call('settings.get').catch(() => ({}));
-    S.meet = { dir, files: r.files, resultsDir: s.resultsFor && s.resultsFor[dir] ? s.resultsFor[dir] : null };
+    S.meet = { dir, files: r.files, resultsDir: s.resultsFor?.[dir] || null, backupDir: s.backupFor?.[dir] || null };
     S.simulationSource=null;S.cameraConfig=null;S.cameraRecorders=null;scanSourceViews.clear();attemptsByHeat.clear();
     applyMeet(r.parsed, true);
-    await OM.call('settings.set', { patch: { meetDir: dir, demoDir:null, simulationSourceId:null } });
+    S.recentMeets=[dir,...(s.recentMeets||[]).filter(folder=>folder!==dir)].slice(0,10);
+    await OM.call('settings.set', { patch: { meetDir: dir, demoDir:null, simulationSourceId:null, recentMeets:S.recentMeets } });
     toast(`Opened ${dir}: ${HEATS.length} heats.`);
   } catch (err) { toast('Could not open the meet folder: ' + err.message, true); }
   finally {S.sourceChanging=false;renderUI();}
@@ -2221,21 +2287,15 @@ async function openDemo(dir, selection = {}) {
     const settings=await OM.call('settings.get');
     S.simulationCatalog=await OM.call('demo.catalog');S.simulationSource=r.source;S.cameraConfig=null;S.cameraRecorders=null;
     scanSourceViews.clear();attemptsByHeat.clear();S.lastLiveHeat=null;
-    if(r.source.type==='builtin'){
-      S.meet=null;S.source='replay';HEATS=SPECS.map(buildHeat);S.idx=0;S.files=[];S.selLane=null;S.selCol=null;S.hoverCol=null;
-      const h=cur();ensureStrip(h);if(S.autoArm)h.state='armed';fitView();
-    }else{
-      S.meet={dir:r.meet.dir,files:r.meet.files,demo:r.dir,replayHeats:r.heats,resultsDir:settings.resultsFor?.[r.meet.dir]||null};
-      applyMeet(r.meet.parsed,true);
-    }
-    if(r.source.type!=='builtin')await cameraSetupConsole.load();
+    S.meet={dir:r.meet.dir,files:r.meet.files,demo:r.dir,replayHeats:r.heats,resultsDir:settings.resultsFor?.[r.meet.dir]||null,backupDir:settings.backupFor?.[r.meet.dir]||null};
+    applyMeet(r.meet.parsed,true);
+    await cameraSetupConsole.load();
     S.bview.linked=true;Object.assign(S.fview,{s:1,x:0,y:0});applyFrontView();
     toast(`${sourceLabel(r.source)}${r.meet?`: ${r.heats.length} recorded heats.`:'.'}`);
     return true;
   }catch(err){toast('Could not open simulation source: '+err.message,true);return false;}
   finally {S.sourceChanging=false;renderUI();}
 }
-function closeMeet() { return openDemo(null,{id:'builtin'}); }
 
 // ---------------------------------------------------------------- canvases
 let TK = {}, dirty = true;
@@ -2306,15 +2366,16 @@ function syncLaneGutter(o) {
   laneGutter.dataset.renderKey='';
 }
 function renderLaneGutter(h) {
-  if(laneGutter.hidden)return;
+  if(laneGutter.hidden){syncRosterAlignment(h,null);return;}
   const o=overlayStyle('scan'),edges=scanBoundaries(laneBands(h),o,rowsOf(h)),pending=pendingLaneIds(h,o),v=S.view,Hi=scanH();
+  syncRosterAlignment(h,edges);
   const key=JSON.stringify([Hi,v.r0,v.zy,edges,o.fontSize,o.weight,o.textColor,o.lineColor,o.thickness,o.opacity,o.edit,[...pending],h.status,S.selLane]);
   if(laneGutter.dataset.renderKey===key)return;laneGutter.dataset.renderKey=key;laneGutter.replaceChildren();
   for(let i=0;i<edges.length-1;i++){
     const lane=edges[i].below,top=Math.max(0,(edges[i].row-v.r0)*v.zy),bottom=Math.min(Hi,(edges[i+1].row-v.r0)*v.zy);
     if(lane==null||bottom<=top)continue;
     const entered=h.athletes.some(a=>a.lane===lane),status=!S.cameraSetup?(h.status[lane]||(!entered?'Empty':null)):null;
-    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(pending.has(lane)?' pending':'')+(status?' has-status':'')+(['DNS','FS','Empty'].includes(status)?' empty-lane':''));row.disabled=!S.cameraSetup&&!entered;row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.max(6,Math.min(28,Math.floor((bottom-top)*0.7),(laneGutter.clientWidth-12)/(String(lane).length*0.65)))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
+    const row=h_('button','lane-row'+(S.selLane===lane?' selected':'')+(S.hoverLane===lane?' hovered':'')+(pending.has(lane)?' pending':'')+(status?' has-status':'')+(['DNS','FS','Empty'].includes(status)?' empty-lane':''));row.disabled=!S.cameraSetup&&!entered;row.dataset.lane=lane;row.style.top=top+'px';row.style.height=bottom-top+'px';row.style.fontSize=Math.max(6,Math.min(28,Math.floor((bottom-top)*0.7),(laneGutter.clientWidth-12)/(String(lane).length*0.65)))+'px';row.style.fontWeight=o.weight;row.style.color=o.textColor;
     if(bottom-top>=8){row.append(h_('span','lane-number',lane));if(status){const code=h_('small','lane-status',status);row.append(code);}}
     row.setAttribute('aria-label',`Lane ${lane}${status?', '+status:''}${pending.has(lane)?', awaiting a finish or status':''}`);row.setAttribute('aria-pressed',String(S.selLane===lane));
     row.onclick=()=>{if(S.cameraSetup){S.selLane=lane;renderUI();}else selectLane(lane);};laneGutter.append(row);
@@ -2327,6 +2388,44 @@ function renderLaneGutter(h) {
     divider.onmousedown=e=>{if(e.button!==0)return;e.preventDefault();divider.focus();const r=laneGutter.getBoundingClientRect(),offset=(e.clientY-r.top)/S.view.zy+S.view.r0-b.row;S.drag={mode:'lane-boundary',key:b.key,offset,moved:false,x0:0,y0:e.clientY-r.top,x1:0,y1:e.clientY-r.top};};
     divider.onkeydown=e=>{if(!['ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();const value=overlayStyle('scan'),index=edges.findIndex(edge=>edge.key===b.key);value.boundaries=Object.fromEntries(edges.map(edge=>[edge.key,edge.row]));value.boundaries[b.key]=movedBoundaryRow(edges,index,b.row+(e.key==='ArrowUp'?-1:1)*(e.shiftKey?10:1),rowsOf(h));value.positions={};saveOverlay('scan',value);requestAnimationFrame(()=>{renderLaneGutter(viewHeat());laneGutter.querySelector(`[data-boundary="${CSS.escape(b.key)}"]`)?.focus();});};laneGutter.append(divider);
   });
+}
+let rosterAlignmentRevision=0,rosterAlignmentKey='',rosterMeasurementKey='',rosterRowHeights=new Map();
+const rosterHoverCache={};
+function setHoveredLane(lane) {
+  if(S.hoverLane===lane)return;
+  S.hoverLane=lane;
+  if(lane==null)delete rosterHoverCache.layer;
+  for(const row of laneGutter.querySelectorAll('[data-lane]'))row.classList.toggle('hovered',Number(row.dataset.lane)===lane);
+  invalidate();
+}
+function syncRosterAlignment(h,edges) {
+  const list=$('#list');
+  if(S.rosterOrder!=='lane'||S.cameraSetup){list.classList.remove('lane-aligned');for(const row of list.children){row.style.removeProperty('top');row.style.removeProperty('height');}rosterAlignmentKey='';return;}
+  const scanRect=scanCv.getBoundingClientRect(),listRect=list.getBoundingClientRect();
+  const measurementKey=JSON.stringify([rosterAlignmentRevision,list.clientWidth]);
+  if(rosterMeasurementKey!==measurementKey){
+    rosterMeasurementKey=measurementKey;rosterRowHeights=new Map();
+    for(const row of list.children){
+      const content=Math.max(...['.who','.res','.lane'].map(selector=>row.querySelector(selector)?.getBoundingClientRect().height||0));
+      const controls=row.querySelector('.rowctl');
+      // The text plus its divider is the minimum; spare band height provides
+      // the padding. Expanded controls must still fit without clipping.
+      rosterRowHeights.set(Number(row.dataset.lane),content+1+(controls?controls.getBoundingClientRect().height+7:0));
+    }
+  }
+  const v=S.view,key=JSON.stringify([rosterAlignmentRevision,edges,v.r0,v.zy,scanH(),scanRect.top,listRect.top,list.clientHeight,list.clientWidth,h.unlaned]);
+  if(rosterAlignmentKey===key)return;rosterAlignmentKey=key;
+  const layout=edges?rosterLaneLayout({athletes:cur().athletes,boundaries:edges,rowOrigin:v.r0,rowScale:v.zy,scanHeight:scanH(),scanTop:scanRect.top,listTop:listRect.top,listHeight:list.clientHeight,rowHeights:rosterRowHeights,unlaned:h.unlaned}):{aligned:false};
+  const wasAligned=list.classList.contains('lane-aligned');
+  list.classList.toggle('lane-aligned',layout.aligned);
+  if(layout.aligned){
+    list.scrollTop=0;
+    const positions=new Map(layout.rows.map(row=>[row.lane,row]));
+    for(const row of list.children){const band=positions.get(Number(row.dataset.lane)),top=band.top+'px',height=band.height+'px';if(row.style.top!==top)row.style.top=top;if(row.style.height!==height)row.style.height=height;}
+  }else{
+    for(const row of list.children){row.style.removeProperty('top');row.style.removeProperty('height');}
+    if(wasAligned)list.querySelector('.sel')?.scrollIntoView({block:'nearest'});
+  }
 }
 function initWorkspaceSplit() {
   const main=$('.main'),bar=$('#workspaceSplit');let ratio=store.get('workspaceSplit',0.5);
@@ -2476,10 +2575,10 @@ function foregroundColumns(h,x0,x1) {
   }
   return result;
 }
-function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache') {
+function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache',owner=h) {
   if(!pending.size||W<1||Hi<1)return null;
   const v=S.view,key=JSON.stringify([W,Hi,v.zx,v.r0,v.zy,S.flip,h.recvCols,h.nCols,!!projectionOf(h),h.cropResult?.request_id,h.asset?.mainCameraId,rowsOf(h),o.behindRunners,o.occlusionMethod,h.activeOcclusionMask?.requestId,o.pendingColor,[...pending],edges]);
-  if(h[cache]?.key===key&&Math.abs((v.c0-h[cache].c0)*v.zx)<OVERLAY_PAD*.75)return h[cache];
+  if(owner[cache]?.key===key&&Math.abs((v.c0-owner[cache].c0)*v.zx)<OVERLAY_PAD*.75)return owner[cache];
   const canvas=document.createElement('canvas'),width=W+2*OVERLAY_PAD;canvas.width=width;canvas.height=Hi;
   const ctx=canvas.getContext('2d'),bands=[];ctx.fillStyle=o.pendingColor;
   for(let i=0;i<edges.length-1;i++){
@@ -2501,7 +2600,7 @@ function reviewHighlightLayer(h,o,W,Hi,pending,edges,cache='reviewHighlightCache
     }
     ctx.putImageData(image,0,0);
   }
-  return h[cache]={key,canvas,c0:v.c0};
+  return owner[cache]={key,canvas,c0:v.c0};
 }
 
 const billboards=new BillboardConsole({bridge:OM,store,toast,changed:invalidate,
@@ -2554,6 +2653,10 @@ function drawLaneGuides(g,h,W,Hi) {
     if(emptyLayer){g.save();g.globalAlpha=o.inactiveOpacity;g.drawImage(emptyLayer.canvas,overlayOffset(emptyLayer),0);g.restore();}
     const highlight=reviewHighlightLayer(h,o,W,Hi,pending,edges);
     if(highlight){g.save();g.globalAlpha=o.pendingOpacity;g.drawImage(highlight.canvas,overlayOffset(highlight),0);g.restore();}
+    if(S.hoverLane!=null&&!S.cameraSetup){
+      const hover=reviewHighlightLayer(h,{...o,pendingColor:TK.blue},W,Hi,new Set([S.hoverLane]),edges,'layer',rosterHoverCache);
+      if(hover){g.save();g.globalAlpha=.06;g.drawImage(hover.canvas,overlayOffset(hover),0);g.restore();}
+    }
     g.save();g.globalAlpha=o.opacity;g.strokeStyle=o.lineColor;g.lineWidth=o.thickness;g.font=`${o.weight} ${o.fontSize}px ${TK.mono}`;
     const guides=guideRenderData(h,o,W,Hi);g.translate(overlayOffset(guides),0);guides.lines.forEach(line=>{
       if(o.thickness>0)g.stroke(line.path);
@@ -2759,8 +2862,31 @@ function frontTime(h) {
   const col = S.hoverCol != null ? S.hoverCol : S.selCol;
   return col == null ? null : colTime(h, col);
 }
-let vidEl = null, vidTag = null, frontCache=null, frontCacheKey=null, lastFrontFrame=null, wantedVideoTime=null, frontVideoFrame=0;
+let vidEl = null, vidTag = null, frontCache=null, frontCacheKey=null, lastFrontFrame=null, wantedVideoTime=null, frontVideoFrame=0,frontWarmKey=null;
 const frontOcclusion=new FrontOverlayOcclusion(()=>invalidate());
+function prepareFrontOcclusion(rec,frame=0) {
+  const o=overlayStyle('front');
+  if(!o.enabled||!o.behindRunners){frontOcclusion.suspendPrefetch();frontWarmKey=null;return false;}
+  frontOcclusion.configure(frontCacheKey);
+  frontOcclusion.loadReference(rec.frames?.[0]?OM.fileUrl(rec.frames[0]):null,OM.fileUrl(rec.path));
+  if(frontOcclusion.reference&&rec.frames?.length&&!frontOcclusion.failed){
+    const count=rec.frames.length,limit=frontOcclusion.limit,bucket=count<=limit?0:Math.floor(frame/(limit/2));
+    const key=`${frontCacheKey}:${frontOcclusion.generation}:${bucket}`;
+    if(frontWarmKey!==key){
+      frontWarmKey=key;frontOcclusion.suspendPrefetch();
+      const start=Math.max(0,Math.min(count-limit,bucket*limit/2-limit/4));
+      const stamps=Array.from({length:Math.min(limit,count)},(_,i)=>i+start).sort((a,b)=>Math.abs(a-frame)-Math.abs(b-frame)).map(i=>'frame:'+i);
+      const sourceKey=frontCacheKey;
+      frontOcclusion.precompute(stamps,async stamp=>{
+        const index=Number(stamp.slice(6)),cached=sourceKey===frontCacheKey&&frontCache?.get(index);
+        if(cached)return {source:cached};
+        const image=new Image();image.crossOrigin='anonymous';image.src=OM.fileUrl(rec.frames[index]);await image.decode();
+        const bitmap=await createImageBitmap(image);return {source:bitmap,release:()=>bitmap.close()};
+      });
+    }
+  }
+  return true;
+}
 function currentFrontPixels() {
   if(vidEl?.style.display==='block')return vidEl.readyState>=2?{image:vidEl,stamp:`video:${vidEl.dataset.src}:${vidEl.requestVideoFrameCallback?frontVideoFrame:Math.floor(vidEl.currentTime*(vidEl.dataset.fps||30))}`}:null;
   if(lastFrontFrame)return {image:lastFrontFrame.bitmap,stamp:`frame:${lastFrontFrame.index}`};
@@ -2768,18 +2894,20 @@ function currentFrontPixels() {
 }
 function updateFrontOcclusion(h) {
   const layer=$('#frontLaneOverlay'),o=overlayStyle('front');
-  if(!o.enabled||!o.behindRunners){layer.style.maskImage='none';layer.style.visibility='';return;}
+  if(!o.enabled||!o.behindRunners){frontOcclusion.suspendPrefetch();frontWarmKey=null;layer.style.maskImage='none';layer.style.visibility='';layer.dataset.occlusion='off';return;}
   const rec=h.frontRec||(h.asset?.front?{path:h.asset.front,frames:h.asset.frontFrames}:null),source=currentFrontPixels();
   if(rec){
-    frontOcclusion.configure(frontCacheKey);
-    frontOcclusion.loadReference(rec.frames?.[0]?OM.fileUrl(rec.frames[0]):null,OM.fileUrl(rec.path));
+    prepareFrontOcclusion(rec,Number($('#front').dataset.wantedFrame)||0);
   }
   const mask=source&&frontOcclusion.mask(source.image,source.stamp);
-  layer.dataset.occlusion=mask?'ready':frontOcclusion.failed?'unavailable':frontOcclusion.reference?'waiting-frame':'loading-background';
+  const ready=source&&frontOcclusion.presentable(source.stamp);
+  layer.dataset.occlusion=ready?'ready':frontOcclusion.failed?'unavailable':frontOcclusion.reference?'waiting-frame':'loading-background';
+  layer.dataset.maskFrame=ready&&lastFrontFrame?String(lastFrontFrame.index):'';
+  layer.dataset.maskKind=ready?(mask?'foreground':'clear'):'';
   layer.style.maskImage=mask?`url("${mask}")`:'none';
-  // Keep live masks between worker completions. A new seek/reference has no
-  // matching mask yet, so only its decorative number layer waits for the result.
-  layer.style.visibility=!mask&&!frontOcclusion.failed?'hidden':'';
+  // A completed clear mask is a valid live result too. Keep it visible between
+  // worker completions; seeks and reference changes clear the accepted stamp.
+  layer.style.visibility=!ready&&!mask&&frontOcclusion.stamp==null&&!frontOcclusion.failed?'hidden':'';
 }
 function seekFrontVideo(v,target) {
   wantedVideoTime=target;
@@ -2790,9 +2918,9 @@ function frontVideo() {
     const pb = $('#front').parentNode;
     vidEl = h_('video', 'frontvid'); vidEl.muted = true; vidEl.playsInline = true; vidEl.preload = 'auto';vidEl.crossOrigin='anonymous';
     vidEl.onloadedmetadata = invalidate;
-    vidEl.onloadeddata=()=>{frontVideoFrame++;invalidate();};
-    vidEl.onseeked=()=>{frontVideoFrame++;if(wantedVideoTime!=null&&Math.abs(vidEl.currentTime-wantedVideoTime)>0.002)seekFrontVideo(vidEl,wantedVideoTime);invalidate();};
-    if(vidEl.requestVideoFrameCallback){const presented=()=>{frontVideoFrame++;invalidate();vidEl.requestVideoFrameCallback(presented);};vidEl.requestVideoFrameCallback(presented);}
+    vidEl.onloadeddata=()=>{frontVideoFrame=Math.floor(vidEl.currentTime*(vidEl.dataset.fps||30));invalidate();};
+    vidEl.onseeked=()=>{frontVideoFrame=Math.floor(vidEl.currentTime*(vidEl.dataset.fps||30));if(wantedVideoTime!=null&&Math.abs(vidEl.currentTime-wantedVideoTime)>0.002)seekFrontVideo(vidEl,wantedVideoTime);invalidate();};
+    if(vidEl.requestVideoFrameCallback){const presented=(_now,metadata)=>{frontVideoFrame=Math.floor(metadata.mediaTime*(vidEl.dataset.fps||30)+1e-5);invalidate();vidEl.requestVideoFrameCallback(presented);};vidEl.requestVideoFrameCallback(presented);}
     vidTag = h_('div', 'frametag');
     pb.append(vidEl, vidTag);
     applyFrontView();
@@ -2800,11 +2928,24 @@ function frontVideo() {
   return vidEl;
 }
 // The front camera is a recording attached to the heat: frame-exact at 30 fps, scrubbed by hovering the line-scan.
+function updateFrontTag(text=null) {
+  if(text!=null&&vidTag.textContent!==text)vidTag.textContent=text;
+  const display=text==null?'none':'block';
+  if(vidTag.style.display!==display)vidTag.style.display=display;
+}
 function syncFront(h,g,W,Hf) {
   const rec = h.frontRec || (h.asset && h.asset.front ? { path: h.asset.front, meta: h.asset.frontMeta,frames:h.asset.frontFrames } : null);
   const v = frontVideo(), on = !!(OM && rec);
-  v.style.display = on ? 'block' : 'none'; vidTag.style.display = 'none';
-  if (!on) { if (!v.paused) v.pause();frontCache?.dispose();frontCache=null;frontCacheKey=null;lastFrontFrame=null;return false; }
+  v.style.display = on ? 'block' : 'none';
+  if (!on) {
+    updateFrontTag();
+    if (!v.paused) v.pause();
+    if(v.dataset.src){v.removeAttribute('src');delete v.dataset.src;wantedVideoTime=null;frontVideoFrame=0;v.load();}
+    frontCache?.dispose();frontCache=null;frontCacheKey=null;lastFrontFrame=null;
+    const sample=frontOcclusion.key?.startsWith('sample:')&&replayCameras(h).front;
+    if(!sample&&(frontOcclusion.key!=null||frontOcclusion.reference||frontOcclusion.loading))frontOcclusion.dispose();
+    frontWarmKey=null;return false;
+  }
   const url = OM.fileUrl(rec.path);
   if (v.dataset.src !== url) { v.dataset.src = url; v.src = url; }
   const fps = (rec.meta && rec.meta.fps) || 30, ff = (rec.meta && rec.meta.first_frame_race_time_s) || 0;
@@ -2812,6 +2953,8 @@ function syncFront(h,g,W,Hf) {
   const cacheKey=rec.frames?.[0]||url;
   if(frontCacheKey!==cacheKey){frontCache?.dispose();frontCache=null;lastFrontFrame=null;frontCacheKey=cacheKey;if(rec.frames?.length)frontCache=new FrontFrameCache({load:async index=>{const im=new Image();im.crossOrigin='anonymous';im.src=OM.fileUrl(rec.frames[index]);await im.decode();return createImageBitmap(im);},onReady:invalidate});}
   if (h.state === 'running'&&S.hoverCol==null) {
+    updateFrontTag();
+    prepareFrontOcclusion(rec,Math.max(0,Math.floor((h.tNow-ff)*fps)));
     wantedVideoTime=null;
     const want = h.tNow - ff;
     if (want < 0) { if (!v.paused) v.pause(); return true; }
@@ -2826,17 +2969,23 @@ function syncFront(h,g,W,Hf) {
   const frame = Math.max(0, Math.min(maxN, Math.floor((t - ff) * fps)));
   const target = (frame + 0.5) / fps;
   $('#front').dataset.wantedFrame=frame;
+  const masking=prepareFrontOcclusion(rec,frame);
   if(frontCache&&!frontCache.failed.has(frame)) {
     wantedVideoTime=null;frontCache.request(frame,rec.frames.length);
-    const decoded=frontCache.get(frame);if(decoded)lastFrontFrame={bitmap:decoded,index:frame};
+    const decoded=frontCache.get(frame),stamp='frame:'+frame;
+    frontOcclusion.waitingStamp=masking?stamp:null;
+    if(decoded&&masking&&frontOcclusion.reference&&!frontOcclusion.failed)frontOcclusion.mask(decoded,stamp);
+    if(decoded&&(!masking||frontOcclusion.failed||frontOcclusion.presentable(stamp))){lastFrontFrame={bitmap:decoded,index:frame};frontCache.pinned=frame;frontOcclusion.waitingStamp=null;}
     if(lastFrontFrame&&!frontCache.frames.has(lastFrontFrame.index))lastFrontFrame=null;
     v.style.display='none';g.fillStyle='#000';g.fillRect(0,0,W,Hf);
     if(lastFrontFrame){const b=lastFrontFrame.bitmap,s=Math.min(W/b.width,Hf/b.height);g.drawImage(b,(W-b.width*s)/2,(Hf-b.height*s)/2,b.width*s,b.height*s);if($('#front').dataset.frame!==String(lastFrontFrame.index))$('#front').dataset.frame=lastFrontFrame.index;}
-    if(ft!=null){vidTag.style.display='block';vidTag.textContent=decoded?`${fmtT(ff+frame/fps)} s · frame ${frame+1}`:'Loading frame…';}
+    // A pending decode keeps the previously presented frame and its timestamp
+    // together. Unrelated redraws must not replace an unchanged badge node.
+    updateFrontTag(ft==null?null:lastFrontFrame?`${fmtT(ff+lastFrontFrame.index/fps)} s · frame ${lastFrontFrame.index+1}`:'Loading frame…');
     return true;
   }
   g.clearRect(0,0,W,Hf);seekFrontVideo(v,target);
-  if (ft != null) { vidTag.style.display = 'block'; vidTag.textContent = v.seeking||Math.abs(v.currentTime-target)>0.5/fps?'Loading frame…':`${fmtT(ff + frame / fps)} s · frame ${frame + 1}`; }
+  updateFrontTag(ft==null?null:v.seeking||Math.abs(v.currentTime-target)>0.5/fps?'Loading frame…':`${fmtT(ff + frame / fps)} s · frame ${frame + 1}`);
   return true;
 }
 function drawFront() {
@@ -2910,7 +3059,7 @@ function deleteSelectedFinish() {
   const h=cur(), lane=S.selLane;
   if(lane==null || !['running','review','saved'].includes(h.state)) return;
   if(!h.marks[lane] && !(h.proposals||[]).some(p=>p.lane===lane)) return;
-  delete h.marks[lane];
+  delete h.marks[lane];S.markSelection=null;
   (h.dismissed ||= {})[lane]=true;
   h.proposals=(h.proposals||[]).filter(p=>p.lane!==lane);
   editHeat(h); renderUI();
@@ -2937,6 +3086,7 @@ scanCv.addEventListener('mousedown', e => {
     S.drag={mode:'lane-boundary',key:boundary.key,offset,moved:false,x0:e.clientX-r.left,y0:e.clientY-r.top,x1:e.clientX-r.left,y1:e.clientY-r.top};return;
   }
   const hit = !S.zoomTool && !e.shiftKey && ['running','review','saved'].includes(h.state) ? hitFinish(h,e.clientX-r.left) : null;
+  S.markSelection=hit?{heat:cur(),lane:hit.lane}:null;
   if(hit) { S.selLane=hit.lane; S.selCol=hit.col; }
   S.drag = { lane:hit?.lane, mode: hit ? 'mark' : S.zoomTool || e.shiftKey ? 'zoom' : 'pan', x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top, c0: S.view.c0, r0: S.view.r0, moved: false };
 });
@@ -2995,6 +3145,7 @@ window.addEventListener('mouseup', () => {
     // clicking on a mark or proposal tag selects that athlete
     const near = [...(h.proposals || []).map(p => ({ lane: p.lane, col: p.col })), ...Object.entries(h.marks).map(([l, m]) => ({ lane: +l, col: m.col }))]
       .find(t => Math.abs(xOf(t.col) - d.x0) < 7);
+    S.markSelection=near?{heat:cur(),lane:near.lane}:null;
     if (near) { S.selLane = near.lane; S.selCol = near.col; } else S.selCol = col;
     renderUI();
   }
@@ -3008,9 +3159,17 @@ scanCv.addEventListener('dblclick', e => {
 });
 window.addEventListener('keydown', e => {
   if(S.frameEditor){if(e.key==='Escape'){e.preventDefault();finishHeightFrame();}return;}
-  if(e.target instanceof Element&&e.target.closest('#billboardEditor,#laneGutter,#workspaceSplit,.camera-source-menu,.overlay-settings,.scan-tool-menu,.scan-toolbar-dialog'))return;
+  if(e.target instanceof Element&&e.target.closest('#billboardEditor,#laneGutter [data-boundary],#workspaceSplit,.camera-source-menu,.overlay-settings,.scan-tool-menu,.scan-toolbar-dialog'))return;
   if (document.querySelector('.race-reset-dialog[open],.scan-toolbar-dialog[open]')) return;
   if (e.target instanceof Element && e.target.closest('input, select, textarea, [contenteditable=true]')) return;
+  if(S.tab==='run'&&!e.ctrlKey&&!e.metaKey&&!e.repeat&&!(S.cameraSetup?.starting||S.cameraSetup?.stopping)) {
+    const scans=cur().asset?.lineScans||[],digit=e.altKey?/^Digit([1-9])$/.exec(e.code):null;
+    const cycle=!e.altKey&&!e.shiftKey&&(e.key==='['||e.key===']');
+    if(scans.length&&(digit||cycle)) {
+      const index=digit?Number(digit[1])-1:(scans.findIndex(s=>s.id===viewHeat().asset?.mainCameraId)+(e.key===']'?1:scans.length-1))%scans.length;
+      if(scans[index]){e.preventDefault();sourceMenu?.close(false);void chooseScanView('main',scans[index].id);}return;
+    }
+  }
   if (S.cameraSetup)return;
   if (S.tab !== 'run' || e.ctrlKey || e.metaKey || e.altKey) return;
   const h = viewHeat(), lanes = h.athletes.map(a => a.lane).sort((a, b) => a - b);
@@ -3033,6 +3192,8 @@ window.addEventListener('keydown', e => {
     const step=dir*(e.shiftKey?10:1)*(h.displaySource?h.displaySource.p/periodOf(h):1);
     S.selCol=projectionOf(h)?toOriginal(h,Math.max(0.5,Math.min(displayCount(h)-0.5,toDisplay(h,S.selCol+0.5)+step)))-0.5:Math.max(0,Math.min(h.nCols-1,S.selCol+step));
     S.hoverCol=null;
+    const selected=S.markSelection;
+    if(selected?.heat===cur()&&selected.lane===S.selLane){setMark(selected.lane,S.selCol);centerOn(S.selCol);return;}
     centerOn(S.selCol); renderUI();
   } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
     e.preventDefault();
@@ -3052,6 +3213,7 @@ window.addEventListener('keydown', e => {
     } else if (S.selLane != null && S.selCol != null) { e.preventDefault(); setMark(S.selLane, S.selCol); }
   } else if (e.key === 'Escape') {
     if (S.entryNumber) { e.preventDefault(); S.entryNumber = ''; updateEntryNumber(); return; }
+    if(S.markSelection?.heat===cur()){e.preventDefault();S.markSelection=null;S.selLane=null;renderUI();return;}
     if (S.zoomTool) { S.zoomTool = false; syncCursor(); }
     else if (S.view.zoomed) fitView();
     else { S.selLane = null; S.selCol = null; }
@@ -3060,8 +3222,17 @@ window.addEventListener('keydown', e => {
 });
 const cameraSetupConsole=new CameraSetupConsole({bridge:OM,toast,changed:invalidate,context:()=>({meetDir:S.meet?.dir||null,heatKey:heatCameraKey(cur()),heatName:cur().name,scans:cur().asset?.lineScans||[],timingId:cur().asset?.mainCameraId,viewId:viewHeat().asset?.mainCameraId,captureId:(runningHeat()||cur()).captureId,recording:!!runningHeat(),started:['running','review','saved'].includes(cur().state),preview:!!S.cameraSetup,sourceType:cur().replaySourceType}),applyConfig:applyCameraConfig,billboards:async id=>{await chooseScanView('main',id);S.billboardPanel=true;renderUI();},chooseView:id=>chooseScanView('main',id),align:async id=>{if(runningHeat())return;await chooseScanView('main',id);if(!S.cameraSetup)await startCameraSetup();else {S.tab='run';renderUI();}}});
 function closeSetupDialog(){S.billboardPanel=false;S.tab='run';renderUI();}
-const setupDialog=new SetupDialog({drawer:$('#drawer'),onDismiss:closeSetupDialog,onReturnLive:()=>{const h=runningHeat();closeSetupDialog();if(h&&!S.cameraSetup)go(HEATS.indexOf(h));}});
-$('#drawerClose').onclick = closeSetupDialog;
+const setupDialog=new SetupDialog({drawer:$('#drawer'),onDismiss:closeSetupDialog,beforeDismiss:async()=>{
+  if(cameraSetupConsole.busy){toast('Wait for camera setup to finish saving.');return false;}
+  const cameraDirty=cameraSetupConsole.hasUnsavedChanges(),boardDirty=S.tab==='board'&&!B.running&&!!$('#bPrompt')?.value.trim()&&$('#bPrompt').value.trim()!==B.submitted.get(B.sel),billboardDirty=S.billboardPanel&&billboards.hasUnsavedPrompt();
+  if(!cameraDirty&&!boardDirty&&!billboardDirty)return true;
+  if(!await confirmDiscardChanges())return false;
+  if(cameraDirty)cameraSetupConsole.discardChanges();
+  if(boardDirty){B.prompts.delete(B.sel);$('#bPrompt').value='';}
+  if(billboardDirty)billboards.discardPrompt();
+  return true;
+},onReturnLive:()=>{const h=runningHeat();closeSetupDialog();if(h&&!S.cameraSetup)go(HEATS.indexOf(h));}});
+$('#drawerClose').onclick = ()=>setupDialog.dismiss();
 window.addEventListener('resize', () => { renderTiles(); if (!S.view.zoomed && viewHeat().state !== 'running') fitView(); invalidate(); });
 
 // ---------------------------------------------------------------- backup line-scan input (its own view, shared time)
@@ -3114,6 +3285,7 @@ window.addEventListener('mouseup', () => {
       Object.assign(S.bview, { linked: false, t0: Math.min(ta, tb), spp: Math.abs(tb - ta) / r.width, r0: st.r0 + Math.min(d.y0, d.y1) / r.height * st.rv, rv: hh / r.height * st.rv });
     }
   } else if (!d.moved&&cameraPairCompatible(h)) {
+    S.markSelection=null;
     S.selCol = colAtTime(h, bT(d.x0, backupRange(h), r.width));     // select by time: Enter marks it, as on the primary
     renderUI();
   }
@@ -3203,7 +3375,7 @@ function frame(now) {
     const lc=(h.recvCols||0)-1;
     h.liveCol=lc;h.presentedCols=h.liveFollow?.sample(now)??h.recvCols;
     if(h===cur()&&!S.view.user&&lc>=0)follow(viewHeat(),now);
-    if(now-lastLiveRender>250){lastLiveRender=now;liveSuggest(h);if(h===cur()){renderAcc();const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();}renderProps();renderTools();}renderSchedule();if(S.tab==='events')renderMeetNavigator($('#drawerBody'));publishBoard();}
+    if(now-lastLiveRender>250){lastLiveRender=now;liveSuggest(h);if(h===cur()){renderAcc();const sideStamp=JSON.stringify([h.marks,h.status,h.proposals,S.selLane]);if(sideStamp!==lastSideStamp){lastSideStamp=sideStamp;renderSide();}renderProps();renderTools();}renderSchedule();if(S.tab==='events')renderMeetNavigator($('#drawerBody'));else if(S.tab==='meet'&&$('#meetSchedule'))renderMeetNavigator($('#meetSchedule'));publishBoard();}
     if(h.stopMode==='timeout'&&h.tNow>=h.stopAfter)stopCapture(h);
     if(h.stopMode==='complete'&&h.athletes.length&&h.athletes.every(a=>resolved(h,a)))stopCapture(h);
 
@@ -3245,10 +3417,16 @@ if (OM) {
   OM.on('capture.end', d => { const h = capHeat(d.id); if (h && h.state === 'running') { endCapture(h); renderUI(); } });
   OM.on('camera.recorders',d=>{S.cameraRecorders=d;cameraSetupConsole.updateRecorders(d);const h=capHeat(d.captureId);if(h&&d.setupChanges?.length&&!h.cameraSetupChanged){h.cameraSetupChanged=true;toast('Camera setup changed during capture. Review this race.',true);renderSide();}renderAcc();});
   OM.on('camera.recorder.error',d=>toast('Camera recorder error: '+d.message,true));
+  OM.on('backup.status', status => {
+    if(S.meet?.dir!==status.meetDir||S.meet.backupDir!==status.backupDir)return;
+    S.meet.backupStatus=status;
+    if(status.state==='error')toast('Backup failed: '+status.message+'. Your original recording and results are still saved.',true);
+    if(S.tab==='meet')renderDrawer();
+  });
   OM.on('capture.error', d => { toast('Camera error: ' + d.message, true); });
   occlusionAvailability.refresh();
   OM.call('autocrop.info').then(info=>{S.cropInfo=info;renderTools();}).catch(()=>{});
   OM.call('autotiming.info').then(i => { S.atInfo = i; }).catch(() => {});
-  Promise.all([OM.call('settings.get'),OM.call('demo.catalog')]).then(([s,catalog])=>{S.simulationCatalog=catalog;renderDrawer();if(s.demoDir||s.simulationSourceId)openDemo(null,{id:catalog.selectedId});else if(s.meetDir)openMeet(s.meetDir);}).catch(err=>toast('Simulation sources: '+err.message,true));
+  Promise.all([OM.call('settings.get'),OM.call('demo.catalog')]).then(([s,catalog])=>{S.simulationCatalog=catalog;S.recentMeets=s.recentMeets||[];renderDrawer();if(s.demoDir||s.simulationSourceId)openDemo(null,{id:catalog.selectedId});else if(s.meetDir)openMeet(s.meetDir);}).catch(err=>toast('Simulation sources: '+err.message,true));
 }
 })();

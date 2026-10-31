@@ -1,0 +1,45 @@
+{
+  "source": "Pre-optimization projection implementation; procedural original-column ranges and viewports.",
+  "cases": [
+    {
+      "count": 0,
+      "width": 0,
+      "sha256": "0c5b76de54a83f0e1af5c7faf5201d0091f53ec2862e4eb5ccaaa68c6a88c7e7"
+    },
+    {
+      "count": 1,
+      "width": 67,
+      "sha256": "2f9422e8d4bbd4f0e702434c5d7836632affbfda92c1206cd241c6ced765edc6"
+    },
+    {
+      "count": 2,
+      "width": 134,
+      "sha256": "369cda056475e666d5e37c607ffed73c092b7acaea26f32c6b8a589ec73b5d99"
+    },
+    {
+      "count": 3,
+      "width": 201,
+      "sha256": "bb66f981e5b9f8a8932a7ad4bd6134fffe2abbff6080f7244a9bafbc1526ec3b"
+    },
+    {
+      "count": 8,
+      "width": 536,
+      "sha256": "57d4180d53548434284a187afc14b00631780300552af23f11ef63696a497feb"
+    },
+    {
+      "count": 32,
+      "width": 2144,
+      "sha256": "cd36e740231134a5382ff53ae2bf2ca9eb8beb2d280e6140e5ecd018ea81a94a"
+    },
+    {
+      "count": 128,
+      "width": 8576,
+      "sha256": "1473554df485a376e9a4ad96e52ebf68b6deadc6f90b26c9b41a77ad2091d348"
+    },
+    {
+      "count": 1024,
+      "width": 68608,
+      "sha256": "095847f48da086e22d4f7c4b043dee2157e815c5ec79450ebe7fb2502e387d75"
+    }
+  ]
+}

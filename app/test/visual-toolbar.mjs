@@ -48,12 +48,12 @@ const closeDialog=()=>ev(`document.querySelector('.scan-toolbar-dialog [aria-lab
 const pin=async(id,value)=>{await ev(`(()=>{const e=document.querySelector('.scan-toolbar-dialog [aria-label="Pin ${id}"]');if(e.checked!==${value})e.click();})()`);};
 try {
  await sleep(1800);
- assert(JSON.stringify(await ids())===JSON.stringify(['zoom','mark','lanes','auto']),'Default toolbar is too crowded or missing core actions');
+ assert(JSON.stringify(await ids())===JSON.stringify(['zoom','lanes']),'Default toolbar is too crowded or missing core actions');
  await shot('01-default-toolbar');
  await openMore();assert(await ev(`!!document.querySelector('.scan-tool-menu [data-tool="flip"]')`),'Flip is not available in More');
  assert(await ev(`!!document.querySelector('.scan-tool-menu [data-tool="clear"]')`),'Recovery tools disappeared');await shot('02-grouped-more-menu');
  await click('Customize toolbar');assert(await ev(`!!document.querySelector('.scan-toolbar-dialog[open]')`),'Customize dialog missing');
- await pin('Flip',true);await pin('Mark',false);
+ assert(JSON.stringify(await ev(`[...document.querySelectorAll('.scan-toolbar-dialog input:checked')].map(e=>e.getAttribute('aria-label'))`))===JSON.stringify(['Pin Follow live','Pin Zoom','Pin Unzoom','Pin Lanes','Pin Hide empty spans']),'Default pins do not match the chosen toolbar');await pin('Flip',true);await pin('Mark',false);
  for(let n=0;n<5;n++)await ev(`document.querySelector('[aria-label="Move Flip earlier"]').click()`);
  await click('Done');let pinned=await ids();assert(pinned[0]==='flip'&&!pinned.includes('mark'),'Pin and order changes did not apply together');
  await send('Page.reload');await sleep(1500);pinned=await ids();assert(pinned[0]==='flip'&&!pinned.includes('mark'),'Customization did not survive reload');await shot('03-custom-toolbar');
@@ -67,10 +67,10 @@ try {
  await openMore();await click('Controls & shortcuts');assert(await ev(`document.querySelector('.scan-toolbar-dialog').innerText.includes('Select a column')&&document.querySelector('.scan-toolbar-dialog').innerText.includes('Enter')`),'Help omits the main timing workflow');await shot('05-controls-and-shortcuts');
  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'4',code:'Digit4'});assert(await ev(`document.querySelector('#entryNumber').hidden`),'Help keypress leaked into finish entry');await closeDialog();
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});await sleep(100);
- await ev(`document.querySelector('#tools [data-tool="auto"]').click()`);assert(await ev(`!!document.querySelector('[data-auto-toggle]')`),'Auto timing menu missing');
+ await openMore();await ev(`document.querySelector('.scan-tool-menu [data-tool="auto"]').click()`);assert(await ev(`!!document.querySelector('[data-auto-toggle]')`),'Auto timing menu missing');
  await ev(`document.querySelector('[data-auto-toggle]').click()`);assert(await ev(`!JSON.parse(localStorage.getItem('openmeet.autoMark'))`),'Auto timing toggle did not save');
- await ev(`document.querySelector('[data-auto-toggle]').click()`);await shot('06-auto-timing-controls');await ev(`document.querySelector('#tools [data-tool="auto"]').click()`);
- assert(!await ev(`!!document.querySelector('.scan-tool-menu')`),'Clicking Auto timing again did not close it');
+ await ev(`document.querySelector('[data-auto-toggle]').click()`);await shot('06-auto-timing-controls');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'});
+ assert(!await ev(`!!document.querySelector('.scan-tool-menu')`),'Escape did not close Auto timing');
  // All tools may be unpinned; More and its customization/help entry points remain available.
  await openMore();await click('Customize toolbar');await ev(`document.querySelectorAll('.scan-toolbar-dialog input[type=checkbox]').forEach(e=>{if(e.checked)e.click();})`);await click('Done');assert((await ids()).length===0,'Unpin-all was ignored');
  await openMore();await click('Customize toolbar');await click('Reset toolbar');await click('Done');

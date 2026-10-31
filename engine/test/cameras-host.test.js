@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, readdir, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -45,6 +45,45 @@ async function fixtureHost(t, type) {
   return { ...fixture, engine, root, replay };
 }
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
+
+test('meet folders persist, save results separately, and back up completed native captures without making backup failures fail primary saves', { timeout: 15000 }, async t => {
+  const { engine, cameras, meetDir, root } = await fixtureHost(t);
+  const output = path.join(root, 'results'), backup = path.join(root, 'backup');
+  await mkdir(output); await mkdir(backup);
+  await engine.call('meet.folders.set', { dir: meetDir, kind: 'output', folder: output });
+  await engine.call('meet.folders.set', { dir: meetDir, kind: 'backup', folder: backup });
+  await assert.rejects(engine.call('meet.folders.set', { dir: meetDir, kind: 'backup', folder: output }), /separate folder/);
+  await assert.rejects(engine.call('meet.folders.set', { dir: meetDir, kind: 'output', folder: backup }), /separate folder/);
+  const settings = await engine.call('settings.get');
+  assert.equal(settings.resultsFor[meetDir], output); assert.equal(settings.backupFor[meetDir], backup);
+  const restarted = await host(t, root);
+  assert.deepEqual(await restarted.call('settings.get'), settings);
+  const cap = await engine.call('capture.start', { key: 'folders', png: cameras[0].png, meetDir });
+  await assert.rejects(engine.call('meet.folders.set', { dir: meetDir, kind: 'backup', folder: null }), /Stop capture/);
+  await eventually(async () => (await engine.call('camera.recorders', { captureId: cap.id })).cameras.every(c => c.columns > 0));
+  await engine.call('capture.stop');
+  const copied = await eventually(() => engine.events.find(e => e.event === 'backup.status' && e.data.captureId === cap.id && e.data.state === 'complete')?.data);
+  for (const camera of (await engine.call('camera.recorders', { captureId: cap.id })).cameras) {
+    const target = path.join(copied.target, 'captures', cap.id, path.relative(cap.dir, camera.dir));
+    for (const file of ['columns.bin', 'times.f64', 'source.json']) assert.deepEqual(await readFile(path.join(target, file)), await readFile(path.join(camera.dir, file)));
+  }
+  const request = { dir: output, meetDir, captureId: cap.id, heat: { event: '5', round: 1, heat: 1, name: 'Folder check' }, results: [{ lane: 1, id: '101', first: 'Ada', last: 'Example', affiliation: 'Club', time: 12.345 }], review: { marks: { 1: { col: 1 } }, note: 'Résumé ✓' } };
+  const before = engine.events.length, saved = await engine.call('lif.save', request);
+  assert.equal(saved.path, path.join(output, saved.name));
+  await eventually(() => engine.events.slice(before).find(e => e.event === 'backup.status' && e.data.state === 'complete'));
+  const source = await readFile(saved.path);
+  assert.deepEqual(await readFile(path.join(copied.target, 'results', saved.name)), source);
+  assert.deepEqual(await readFile(path.join(copied.target, 'captures', cap.id, saved.name)), source);
+  assert.deepEqual(await json(path.join(copied.target, 'captures', cap.id, 'review.json')), request.review);
+  await assert.rejects(readFile(path.join(meetDir, saved.name)), { code: 'ENOENT' });
+  await rm(backup, { recursive: true }); await writeFile(backup, 'unavailable backup drive');
+  const failedAfter = engine.events.length;
+  const corrected = await engine.call('lif.save', { ...request, results: [{ ...request.results[0], time: 12.456 }] });
+  await eventually(() => engine.events.slice(failedAfter).find(e => e.event === 'backup.status' && e.data.state === 'error'));
+  assert.equal(corrected.path, saved.path); assert.notDeepEqual(await readFile(saved.path), source);
+  await engine.call('meet.folders.set', { dir: meetDir, kind: 'backup', folder: null });
+  assert.equal((await engine.call('settings.get')).backupFor[meetDir], null);
+});
 
 test('host records three native streams at independent rates/heights, all finishes, one trigger, and immutable setups', { timeout: 15000 }, async t => {
   const { engine, cameras, meetDir, replay, dir } = await fixtureHost(t);

@@ -15,7 +15,7 @@ test('saved toolbar choices retain operator order and pins while dropping stale 
 test('an intentionally empty toolbar still has valid settings; malformed settings use defaults',()=>{
   assert.deepEqual(toolbarPreferences({pinned:[]}).pinned,[]);
   const defaults=toolbarPreferences(null);
-  assert.ok(defaults.pinned.includes('mark')&&defaults.pinned.includes('auto'));
+  assert.deepEqual(defaults.pinned,['follow','zoom','unzoom','lanes','hideEmpty']);
   assert.ok(!defaults.pinned.includes('clear')&&!defaults.pinned.includes('revert'));
   assert.deepEqual(toolbarPreferences({order:'bad',pinned:'bad'}),defaults);
 });

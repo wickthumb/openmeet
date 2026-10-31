@@ -24,7 +24,7 @@ The camera clock supplies measurements. Suggested marks require operator review.
 
 The OpenMeet application, integration code, and documentation in this repository are open source under the MIT license.
 
-Timing, cropping and other proprietary models run as separate services. This repository contains their API contracts and client adapters, plus labelled demo stand-ins. Model weights, inference implementations, training code and datasets are excluded from source releases and installers. Connecting a private service does not distribute that service. Access has separate terms.
+The approved empty-span cropper ships with OpenMeet and runs locally on the CPU. Timing and learned occlusion models remain separate services; their weights, inference implementations, training code and datasets are excluded from source releases and installers. The cropper is the only authorized bundled model, with its exact checksum checked before builds. Connecting a private service does not distribute that service. Access has separate terms.
 
 The Meta agent and the custom finish model have different roles: the custom model proposes finish marks; the Meta agent helps reconcile runner identities and coordinate the review workflow.
 

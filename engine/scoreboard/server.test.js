@@ -68,6 +68,24 @@ test('HTTP serves classic, JSON, runtime, asset MIME, CSP and no-store', async t
   assert.match((await get(server.port, '/scoreboard/runtime.js')).headers['content-type'], /javascript/);
 });
 
+test('HEAD serves identical asset headers without reading or allocating its body',async t=>{
+  const {root,server}=await setup(t),bytes=Buffer.alloc(1024*1024,71);
+  await writeFile(path.join(root,'classic/assets/large.png'),bytes);
+  const original=fs.promises.open;let bodyReads=0;
+  fs.promises.open=async(...args)=>{
+    const handle=await original(...args);
+    return {stat:()=>handle.stat(),close:()=>handle.close(),readFile:(...options)=>{bodyReads++;return handle.readFile(...options);}};
+  };
+  syncBuiltinESMExports();
+  try {
+    const response=await fetch(`http://127.0.0.1:${server.port}/scoreboard/classic/assets/large.png`,{method:'HEAD'});
+    assert.equal(response.status,200);assert.equal(response.headers.get('content-length'),String(bytes.length));
+    assert.equal((await response.arrayBuffer()).byteLength,0);assert.equal(bodyReads,0);
+    const getResponse=await fetch(`http://127.0.0.1:${server.port}/scoreboard/classic/assets/large.png`);
+    assert.deepEqual(Buffer.from(await getResponse.arrayBuffer()),bytes);assert.equal(bodyReads,1);
+  }finally{fs.promises.open=original;syncBuiltinESMExports();}
+});
+
 test('SSE delivers initial state, published updates, and latest state on reconnect', { timeout: 8000 }, async t => {
   const { server, base } = await setup(t), next = await feed(t, base);
   const initial = await next(); assert.equal(initial.event, 'state'); assert.deepEqual(initial.data.lanes, []);

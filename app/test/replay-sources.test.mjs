@@ -18,12 +18,15 @@ const readMeet = async dir => ({ dir, files: { 'lynx.evt': { text: await readFil
 test('catalog preserves legacy demo selection, named real folders and manual imports', () => {
   const legacy = simulationCatalog({ demoDir: '/tmp/ttp' });
   assert.equal(legacy.selectedId, sourceId('/tmp/ttp'));
-  assert.equal(legacy.sources[1].type, 'ttp');
-  assert.deepEqual(sourceChoices().map(x => x.value), ['builtin', 'import:ttp', 'import:real']);
+  assert.equal(legacy.sources[0].type, 'ttp');
+  assert.deepEqual(sourceChoices().map(x => x.value), ['import:ttp']);
   const catalog = simulationCatalog({ simulationSources: [{ id:'real-a',type:'real',name:'Meet A',path:'/tmp/a' },{ type:'real',name:'Meet B',path:'/tmp/b' }], simulationSourceId:'real-a' });
   assert.equal(catalog.selectedId, 'real-a');
-  assert.equal(sourceChoices(catalog).filter(x => x.label.startsWith('REAL MEET REPLAY')).length, 2);
-  assert.deepEqual(simulationCatalog({ simulationSources: {} }).sources.length, 1);
+  assert.deepEqual(sourceChoices(catalog).map(x=>x.value),['import:ttp']);
+  const migrated=simulationCatalog({demoDir:'/tmp/ttp',simulationSourceId:'builtin'});
+  assert.equal(migrated.selectedId,sourceId('/tmp/ttp'));assert.equal(migrated.sources[0].name,'OpenMeet demo');
+  assert.ok(!migrated.sources.some(s=>s.id==='builtin'));
+  assert.deepEqual(simulationCatalog({ simulationSources: {} }).sources.length, 0);
 });
 
 test('recorded practice references keep exact local columns and full-stitch provenance without jitter or drops',()=>{
@@ -139,6 +142,6 @@ test('real host persists selection, preserves literal pixels/times, holds open, 
   await writeFile(path.join(fixture.dir,'heat-1/primary.json'),'{}');
   await assert.rejects(engine.call('demo.load',{id:source.id}),/column_period_s/);
   assert.equal((await engine.call('demo.catalog')).selectedId,source.id,'failed loads must preserve current selection');
-  await engine.call('demo.load',{id:'builtin'});
-  const final=await engine.call('settings.get');assert.equal(final.demoDir,null);assert.equal(final.simulationSourceId,'builtin');
+  await assert.rejects(engine.call('demo.load',{id:'builtin'}),/Unknown simulation source/);
+  const final=await engine.call('settings.get');assert.equal(final.simulationSourceId,source.id);
 });

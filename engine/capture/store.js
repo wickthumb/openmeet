@@ -11,7 +11,10 @@ import {
   renameSync, statSync, truncateSync, writeFileSync, writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { endianness } from 'node:os';
 import { columnBytes, validateMessage } from './protocol.js';
+
+const LITTLE_ENDIAN = endianness() === 'LE';
 
 /** @typedef {import('./protocol.js').CameraMsg} CameraMsg */
 
@@ -117,10 +120,15 @@ export function openCaptureStore(dir, opts = {}) {
   };
 
   // Load timestamps.
-  let times = new Float64Array(Math.max(1024, count * 2));
+  // Readers never append, so they do not need the writer's growth capacity.
+  let times = new Float64Array(readOnly ? count : Math.max(1024, count * 2));
   if (count > 0) {
     const raw = readFileSync(p.times).subarray(0, count * 8);
-    for (let i = 0; i < count; i++) times[i] = raw.readDoubleLE(i * 8);
+    if (LITTLE_ENDIAN && count >= 256 && raw.byteOffset % 8 === 0 && raw.length === count * 8) {
+      times.set(new Float64Array(raw.buffer, raw.byteOffset, count));
+    } else {
+      for (let i = 0; i < count; i++) times[i] = raw.readDoubleLE(i * 8);
+    }
   }
 
   // Load events; a torn last line is cut.
@@ -156,18 +164,35 @@ export function openCaptureStore(dir, opts = {}) {
     events.push(rec);
   }
 
-  if (!readOnly) {
-    if (recovery.columnsBytesCut > 0) truncateSync(p.columns, count * colBytes);
-    if (recovery.timesBytesCut > 0) truncateSync(p.times, count * 8);
-    if (recovery.eventsBytesCut > 0) truncateSync(p.events, sizeOf(p.events) - recovery.eventsBytesCut);
-    fds.bin = openSync(p.columns, 'a');
-    fds.times = openSync(p.times, 'a');
-    fds.events = openSync(p.events, 'a');
-    if (recovery.columnsBytesCut || recovery.timesBytesCut || recovery.eventsBytesCut) {
-      logEvent({ type: 'recovered', ...recovery });
+  function closeDescriptors() {
+    let failure;
+    for (const key of ['bin', 'times', 'events', 'read']) {
+      const fd = fds[key];
+      if (fd === null || fd < 0) continue;
+      try { closeSync(fd); }
+      catch (err) { failure ??= err; }
+      finally { fds[key] = key === 'read' ? null : -1; }
     }
+    if (failure) throw failure;
   }
-  if (existsSync(p.columns)) fds.read = openSync(p.columns, 'r');
+
+  try {
+    if (!readOnly) {
+      if (recovery.columnsBytesCut > 0) truncateSync(p.columns, count * colBytes);
+      if (recovery.timesBytesCut > 0) truncateSync(p.times, count * 8);
+      if (recovery.eventsBytesCut > 0) truncateSync(p.events, sizeOf(p.events) - recovery.eventsBytesCut);
+      fds.bin = openSync(p.columns, 'a');
+      fds.times = openSync(p.times, 'a');
+      fds.events = openSync(p.events, 'a');
+      if (recovery.columnsBytesCut || recovery.timesBytesCut || recovery.eventsBytesCut) {
+        logEvent({ type: 'recovered', ...recovery });
+      }
+    }
+    if (existsSync(p.columns)) fds.read = openSync(p.columns, 'r');
+  } catch (err) {
+    try { closeDescriptors(); } catch { /* Preserve the initialization error. */ }
+    throw err;
+  }
 
   function assertOpen() {
     if (closed) throw new Error('capture store is closed');
@@ -315,11 +340,14 @@ export function openCaptureStore(dir, opts = {}) {
     close() {
       if (closed) return;
       closed = true;
-      if (!readOnly) {
-        syncColumns();
-        for (const fd of [fds.bin, fds.times, fds.events]) closeSync(fd);
-      }
-      if (fds.read !== null) closeSync(fds.read);
+      let failure;
+      try { if (!readOnly) syncColumns(); }
+      catch (err) { failure = err; }
+      try { closeDescriptors(); }
+      catch (err) { failure ??= err; }
+      // Closed stores keep their metadata/count API, but no longer need timestamps.
+      times = new Float64Array(0);
+      if (failure) throw failure;
     },
   };
   return store;

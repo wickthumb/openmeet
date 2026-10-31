@@ -157,6 +157,9 @@ export async function* simReplay({ png, sidecar, realtime = false, speed = 1, ch
   if (holdOpen) {
     const last = columnsOf(img, img.width - 1, 1), tail = new Uint8Array(chunkColumns * last.length);
     for(let i=0;i<chunkColumns;i++) tail.set(last,i*last.length);
+    // The tail only needs the final column. Release the decoded file-backed
+    // source image while a manual recording stays open.
+    img = null;
     for(let x0=total;!signal?.aborted;x0+=chunkColumns) {
       if(realtime) {
         const wait=t0+((firstRace+(x0-nPre+chunkColumns)*period)/speed)*1000-performance.now();

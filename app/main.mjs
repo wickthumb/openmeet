@@ -11,6 +11,7 @@ const MIME = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.png': 'image/png', 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
 let engine = null;
+let engineRestart = null;
 let nextId = 1;
 const pending = new Map();
 // Folders the renderer may load files from through omfile:// (only ones the user picked or the engine opened).
@@ -21,11 +22,15 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 function startEngine() {
-  engine = utilityProcess.fork(path.join(here, 'engine-host.mjs'), [app.getPath('userData')], {
+  engineRestart = null;
+  if (app.isQuitting) return;
+  const child = utilityProcess.fork(path.join(here, 'engine-host.mjs'), [app.getPath('userData')], {
     serviceName: 'OpenMeet Engine',
     stdio: 'inherit',
   });
-  engine.on('message', msg => {
+  engine = child;
+  child.on('message', msg => {
+    if (engine !== child) return;
     if (msg && msg.id && pending.has(msg.id)) {
       const { resolve, reject } = pending.get(msg.id);
       pending.delete(msg.id);
@@ -35,11 +40,13 @@ function startEngine() {
       win?.webContents.send('om:event', msg.event, msg.data);
     }
   });
-  engine.on('exit', code => {
+  child.once('exit', code => {
+    if (engine !== child) return;
+    engine = null;
     for (const { reject } of pending.values()) reject(new Error('engine restarted'));
     pending.clear();
     win?.webContents.send('om:event', 'engine.exit', { code });
-    if (!app.isQuitting) setTimeout(startEngine, 500);
+    if (!app.isQuitting) engineRestart = setTimeout(startEngine, 500);
   });
 }
 
@@ -48,12 +55,13 @@ function callEngine(method, params) {
     if (!engine) return reject(new Error('engine not running'));
     const id = nextId++;
     pending.set(id, { resolve, reject });
-    engine.postMessage({ id, method, params });
+    try { engine.postMessage({ id, method, params }); }
+    catch (error) { pending.delete(id); reject(error); }
   });
 }
 
 function createWindow() {
-  win = new BrowserWindow({
+  const window = win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1080,
@@ -68,10 +76,10 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
-  win.loadFile(path.join(here, 'renderer', 'index.html'));
+  window.loadFile(path.join(here, 'renderer', 'index.html'));
   // A crashed console reloads; the engine and its capture keep running.
-  win.webContents.on('render-process-gone', () => setTimeout(() => win && !win.isDestroyed() && win.reload(), 300));
-  win.on('closed', () => { win = null; });
+  window.webContents.on('render-process-gone', () => setTimeout(() => !window.isDestroyed() && window.reload(), 300));
+  window.on('closed', () => { if (win === window) win = null; });
 }
 
 app.whenReady().then(() => {
@@ -113,6 +121,7 @@ app.whenReady().then(() => {
       webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } });
     b.loadURL(url);
     boards.set(u.pathname, b);
+    b.once('closed', () => { if (boards.get(u.pathname) === b) boards.delete(u.pathname); });
     return true;
   });
   ipcMain.handle('om:pickFolder', async (_e, title) => {
@@ -126,5 +135,5 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 
-app.on('before-quit', () => { app.isQuitting = true; engine?.kill(); });
+app.on('before-quit', () => { app.isQuitting = true; clearTimeout(engineRestart); engineRestart = null; engine?.kill(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

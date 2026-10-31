@@ -1,0 +1,95 @@
+{
+  "source": "Pre-optimization presentation clock; procedural packet timing, jitter, stalls, rate changes, duplicates and invalid observations.",
+  "cases": [
+    {
+      "seed": 1,
+      "frames": 2400,
+      "sha256": "b6a746a03b01e6f028388c07a2e656e37f30e8a438a537188ebcf0e306535343"
+    },
+    {
+      "seed": 2,
+      "frames": 2400,
+      "sha256": "1f97c5cf7fae0b658c78bae03ee26e1ebeb371bfdefd8153bc78720b7b10143d"
+    },
+    {
+      "seed": 3,
+      "frames": 2400,
+      "sha256": "563698f7b814dfa88ca1b1913b1eb2bfef7f8fcf6ffa4a618ea160db427fa5f3"
+    },
+    {
+      "seed": 4,
+      "frames": 2400,
+      "sha256": "2ae5b5a414eea836908b366d6a0e935cb35d761bb6c9738571416c9b1c2c1c74"
+    },
+    {
+      "seed": 5,
+      "frames": 2400,
+      "sha256": "e53df526efb73264f498a0e03e764c12fb01aec72d632d66876e2a1cd5f512e2"
+    },
+    {
+      "seed": 6,
+      "frames": 2400,
+      "sha256": "9309d2db54be270b86268df16c7414c4ca0f90bd9b447614672d8282ad57850d"
+    },
+    {
+      "seed": 7,
+      "frames": 2400,
+      "sha256": "7d1181322cd9909e113312529cabb6d7a644628438e74e246604d38dc2122ffc"
+    },
+    {
+      "seed": 8,
+      "frames": 2400,
+      "sha256": "d06fb1c2fa8885a033f8bf65747a76dfbae572dc57db6c8e6e6f445fc90ffec3"
+    },
+    {
+      "seed": 9,
+      "frames": 2400,
+      "sha256": "04a783c0f3a0c348554567005de329afbf341ef8f849a186aacbd4f67d4693c2"
+    },
+    {
+      "seed": 10,
+      "frames": 2400,
+      "sha256": "a25460a33fb0e927d7077704bbb595131109c5f9d1df8ad2e95ae73d0ab36296"
+    },
+    {
+      "seed": 11,
+      "frames": 2400,
+      "sha256": "bdf8f55919e2a89adbfb37678821322275d3a3665b40857553a9b781cc8574d4"
+    },
+    {
+      "seed": 12,
+      "frames": 2400,
+      "sha256": "1dce8e08bd2fc80e80b0d268accf1e8c1fbdb7e87be414ea07aa40181cbe6a6c"
+    },
+    {
+      "seed": 13,
+      "frames": 2400,
+      "sha256": "921621a359851aa5730548172ab657776596c57952abca3f4d14aa16fcd227e7"
+    },
+    {
+      "seed": 14,
+      "frames": 2400,
+      "sha256": "d1e7a1956f43d869990e6297908b1adff5aafc2acedf78b1868b54415b85a3e8"
+    },
+    {
+      "seed": 15,
+      "frames": 2400,
+      "sha256": "9e4b5b1088bfd3fd77e40c90a7e04e0713ad1fe8ce2d3375fca621af7e2b5042"
+    },
+    {
+      "seed": 16,
+      "frames": 2400,
+      "sha256": "7db32fba110966d7086f463813026ba9c86babb29951912cf2f703f067c89324"
+    },
+    {
+      "seed": 17,
+      "frames": 2400,
+      "sha256": "449b055166526d243fdafe65cc6d1cade545a03eea49a32e8b7ec1db4cfa645f"
+    },
+    {
+      "seed": 18,
+      "frames": 2400,
+      "sha256": "39becd071f0500bd969714c9475e76a7fe60c901ac1519f506c9ee27934eac77"
+    }
+  ]
+}

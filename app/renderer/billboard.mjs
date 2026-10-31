@@ -26,13 +26,15 @@ export function billboardPieces(b,view) {
   const start=(b.time-timeOrigin)/period,tile=b.duration/period;
   const top=(b.row-r0)*zy,bottom=top+b.height*zy;
   if(bottom<=0||top>=height)return [];
-  return visibleColumnPieces(map,Math.max(0,c0),Math.min(map?.length??count,c0+width/zx),count).flatMap(piece=>{
+  const pieces=[];
+  for(const piece of visibleColumnPieces(map,Math.max(0,c0),Math.min(map?.length??count,c0+width/zx),count)){
     const a=Math.max(0,piece.start),z=Math.min(piece.end,last);
-    if(z<=a)return [];
+    if(z<=a)continue;
     const left=(piece.displayStart+a-piece.start-c0)*zx,w=(z-a)*zx;
     const u=((a-start)/tile%1+1)%1;
-    return [{x:flip?width-left-w:left,y:top,w,h:bottom-top,u,uw:(z-a)/tile,flip,start:a,end:z}];
-  });
+    pieces.push({x:flip?width-left-w:left,y:top,w,h:bottom-top,u,uw:(z-a)/tile,flip,start:a,end:z});
+  }
+  return pieces;
 }
 export function billboardPoint(x,y,view) {
   const display=view.c0+(view.flip?view.width-x:x)/view.zx;
@@ -70,13 +72,22 @@ export function reusableBillboardCache(cache,key,v){return cache?.key===key&&Mat
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 export class BillboardConsole {
   constructor({bridge,store,context,changed,toast,place,finishPlacing,open}) {
-    Object.assign(this,{bridge,store,context,changed,toast,place,finishPlacing,open});this.images=new Map();this.list=[];this.busy=false;this.log='';this.snapshots=new Map();this.paintCaches=new Map();
+    Object.assign(this,{bridge,store,context,changed,toast,place,finishPlacing,open});this.images=new Map();this.imageLoads=new Map();this.list=[];this.busy=false;this.log='';this.snapshots=new Map();this.paintCaches=new Map();
     this.editor=document.querySelector('#billboardEditor');
     bridge?.on('billboard.agentOutput',d=>{if(d.name===this.building){this.log=(this.log+'\n'+d.line).slice(-16000);const box=document.querySelector('#billboardLog');if(box)box.textContent=this.log;}});
   }
   key(){return `billboard:${this.context().scope}`;}
   collection(){return billboardCollection(this.store.get(this.key(),null),this.context());}
   settings(){const c=this.collection();return c.items.find(b=>b.id===c.selected)||null;}
+  placeSelected(center=false){
+    const current=this.settings();if(!current)return;
+    const c=this.context(),top=c.centerRow-c.visibleRows/2,bottom=c.centerRow+c.visibleRows/2;
+    const outside=current.row+current.height<=top||current.row>=bottom;
+    this.save({...current,enabled:true,...(center||outside?{row:Math.max(0,Math.min(c.rows-current.height,c.centerRow-current.height/2))}:{})});
+    this.renderList();this.place?.();
+  }
+  hasUnsavedPrompt(){const id=this.settings()?.id,prompt=this.prompts?.get(id)?.trim();return !this.busy&&!!prompt&&prompt!==this.submittedPrompts?.get(id);}
+  discardPrompt(){this.prompts?.delete(this.settings()?.id);const input=document.getElementById('billboard-prompt');if(input)input.value='';}
   hasEnabled(){return this.collection().items.some(b=>b.enabled);}
   save(b){const c=this.collection();c.items=c.items.map(item=>item.id===b.id?b:item);this.store.set(this.key(),c);this.changed();}
   saveCollection(c){this.store.set(this.key(),c);this.paintCaches.clear();this.changed();}
@@ -85,10 +96,18 @@ export class BillboardConsole {
   async loadImage(name,asset='assets/billboard.svg',refresh=false){
     const key=name+'/'+asset;if(refresh){this.images.delete(key);this.paintCaches.clear();}
     if(this.images.has(key))return this.images.get(key);
-    this.images.set(key,null);
-    try {const {dataUrl}=await this.bridge.call('billboard.read',{name,asset});const image=new Image();image.src=dataUrl;await image.decode();this.images.set(key,image);this.paintCaches.clear();this.previewKey=null;this.changed();return image;}
-    catch(error){this.toast('Billboard image unavailable: '+error.message,true);return null;}
+    const load={};this.images.set(key,null);this.imageLoads.set(key,load);
+    try {
+      const {dataUrl}=await this.bridge.call('billboard.read',{name,asset});
+      if(this.imageLoads.get(key)!==load)return this.images.get(key)||null;
+      const image=new Image();image.src=dataUrl;await image.decode();
+      if(this.imageLoads.get(key)!==load)return this.images.get(key)||null;
+      this.images.set(key,image);this.paintCaches.clear();this.previewKey=null;this.changed();return image;
+    }
+    catch(error){if(this.imageLoads.get(key)===load)this.toast('Billboard image unavailable: '+error.message,true);return null;}
+    finally{if(this.imageLoads.get(key)===load)this.imageLoads.delete(key);}
   }
+  forgetImages(name){for(const key of this.images.keys())if(key.startsWith(name+'/')){this.images.delete(key);this.imageLoads.delete(key);}}
   image(name,asset){const key=name+'/'+asset;if(!this.images.has(key)&&this.bridge)this.loadImage(name,asset);return this.images.get(key);}
   paint(g,view,columnsAt){
     const selected=this.settings();if(selected)this.syncEditor(selected,billboardPieces(selected,view),view);else this.editor.hidden=true;
@@ -192,8 +211,8 @@ export class BillboardConsole {
     const preview=el('canvas');preview.id='billboard-preview';preview.className='billboard-preview';preview.setAttribute('aria-label','Repeating billboard preview');card.append(preview);
     const field=(label,input,parent=card)=>{const row=el('label');row.append(el('span',label),input);parent.append(row);return input;};
     const placementHint=el('div',null,'billboard-placement-hint');placementHint.append(el('span','Position the billboard directly on the camera image.'));
-    const place=el('button','Place on scan','btn sm primary');place.id='billboard-place';place.onclick=()=>this.place?.();placementHint.append(place);
-    const center=el('button','Bring into view','btn sm');center.id='billboard-center';center.onclick=()=>{const c=this.context(),current=this.settings();this.save({...current,row:Math.max(0,Math.min(c.rows-current.height,c.centerRow-current.height/2))});this.refresh(body);this.place?.();};placementHint.append(center);card.append(placementHint);
+    const place=el('button','Place on scan','btn sm primary');place.id='billboard-place';place.onclick=()=>this.placeSelected();placementHint.append(place);
+    const center=el('button','Bring into view','btn sm');center.id='billboard-center';center.onclick=()=>this.placeSelected(true);placementHint.append(center);card.append(placementHint);
     if(b.mode==='basic'){
       const text=el('input');text.id='billboard-text';text.value=b.text||this.context().meetName||'Track meet';text.maxLength=240;text.oninput=()=>this.save({...this.settings(),text:text.value});field('Text',text);
       const logo=el('button','Change logo…','btn sm');logo.id='billboard-logo';logo.disabled=!this.bridge;logo.onclick=()=>this.action(async()=>{const file=await this.bridge.pickFile('Billboard logo','image');if(!file)return;let name=this.settings().logo?.name;if(!name){name='logos-'+Date.now();await this.bridge.call('billboard.create',{name});}const asset=await this.bridge.call('billboard.addAsset',{name,path:file});await this.loadImage(name,asset);this.save({...this.settings(),logo:{name,asset}});});card.append(logo);
@@ -215,12 +234,12 @@ export class BillboardConsole {
     const build=el('button',this.busy?'Generating…':'Generate design','btn sm primary');build.id='billboard-build';build.disabled=!this.bridge||this.busy;build.onclick=()=>this.action(async()=>{
       const request=prompt.value.trim(),target=this.settings().id;if(!request)throw Error('Describe the artwork first');this.busy=true;this.log='Building design…';this.updateStatus();let name;
       try {name=await this.ensureArtwork(target);}catch(error){this.busy=false;this.updateStatus();throw error;}this.building=name;
-      try {const result=await this.bridge.call('billboard.agent',{name,request,preset:agent.value});this.snapshots.set(name,result.snapshotId);this.log+=`\nExit ${result.code}${result.restored?' · restored previous artwork':''}${result.error?' · '+result.error:''}`;await this.loadImage(name,'assets/billboard.svg',true);if(result.restored)this.toast(result.error||'Previous design restored.',true);else {const c=this.collection();c.items=c.items.map(item=>item.id===target?{...item,mode:'art',name}:item);this.saveCollection(c);}}
+      try {const result=await this.bridge.call('billboard.agent',{name,request,preset:agent.value});this.snapshots.set(name,result.snapshotId);this.log+=`\nExit ${result.code}${result.restored?' · restored previous artwork':''}${result.error?' · '+result.error:''}`;await this.loadImage(name,'assets/billboard.svg',true);if(result.restored)this.toast(result.error||'Previous design restored.',true);else {if(result.code===0){this.submittedPrompts??=new Map();this.submittedPrompts.set(target,request);}const c=this.collection();c.items=c.items.map(item=>item.id===target?{...item,mode:'art',name}:item);this.saveCollection(c);}}
       finally{this.busy=false;this.building=null;this.refresh(body);}
     });library.append(build);
     const undo=el('button','Undo last change','btn sm');undo.id='billboard-undo';undo.disabled=this.busy||!this.snapshots.has(b.name);undo.onclick=()=>this.action(async()=>{await this.bridge.call('billboard.restore',{name:b.name,snapshotId:this.snapshots.get(b.name)});this.snapshots.delete(b.name);await this.loadImage(b.name,'assets/billboard.svg',true);this.refresh(body);});if(this.snapshots.has(b.name))heading.append(undo);
     const assets=el('button','Add design image…','btn sm');assets.disabled=!this.bridge||this.busy;assets.onclick=()=>this.action(async()=>{const file=await this.bridge.pickFile('Image for custom billboard','image');if(file){const name=await this.ensureArtwork(b.id),asset=await this.bridge.call('billboard.addAsset',{name,path:file});this.log+='\nAdded '+asset+'; mention it in the design request.';this.updateStatus();}});library.append(assets);
-    const log=el('pre',this.log||'Uses your installed coding agent. Builds can be undone.','billboard-log');log.id='billboardLog';library.append(log);if(b.name){const del=el('button','Delete saved design','btn sm warn');del.id='billboard-delete-art';del.disabled=this.busy;del.onclick=()=>this.action(async()=>{if(this.confirmDelete!==b.name){this.confirmDelete=b.name;del.textContent='Delete design?';return;}await this.bridge.call('billboard.delete',{name:b.name});for(const key of this.images.keys())if(key.startsWith(b.name+'/'))this.images.delete(key);const c=this.collection();c.items=c.items.map(item=>item.name===b.name?{...item,name:'',mode:'basic'}:item);this.saveCollection(c);this.list=await this.bridge.call('billboard.list');this.confirmDelete=null;this.refresh(body);});library.append(del);}
+    const log=el('pre',this.log||'Uses your installed coding agent. Builds can be undone.','billboard-log');log.id='billboardLog';library.append(log);if(b.name){const del=el('button','Delete saved design','btn sm warn');del.id='billboard-delete-art';del.disabled=this.busy;del.onclick=()=>this.action(async()=>{if(this.confirmDelete!==b.name){this.confirmDelete=b.name;del.textContent='Delete design?';return;}await this.bridge.call('billboard.delete',{name:b.name});this.forgetImages(b.name);const c=this.collection();c.items=c.items.map(item=>item.name===b.name?{...item,name:'',mode:'basic'}:item);this.saveCollection(c);this.list=await this.bridge.call('billboard.list');this.confirmDelete=null;this.refresh(body);});library.append(del);}
     card.append(placement);this.updatePreview();if(this.bridge&&!this.loaded){this.loaded=true;this.action(async()=>{this.list=await this.bridge.call('billboard.list');this.refresh(body);});}
   }
   renderList(){

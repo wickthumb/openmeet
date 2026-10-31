@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {billboardSettings,billboardCollection,billboardPieces,billboardPoint,moveBillboard,maskBillboard,billboardCacheKey,billboardCacheOffset,reusableBillboardCache} from '../renderer/billboard.mjs';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {billboardSettings,billboardCollection,billboardPieces,billboardPoint,moveBillboard,maskBillboard,billboardCacheKey,billboardCacheOffset,reusableBillboardCache,BillboardConsole} from '../renderer/billboard.mjs';
 import {columnProjection} from '../renderer/column-map.mjs';
+import {billboardPieceInputs} from './fixtures/billboard-piece-inputs.mjs';
 const view={period:.01,timeOrigin:10,count:100,width:200,height:80,c0:0,zx:2,r0:20,zy:2,rows:100,flip:false};
 const b={enabled:true,time:10.2,duration:.6,row:25,height:20};
 test('source time / row geometry survives pan, zoom, flip, framing and hidden time spans',()=>{
@@ -23,6 +26,12 @@ test('a repeating band covers the full capture and long recordings without one o
   assert.equal(pieces.length,1);assert.equal(pieces[0].start,0);assert.equal(pieces[0].end,24_000_000);
   assert.ok(pieces[0].uw>1_000_000);
   const live=billboardPieces(b,{...view,last:40});assert.equal(live[0].end,40);
+});
+test('piece geometry preserves baseline coordinates across sparse captures and viewport boundaries',()=>{
+  const fixture=JSON.parse(readFileSync(new URL('./fixtures/billboard-pieces-vectors.json',import.meta.url),'utf8')),hash=createHash('sha256');let count=0;
+  const encode=value=>JSON.stringify(value,(_key,n)=>typeof n==='number'&&!Number.isFinite(n)?String(n):Object.is(n,-0)?'-0':n);
+  for(const [billboard,viewport]of billboardPieceInputs()){hash.update(encode(billboardPieces(billboard,viewport))+'\n');count++;}
+  assert.equal(count,fixture.count);assert.equal(hash.digest('hex'),fixture.sha256);
 });
 test('collections preserve multiple independent bands, empty lists, legacy placements and the logo default',()=>{
   const initial=billboardCollection(null,{rows:640});assert.equal(initial.items.length,1);assert.equal(initial.items[0].text,'');assert.equal(initial.items[0].logo,null);assert.equal(initial.items[0].height,51.2);
@@ -50,3 +59,36 @@ test('follow translates cached art between packets; source, mask and geometry re
   assert.equal(reusableBillboardCache(cache,key,{...v,c0:80}),false);
   for(const next of [{...v,revision:['capture-b',32,'simple']},{...v,revision:['capture-a',64,'simple']},{...v,revision:['capture-a',32,'learned-request']},{...v,zx:3},{...v,r0:21},{...v,flip:true},{...v,map:columnProjection([[0,20],[40,80]],100)}])assert.notEqual(billboardCacheKey(b,next),key);
 });
+
+
+async function withArtworkLoads(run){
+  const saved=Object.getOwnPropertyDescriptor(globalThis,'Image'),reads=[],decoded=[],changes=[],errors=[];
+  globalThis.Image=class{constructor(){decoded.push(this);}decode(){return new Promise(resolve=>{this.finish=resolve;});}};
+  const console=Object.assign(Object.create(BillboardConsole.prototype),{images:new Map(),imageLoads:new Map(),paintCaches:new Map(),bridge:{call(_method,params){return new Promise((resolve,reject)=>reads.push({params,resolve,reject}));}},changed:()=>changes.push(true),toast:message=>errors.push(message)});
+  try{await run({console,reads,decoded,changes,errors,tick:()=>new Promise(r=>setImmediate(r))});}
+  finally{if(saved)Object.defineProperty(globalThis,'Image',saved);else delete globalThis.Image;}
+}
+
+test('a superseded artwork read cannot overwrite the newer decoded image or allocate a stale decoder',()=>withArtworkLoads(async({console,reads,decoded,changes,errors,tick})=>{
+  const older=console.loadImage('art','assets/billboard.svg',true),newer=console.loadImage('art','assets/billboard.svg',true);
+  reads[1].resolve({dataUrl:'data:new'});await tick();decoded[0].finish();const expected=await newer;
+  reads[0].resolve({dataUrl:'data:old'});assert.equal(await older,expected);
+  assert.equal(console.images.get('art/assets/billboard.svg'),expected);assert.equal(expected.src,'data:new');
+  assert.equal(decoded.length,1);assert.equal(changes.length,1);assert.deepEqual(errors,[]);assert.equal(console.imageLoads.size,0);
+}));
+
+test('a superseded decode cannot replace newer artwork when it completes later',()=>withArtworkLoads(async({console,reads,decoded,changes,tick})=>{
+  const older=console.loadImage('art');reads[0].resolve({dataUrl:'data:old'});await tick();
+  const newer=console.loadImage('art','assets/billboard.svg',true);reads[1].resolve({dataUrl:'data:new'});await tick();
+  decoded[1].finish();const expected=await newer;decoded[0].finish();await older;
+  assert.equal(console.images.get('art/assets/billboard.svg'),expected);assert.equal(expected.src,'data:new');assert.equal(changes.length,1);assert.equal(console.imageLoads.size,0);
+}));
+
+test('deleted artwork invalidates pending reads and stale failures do not report errors for newer artwork',()=>withArtworkLoads(async({console,reads,decoded,changes,errors,tick})=>{
+  const deleted=console.loadImage('gone');console.forgetImages('gone');reads[0].resolve({dataUrl:'data:deleted'});await deleted;
+  assert.equal(console.images.has('gone/assets/billboard.svg'),false);assert.equal(decoded.length,0);
+  const older=console.loadImage('art'),newer=console.loadImage('art','assets/billboard.svg',true);
+  reads[2].resolve({dataUrl:'data:new'});await tick();decoded[0].finish();await newer;
+  reads[1].reject(Error('superseded read failed'));await older;
+  assert.deepEqual(errors,[]);assert.equal(changes.length,1);assert.equal(console.imageLoads.size,0);
+}));

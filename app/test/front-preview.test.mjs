@@ -1,6 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {FrontFrameCache,linkedCameraRange,cameraAsset,containedImageRect} from '../renderer/front-preview.mjs';
+import {linkedCameraRangeInputs} from './fixtures/linked-camera-range-inputs.mjs';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('front overlay coordinates use the letterboxed image across tall and wide tiles',()=>{
   assert.deepEqual(containedImageRect(800,600,1920,1080),{x:0,y:75,width:800,height:450});
@@ -27,6 +30,19 @@ test('decoded cache stays bounded and releases images, including late completion
   let resolve;
   const pending=new FrontFrameCache({concurrency:1,load:()=>new Promise(r=>{resolve=r;})});pending.request(0,1);await tick();pending.dispose();
   resolve({close:()=>closed.push('late')});await tick();assert.ok(closed.includes('late'));
+});
+
+test('frame eviction preserves pinned images, LRU order, close ownership and target notifications',async()=>{
+  const loads=[],ready=[],closed=[],resolvers=new Map();
+  const cache=new FrontFrameCache({limit:2,concurrency:1,load:i=>{loads.push(i);return new Promise(resolve=>resolvers.set(i,resolve));},onReady:i=>ready.push(i)});
+  const complete=async i=>{resolvers.get(i)({close:()=>closed.push(i)});await tick();};
+  cache.request(0,1);await tick();await complete(0);cache.pinned=0;
+  cache.request(2,3);await tick();await complete(2);await complete(1);
+  assert.deepEqual(loads,[0,2,1]);assert.deepEqual([...cache.frames.keys()],[0,2]);assert.deepEqual(closed,[1]);
+  cache.pinned=null;cache.get(0);assert.deepEqual([...cache.frames.keys()],[2,0]);
+  cache.request(3,4);await tick();await complete(3);assert.deepEqual([...cache.frames.keys()],[0,3]);await complete(1);
+  assert.deepEqual(loads,[0,2,1,3,1]);assert.deepEqual([...cache.frames.keys()],[3,1]);assert.deepEqual(ready,[0,2,3]);assert.deepEqual(closed,[1,2,0]);
+  cache.dispose();assert.deepEqual(closed,[1,2,0,3,1]);assert.equal(cache.pending.size,0);
 });
 
 test('linked view shares time span and vertical fraction across different panel widths and row counts',()=>{
@@ -76,4 +92,10 @@ test('three-camera roles preserve source identity and each camera clock without 
   assert.equal(selected.comparisonCameraId,'tower');assert.equal(selected.backup,'tower.png');assert.equal(original.primary,undefined);
   const changed=cameraAsset(selected,{main:'tower',comparison:'tower'});
   assert.equal(changed.mainCameraId,'tower');assert.notEqual(changed.comparisonCameraId,'tower');assert.equal(selected.mainCameraId,'east');
+});
+
+test('linked ranges preserve baseline math across calibrated, absent and duplicated lanes',()=>{
+  const fixture=JSON.parse(readFileSync(new URL('./fixtures/linked-camera-range-vectors.json',import.meta.url),'utf8')),hash=createHash('sha256');let count=0;
+  for(const [view,options]of linkedCameraRangeInputs()){hash.update(JSON.stringify(linkedCameraRange(view,options))+'\n');count++;}
+  assert.equal(count,fixture.count);assert.equal(hash.digest('hex'),fixture.sha256);
 });
