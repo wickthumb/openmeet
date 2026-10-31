@@ -39,7 +39,10 @@ test('UDP retrieval, decoded native capture, manual start binding, PNG and offli
 test('TCP drain waits for a partial stream frame and cancels on session close',async t=>{
   const {f,body,service,config}=setup(t),{id}=service.open(config);await service.command({id,operation:'prepare'});await service.command({id,operation:'start'});
   const frame=Buffer.alloc(body.length+4);frame.set([241,4]);frame.writeUInt16LE(body.length,2);body.copy(frame,4);f.streams[0].onData(frame.subarray(0,20));
-  const pending=service.drain({id,timeoutMs:200,intervalMs:10});await new Promise(resolve=>setTimeout(resolve,20));f.streams[0].onData(frame.subarray(20));assert.equal((await pending).transportDrained,true);
+  const statusRead=Promise.withResolvers(),exchange=f.exchangeHook;
+  f.exchangeHook=async(packet,options)=>{const response=await exchange(packet,options);if(packet.readUInt16LE(8)===3)statusRead.resolve();return response;};
+  const pending=service.drain({id,timeoutMs:5000,intervalMs:10});await statusRead.promise;
+  assert.equal(service.snapshot({id}).session.streamFraming.pendingBytes,20);f.streams[0].onData(frame.subarray(20));assert.equal((await pending).transportDrained,true);
   const p=service.drain({id,timeoutMs:5000,requestStop:false});await service.close({id});await assert.rejects(p);
 });
 test('raw integrity failure produces a bounded decoded prefix and preserves original bytes',async t=>{
